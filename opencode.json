@@ -1,6 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md", "CONTEXT.md", ".claude/linear.md"],
+  "instructions": [
+    "AGENTS.md",
+    "CONTEXT.md",
+    ".claude/linear.md"
+  ],
   "mcp": {
     "linear-rea": {
       "type": "remote",
@@ -10,12 +14,41 @@
   },
   "permission": {
     "bash": {
-      "*": "allow",
-      "git push *": "ask",
-      "git reset --hard*": "ask",
-      "git clean *": "ask",
-      "git branch -D *": "ask",
-      "rm -rf *": "ask",
+      "*": "ask",
+      "pwd": "allow",
+      "ls": "allow",
+      "ls *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "grep *": "allow",
+      "rg *": "allow",
+      "cd *": "allow",
+      "which *": "allow",
+      "git status": "allow",
+      "git status *": "allow",
+      "git diff": "allow",
+      "git diff *": "allow",
+      "git log": "allow",
+      "git log *": "allow",
+      "git show *": "allow",
+      "git rev-parse *": "allow",
+      "git branch --show-current": "allow",
+      "git ls-files*": "allow",
+      "git merge-base *": "allow",
+      "npm test": "allow",
+      "npm run typecheck": "allow",
+      "npm run lint": "allow",
+      "npm run build:release": "allow",
+      "./gradlew *": "allow",
+      "node scripts/check-licenses.mjs": "allow",
+      "adb devices": "allow",
+      "git *--output*": "ask",
+      "git *--ext-diff*": "ask",
+      "git *--upload-pack*": "ask",
+      "git *-c *": "ask",
+      "*>*": "ask",
       "npm publish*": "deny"
     }
   }
