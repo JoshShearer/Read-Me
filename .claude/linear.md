@@ -172,7 +172,8 @@ anything.
 
 **Only one worktree at a time may hold the phone.** Installing a build replaces the app on the
 one attached device. Take `.claude/device.lock/` (in the primary) with `mkdir` before
-`npm run device:install`, and say so.
+`npm run device:install`, write its `owner` file in the AGENTS.md format (worktree path, then
+`branch=...`), and say so. `scripts/lib/device.sh` treats an ownerless lock as another lane's.
 
 ## Quality gates
 

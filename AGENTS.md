@@ -44,8 +44,11 @@ depending on it - rule 14.
 ### Device work: the one-phone slot
 
 On-device verification uses one attached phone (the reference device in `srs.md`). Only one
-lane at a time may hold it: a run takes `.claude/device.lock/` with `mkdir` before installing
-and removes it after. `adb devices` must show exactly one device, or the command stops and says
+lane at a time may hold it: a run takes `.claude/device.lock/` (in the primary checkout) with
+`mkdir` before installing, immediately writes `.claude/device.lock/owner` as two lines (the
+worktree path from `git rev-parse --show-toplevel`, then `branch=<name> commit=<hash> at=<time>
+purpose=<...>`), and removes the directory after. A lock with no owner file is treated as another
+lane's. `adb devices` must show exactly one device, or the command stops and says
 so. Installing a build replaces whatever build another lane installed; whoever installs says so.
 
 Bridge checks also need Obsidian on the same phone with the `local-tts-reader` plugin; the

@@ -441,7 +441,7 @@ if [ "$N" -ne 1 ]; then echo "DEVICE: NOT RUN ($N devices attached; need exactly
 elif ! mkdir "$DEVICE_LOCK" 2>/dev/null; then
   echo "DEVICE: NOT RUN (lock held by $(head -2 "$DEVICE_LOCK/owner" 2>/dev/null | tr '\n' ' '))"
 else
-  printf '%s\nbranch=%s commit=%s at=%s purpose=run %s\n' "$(pwd)" "$(git branch --show-current)" \
+  printf '%s\nbranch=%s commit=%s at=%s purpose=run %s\n' "$(git rev-parse --show-toplevel)" "$(git branch --show-current)" \
     "$(git rev-parse --short HEAD)" "$(date -u +%FT%TZ)" "$RUN_ID" > "$DEVICE_LOCK/owner"
   echo "DEVICE: LOCK TAKEN"
 fi
