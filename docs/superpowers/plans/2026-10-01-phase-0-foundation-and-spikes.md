@@ -8,7 +8,7 @@
 
 **Tech Stack:** React Native 0.87.1 (bare, Hermes, new architecture), `@react-native-community/cli` 20.2.0, TypeScript, Jest (`@react-native/jest-preset`), ESLint 8, Kotlin 2.2.0, Gradle 9.4.1, JUnit 4.13.2, GitHub Actions. Spike-only: `@mozilla/readability` 0.6.0, `linkedom` 0.18.13, `@babel/plugin-transform-export-namespace-from` 7.29.7. Dev tools: fdroidserver 2.4.5, `license-checker-rseidelsohn` 5.0.1.
 
-**Spec:** `srs.md` (SPEC-001). Rules: `AGENTS.md`. Architecture: `CONTEXT.md`. Roadmap and SRS review: `docs/superpowers/plans/2026-10-01-roadmap.md`. Revision 2 resolves the first critique (2026-10-01, BLOCK 35, F1-F15). Revision 3 resolves the second (2026-10-01, CONCERNS 58, F1-F12, in `.claude/last-critique.md`).
+**Spec:** `srs.md` (SPEC-001). Rules: `AGENTS.md`. Architecture: `CONTEXT.md`. Roadmap and SRS review: `docs/superpowers/plans/2026-10-01-roadmap.md`. Revision 2 resolves the first critique (2026-10-01, BLOCK 35, F1-F15). Revision 3 resolves the second (CONCERNS 58, F1-F12). Revision 4 resolves the third (CONCERNS 60, F1-F13; `/verify` and `/ship` lock owner format normalised in the repo).
 
 ## Global Constraints
 
@@ -70,6 +70,8 @@ Create the issues with `/create-issue` (team `REA`). Use each issue's number `N`
 
 Branch names are illustrative: `/start-issue` derives the slug from the issue title (`.claude/linear.md`), so use whatever it creates. **Stacked probe branches** (Tasks 5, 7, 8) are created with `/start-issue` too, so the status and `base-branch` are set, and then `git merge --no-edit <parent probe branch>` brings in the parent's probe. **Every spike answer ships with the procedure in Task 9, "Shipping a spike answer"**.
 
+ADR numbers are reserved now so parallel spike branches cannot collide: 0003 extraction in a WebView (SPIKE-02, only if it fails F17), 0004 TTS contention policy (SPIKE-06, only if needed), 0005 foreground-service types (SPIKE-01). An unused number stays unused.
+
 Tasks 3, 4 and 6 are independent of each other. All but Task 3 need the phone, and only one lane may hold it, so run the device tasks in sequence.
 
 ## File Structure
@@ -115,9 +117,9 @@ scripts/spike-bridge.sh, scripts/obsidian-cdp-probe.mjs   SPIKE-01
 
 **Files:** none created by the plan.
 
-- [ ] **Step 1: Commit the governance files that are untracked on `main`**
+- [x] **Step 1: Governance files committed on `main`**
 
-As of 2026-10-01, `git status --short` on `main` shows `.claude/`, `.gitignore`, `.mcp.json`, `.opencode/`, `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/` and `opencode.json` as untracked. These are the owner's files. The owner commits them before Task 1 (`.mcp.json` holds only the Linear MCP URL, no secret, checked 2026-10-01). `/start-issue` refuses to branch over a dirty tree.
+Done 2026-10-01: the governance files were committed on `main` in `b31782b`, and the opencode permission hardening in `e1b87c4`, `be26b11` and `45e7786`. This step is now only the check, because `/start-issue` refuses to branch over a dirty tree.
 
 ```bash
 cd /home/joshshearer/Documents/Dev/Read-Me
@@ -147,6 +149,7 @@ Branch: `/start-issue <scaffold issue>` creates `feature/rea-N-scaffold`.
   - `scripts/lib/device.sh`, sourced, provides:
     - `device_take <purpose>`: exits 3 if another lane holds the slot or there isn't exactly one device. If this lane already holds it (a `/ship` or `/verify` run that took the lock before calling `npm run device:install`), it reuses the lock and leaves releasing it to the caller.
     - `device_require_unlocked`: exits 5 if the screen is off or locked.
+    - `device_require_committed`: exits 6 if the working tree has uncommitted changes (spike scripts call it so every answer names the build that was measured).
     - `device_install_release`: installs `android/app/build/outputs/apk/release/app-release.apk` and writes `$PRIMARY/.claude/scratch/device-installed-from`.
     - `DEVICE_ON_EXIT`: the name of a function that runs before the lock is released.
     - `PKG=io.loopstring.readme`.
@@ -246,15 +249,16 @@ device_take() {
   fi
 }
 
-# The commands write the owner file in two shapes: worktrees.md puts the worktree path on
-# line 1; ship.md writes "<branch> <time>". Either one naming this lane counts as ours.
+# Every lock taker (worktrees.md, run-tickets.md, ship.md, verify.md) writes the worktree path
+# on line 1 and "branch=<name> ..." on line 2. Ours = same worktree AND same named branch.
+# A detached HEAD has no branch name, so it never adopts a lock. An ownerless lock (someone
+# mid-mkdir, or an old command) is never ours.
 _device_lock_held_by_this_lane() {
   local owner="$DEVICE_LOCK/owner" top branch
   [ -f "$owner" ] || return 1
   top=$(git rev-parse --show-toplevel); branch=$(git branch --show-current)
-  [ "$(head -n1 "$owner")" = "$top" ] && return 0
-  [ "$(head -n1 "$owner" | cut -d' ' -f1)" = "$branch" ] && return 0
-  grep -q "branch=$branch " "$owner"
+  [ -n "$branch" ] || return 1
+  [ "$(sed -n 1p "$owner")" = "$top" ] && grep -q "^branch=$branch " "$owner"
 }
 
 _device_exit() {
@@ -270,6 +274,15 @@ device_require_unlocked() {
      || ! adb shell dumpsys window | grep -q 'isKeyguardShowing=false'; then
     echo "the phone is asleep or locked: ask the owner to unlock it, leave the screen on, rerun" >&2
     exit 5
+  fi
+}
+
+# Spike runs must name the commit that was measured (AGENTS.md 17), so refuse a dirty tree.
+device_require_committed() {
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "uncommitted changes: commit first so the answer can cite the measured build" >&2
+    git status --short >&2
+    exit 6
   fi
 }
 
@@ -337,17 +350,25 @@ In `package.json` `"scripts"`, keep the template's `lint`, `test` and `start`. R
     "device:smoke": "scripts/device-smoke.sh",
 ```
 
-Check the reuse path before relying on it:
+Check every lock shape before relying on it. `ship.md` and `verify.md` write the same two-line owner format as `worktrees.md` (normalised in commit "chore: one device-lock owner format", 2026-10-01):
 
 ```bash
-P=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-mkdir "$P/.claude/device.lock" && echo "$(git branch --show-current) $(date -Is)" > "$P/.claude/device.lock/owner"
-bash -c '. scripts/lib/device.sh; device_take interactive; echo took' ; ls -d "$P/.claude/device.lock" && echo "caller lock kept"
-rm -rf "$P/.claude/device.lock"
-bash -c '. scripts/lib/device.sh; device_take interactive; echo took' ; ls -d "$P/.claude/device.lock" 2>/dev/null || echo "own lock released"
+P=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)"); L="$P/.claude/device.lock"
+mkdir -p "$P/.claude"
+take() { bash -c '. scripts/lib/device.sh; device_take interactive; echo took'; echo "rc=$?"; }
+echo "-- held by this lane (the /ship and /verify shape): reuse, keep"
+mkdir "$L" && printf '%s\nbranch=%s commit=x at=x purpose=interactive\n' "$(git rev-parse --show-toplevel)" "$(git branch --show-current)" > "$L/owner"
+take; ls -d "$L" >/dev/null && echo "caller lock kept"; rm -rf "$L"
+echo "-- ownerless lock: someone else, stop"
+mkdir "$L"; take; ls -d "$L" >/dev/null && echo "foreign lock untouched"; rm -rf "$L"
+echo "-- another worktree: stop"
+mkdir "$L" && printf '/elsewhere\nbranch=%s commit=x at=x purpose=interactive\n' "$(git branch --show-current)" > "$L/owner"
+take; rm -rf "$L"
+echo "-- free: take and release"
+take; ls -d "$L" 2>/dev/null || echo "own lock released"
 ```
 
-Expected: `device slot already held by this lane; reusing it`, `took`, `caller lock kept`, then `took`, `own lock released`.
+Expected, in order: `reusing it`, `took`, `rc=0`, `caller lock kept`; `held by another lane`, `rc=3`, `foreign lock untouched`; `held by another lane`, `rc=3`; `took`, `rc=0`, `own lock released`.
 
 - [ ] **Step 6: Install, then run the JS gates**
 
@@ -925,7 +946,8 @@ const styles = StyleSheet.create({
 #!/usr/bin/env bash
 # Run one JS spike probe in the release build, `runs` times, and print one JSON payload per run.
 # Usage: scripts/spike-js.sh <ping|segmenter|extract> [timeout_s=120] [runs=1]
-# Exit: 0 results printed, 1 timeout, 2 app died (crash lines printed), 3 no slot, 5 phone locked.
+# Exit: 0 results printed, 1 timeout, 2 app died (crash lines printed), 3 no slot, 5 phone locked,
+# 6 uncommitted changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 NAME=${1:?usage: spike-js.sh <name> [timeout_s] [runs]}
@@ -934,6 +956,7 @@ TIMEOUT=${2:-120}; RUNS=${3:-1}
 cleanup() { adb shell am force-stop "$PKG" >/dev/null 2>&1 || true; }
 DEVICE_ON_EXIT=cleanup
 device_take interactive
+device_require_committed
 device_require_unlocked
 device_install_release
 for run in $(seq "$RUNS"); do
@@ -963,7 +986,12 @@ chmod +x scripts/spike-js.sh
 
 - [ ] **Step 7: Run on the device (Review Focus 1, then SPIKE-03)**
 
+Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+
 ```bash
+git add App.tsx android/app/src/main/java/io/loopstring/readme/MainActivity.kt src/spikes \
+  __tests__/spikes.test.ts scripts/spike-js.sh
+git commit -m "spike: SPIKE-03 probe harness and Intl.Segmenter probe (not for merge)"
 npm run build:release
 scripts/spike-js.sh ping
 scripts/spike-js.sh does-not-exist
@@ -976,13 +1004,7 @@ Expected:
 - `does-not-exist` prints `{"spike":"does-not-exist","error":"unknown spike"}`.
 - `segmenter` prints three lines. Either `present:false` or the sentence list with `bigMs` answers SPIKE-03. Note the short hash.
 
-- [ ] **Step 8: Commit the probe on the spike branch, record the answer, ship the answer**
-
-```bash
-git add App.tsx android/app/src/main/java/io/loopstring/readme/MainActivity.kt src/spikes \
-  __tests__/spikes.test.ts scripts/spike-js.sh
-git commit -m "spike: SPIKE-03 probe harness and Intl.Segmenter probe (not for merge)"
-```
+- [ ] **Step 8: Push the probe branch, record the answer, ship the answer**
 
 Push the probe branch (`git push -u origin "$(git branch --show-current)"`) and do **not** open a PR for it. Then record the answer with the Task 9 template and ship it with Task 9's "Shipping a spike answer". The answer must state: `present` and `hermes`; how each abbreviation in `SAMPLE` was split (for example, whether `Dr.`, `p.m.` and `U.S.` ended a sentence); `bigMs` as the median of the 3 runs; the consequence for R-M08; and "Not established: segmentation of non-English text and CJK; behaviour on Hermes versions other than the one in RN 0.87.1".
 
@@ -998,11 +1020,11 @@ Branch: probe branch from `/start-issue <SPIKE-02 issue>`, then `git merge --no-
 
 **Interfaces:**
 - Consumes: `PROBES`, `runSpike` (Task 4), `scripts/spike-js.sh`
-- Produces: `extractProbe(): Promise<{results: ExtractResult[]}>`, where `ExtractResult = {name: string; bytes: number; parseMs: number; readabilityMs: number; titleChars: number; textChars: number; blocks: number}`.
+- Produces: `extractProbe(): Promise<{results: ExtractResult[]}>`, where `ExtractResult = {name: string; bytes: number; parseMs: number; readabilityMs: number; blocksMs: number; titleChars: number; textChars: number; blocks: number}`. The F17 total is `parseMs + readabilityMs + blocksMs`: HTML to paragraphs, which is all of `extract` (CONTEXT.md).
 
 Fixture licenses: Wikipedia and MDN text is CC BY-SA, and Project Gutenberg's *Pride and Prejudice* is US public domain. All three stay on this spike branch only. The downloads run on the dev machine as test setup. They are not app network use.
 
-Pass line (roadmap F17, **confirmed by the owner 2026-10-01**): the 5 MB page extracts in 10 s or less (`parseMs + readabilityMs`, median of 3 runs) with no crash, and every page under 1 MB in 1.5 s or less, on the reference device in a release build. Pass means linkedom. Fail means the hidden WebView, with ADR 0003.
+Pass line (roadmap F17, **confirmed by the owner 2026-10-01**): the 5 MB page extracts in 10 s or less (`parseMs + readabilityMs + blocksMs`, median of 3 runs) with no crash, and every page under 1 MB in 1.5 s or less, on the reference device in a release build. Pass means linkedom. Fail means the hidden WebView, with ADR 0003.
 
 - [ ] **Step 1: Download the fixtures**
 
@@ -1155,6 +1177,7 @@ export type ExtractResult = {
   bytes: number;
   parseMs: number;
   readabilityMs: number;
+  blocksMs: number;
   titleChars: number;
   textChars: number;
   blocks: number;
@@ -1188,11 +1211,13 @@ export async function extractProbe(): Promise<{results: ExtractResult[]}> {
     const blocks = article?.content
       ? parseHTML(article.content).document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li').length
       : 0;
+    const t3 = Date.now();
     results.push({
       name: f.name,
       bytes: utf8Bytes(f.html),
       parseMs: t1 - t0,
       readabilityMs: t2 - t1,
+      blocksMs: t3 - t2,
       titleChars: article?.title?.length ?? 0,
       textChars: article?.textContent?.length ?? 0,
       blocks,
@@ -1211,7 +1236,13 @@ Expected: PASS, 6 tests in 2 suites. Typecheck and lint exit 0. This exact code 
 
 - [ ] **Step 6: Run SPIKE-02 on the device, three times**
 
+Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+
 ```bash
+git add package.json package-lock.json babel.config.js jest.config.js .gitignore \
+  scripts/fetch-spike-fixtures.sh scripts/make-spike-fixtures.mjs spikes/fixtures \
+  src/spikes/run.ts src/spikes/extractProbe.ts __tests__/spikes.test.ts
+git commit -m "spike: SPIKE-02 Readability+linkedom probe with real-page fixtures (not for merge)"
 npm run build:release
 scripts/spike-js.sh extract 300 3 | tee /tmp/claude-spike02.jsonl
 git rev-parse --short HEAD
@@ -1219,21 +1250,16 @@ git rev-parse --short HEAD
 
 Expected: three JSON lines with four results each. Exit 2 means Hermes crashed (likely OOM on `synthetic-5mb`), and that crash is itself the SPIKE-02 answer: record the crash lines. If `npm run build:release` fails, stop. That is a build defect on this branch, not a SPIKE-02 result, and must not be recorded as "linkedom fails on Hermes".
 
-- [ ] **Step 7: Commit the probe, record the answer, ship the answer**
+- [ ] **Step 7: Push the probe branch, record the answer, ship the answer**
 
-```bash
-git add package.json package-lock.json babel.config.js jest.config.js .gitignore \
-  scripts/fetch-spike-fixtures.sh scripts/make-spike-fixtures.mjs spikes/fixtures \
-  src/spikes/run.ts src/spikes/extractProbe.ts __tests__/spikes.test.ts
-git commit -m "spike: SPIKE-02 Readability+linkedom probe with real-page fixtures (not for merge)"
-```
+Push the probe branch without a PR.
 
 The answer must state:
-- the per-fixture `parseMs + readabilityMs`, median of 3, next to the F17 line;
+- the per-fixture `parseMs + readabilityMs + blocksMs`, median of 3, next to the F17 line;
 - the verdict (linkedom or hidden WebView, by the F17 line) and the build facts Phase 1 inherits: the Babel plugin and the Jest transform list;
 - "Not established: pages that need JS to render, non-Latin scripts, memory headroom with the app's real UI loaded".
 
-If the verdict is the WebView, also write `docs/adr/0003-extraction-in-webview.md` (or the next free number). Push the probe branch without a PR, then ship the answer (and the ADR) with Task 9's "Shipping a spike answer".
+If the verdict is the WebView, also write `docs/adr/0003-extraction-in-webview.md`. Push the probe branch without a PR, then ship the answer (and the ADR) with Task 9's "Shipping a spike answer".
 
 ---
 
@@ -1612,6 +1638,8 @@ class SynthLoad(context: Context, private val sentences: List<String>, private v
   private val handler = Handler(Looper.getMainLooper())
   private val lock = Any()
   private val synthMs = ArrayList<Long>()
+  private val bytesPerChar = ArrayList<Long>()
+  private var currentChars = 1
   private var errors = 0
   private var rejected = 0
   private var stops = 0
@@ -1643,7 +1671,9 @@ class SynthLoad(context: Context, private val sentences: List<String>, private v
     val f = File(cacheDir, "spike-synth-$seq.wav")
     current = f
     currentStartedAt = SystemClock.elapsedRealtime()
-    val rc = tts.synthesizeToFile(sentences[seq % sentences.size], Bundle(), f, "s$seq")
+    val text = sentences[seq % sentences.size]
+    currentChars = text.length.coerceAtLeast(1)
+    val rc = tts.synthesizeToFile(text, Bundle(), f, "s$seq")
     seq++
     if (rc != TextToSpeech.SUCCESS) {
       // Rejected outright: no callback will come, so stop instead of spinning. The report shows it.
@@ -1655,7 +1685,14 @@ class SynthLoad(context: Context, private val sentences: List<String>, private v
 
   private fun complete(ok: Boolean) {
     synchronized(lock) {
-      if (ok) synthMs.add(SystemClock.elapsedRealtime() - currentStartedAt) else errors++
+      if (ok) {
+        synthMs.add(SystemClock.elapsedRealtime() - currentStartedAt)
+        // WAV size tracks audio duration, so bytes per char exposes a rate leaking INTO this
+        // instance (faster audio = fewer bytes), which synth time alone would hide.
+        current?.let { bytesPerChar.add(it.length() / currentChars) }
+      } else {
+        errors++
+      }
       current?.delete()
       if (running) nextLocked()
     }
@@ -1688,6 +1725,7 @@ class SynthLoad(context: Context, private val sentences: List<String>, private v
           .put("synths", sorted.size)
           .put("synthP50", if (sorted.isEmpty()) 0 else GapStats.percentile(sorted, 50))
           .put("synthP95", if (sorted.isEmpty()) 0 else GapStats.percentile(sorted, 95))
+          .put("bytesPerCharP50", bytesPerChar.sorted().let { if (it.isEmpty()) 0 else GapStats.percentile(it, 50) })
           .put("errors", errors)
           .put("rejected", rejected)
           .put("stops", stops)
@@ -1977,6 +2015,7 @@ restore() {
 DEVICE_ON_EXIT=restore
 device_take interactive
 trap 'exit 130' INT TERM
+device_require_committed
 device_require_unlocked
 device_install_release
 WIFI_WAS=$(adb shell settings get global wifi_on | tr -d '\r')
@@ -2007,7 +2046,15 @@ chmod +x scripts/spike-gap.sh
 
 - [ ] **Step 8: Unit tests, build, and a 1-minute smoke run**
 
+Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+
 ```bash
+git add android/app/build.gradle android/app/src/main/AndroidManifest.xml \
+  android/app/src/main/java/io/loopstring/readme/MainActivity.kt \
+  android/app/src/main/java/io/loopstring/readme/spike android/app/src/test \
+  android/app/src/main/assets/spike/corpus.txt scripts/fetch-spike-corpus.sh \
+  scripts/lib/spike.sh scripts/spike-gap.sh
+git commit -m "spike: SPIKE-05 gap probe and native spike harness (not for merge)"
 (cd android && ./gradlew --quiet :app:testDebugUnitTest)
 npm run build:release
 scripts/spike-gap.sh single 1
@@ -2052,18 +2099,13 @@ scripts/spike-gap.sh idle2 10  | tee -a /tmp/claude-spike05.jsonl   # as SPIKE-0
 git rev-parse --short HEAD
 ```
 
+Validity first: `idle2` counts only if its `load.initStatus` is `0`, meaning the second instance actually bound. Otherwise it was a `single` run; record why and rerun.
+
 Decision rule: compare `idle2` `gapP95` and `gapMax` against R-M07: p95 at most 300 ms, max at most 1,000 ms, `stalls` 0, `reason` `done`. If `reason` is `hung` or `stalls` is above 0, rerun `scripts/spike-gap.sh idle2 10 2.0 true`. If the wake lock fixes it, PlaybackService needs a partial wake lock, and that is part of the answer.
 
-- [ ] **Step 12: Commit the probe, record the answer, ship the answer**
+- [ ] **Step 12: Record the answer, ship the answer**
 
-```bash
-git add android/app/build.gradle android/app/src/main/AndroidManifest.xml \
-  android/app/src/main/java/io/loopstring/readme/MainActivity.kt \
-  android/app/src/main/java/io/loopstring/readme/spike android/app/src/test \
-  android/app/src/main/assets/spike/corpus.txt scripts/fetch-spike-corpus.sh \
-  scripts/lib/spike.sh scripts/spike-gap.sh
-git commit -m "spike: SPIKE-05 gap probe and native spike harness (not for merge)"
-```
+If any step above changed code, it was committed before the run that measured it (the scripts enforce this).
 
 The answer must state:
 - `single` and `idle2` `gapP50`, `gapP95`, `gapMax`, `stalls` and `reason` against R-M07;
@@ -2099,9 +2141,10 @@ The instances are independent only if all of these hold in `concurrent`:
 - `stopsBeforeFinish` 0, `errors` 0 and `load.errors` 0, so neither instance cancelled the other;
 - `gapP95` within 20% of `idle2`;
 - `load.synthP50` within 50% of the `synthonly` `load.synthP50`, so synthesis is not serializing behind playback;
+- `load.bytesPerCharP50` within 10% of the `synthonly` value. A rate leaking from playback (2.0) into the load (1.0) would shrink the WAVs, which a faster `synthP50` would otherwise hide.
 - `usPerCharP50` within 15% of `idle2`. Playback runs at 2.0 and the load runs at 1.0, so a rate leak between instances shows up as roughly twice the time per character. That would violate non-negotiable 9 inside the app.
 
-If any check fails, record which one. AGENTS.md 13 then needs `docs/adr/0003-tts-contention-policy.md` (or the next free number), with the policy SPIKE-06 names, for example "the bridge answers 503 while Read Me is playing".
+If any check fails, record which one. AGENTS.md 13 then needs `docs/adr/0004-tts-contention-policy.md`, with the policy SPIKE-06 names, for example "the bridge answers 503 while Read Me is playing".
 
 - [ ] **Step 3: Record and ship**
 
@@ -2264,7 +2307,9 @@ class SpikeBridge(context: Context, private val token: String, private val port:
       // R-M12: Throwable, so one connection can never take the service down. Class name only.
       Log.w(SpikeService.TAG, "conn: ${t.javaClass.simpleName}")
     }
-    SpikeService.report("BRIDGE", JSONObject().put("method", method).put("route", route).put("status", status)
+    // The method is client-controlled; log only a fixed token (AGENTS.md 1).
+    val loggedMethod = if (method in KNOWN_METHODS) method else "other"
+    SpikeService.report("BRIDGE", JSONObject().put("method", loggedMethod).put("route", route).put("status", status)
         .put("ms", SystemClock.elapsedRealtime() - t0).put("importance", importance()))
   }
 
@@ -2352,6 +2397,7 @@ class SpikeBridge(context: Context, private val token: String, private val port:
     private const val MAX_HEAD = 16 * 1024
     private const val MAX_BODY = 64 * 1024
     private const val ALLOWED_ORIGIN = "http://localhost"
+    private val KNOWN_METHODS = setOf("GET", "POST", "OPTIONS")
     private val REASONS = mapOf(
         200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized",
         404 to "Not Found", 413 to "Payload Too Large", 431 to "Request Header Fields Too Large",
@@ -2442,15 +2488,19 @@ try {
   })()`;
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-  // Bounded: a hung evaluate must not hold the device slot forever.
+  // Bounded: a hung evaluate must not hold the device slot forever. The timer is cleared so a
+  // successful probe exits at once instead of waiting out the 90 s.
+  let timer;
   const reply = await Promise.race([
     new Promise(resolve => {
       ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id === 1) resolve(d); };
       ws.send(JSON.stringify({id: 1, method: 'Runtime.evaluate',
         params: {expression, awaitPromise: true, returnByValue: true}}));
     }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('CDP evaluate timed out after 90 s')), 90_000)),
-  ]);
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('CDP evaluate timed out after 90 s')), 90_000);
+    }),
+  ]).finally(() => clearTimeout(timer));
   ws.close();
   console.log('OBSIDIAN', reply.result?.result?.value ?? JSON.stringify(reply.result?.exceptionDetails ?? reply));
 } finally {
@@ -2479,6 +2529,7 @@ cleanup() {
 }
 DEVICE_ON_EXIT=cleanup
 device_take interactive
+device_require_committed
 device_require_unlocked
 device_install_release
 TOK=$(openssl rand -hex 16)   # generated here; the app never logs it (AGENTS.md 4)
@@ -2521,7 +2572,13 @@ The last line must print `0`. The `curl` calls pass the token in a header on the
 
 - [ ] **Step 5: Build and run SPIKE-01 under both types (owner unlocks the phone before each)**
 
+Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+
 ```bash
+git add android/app/src/main/java/io/loopstring/readme/spike/SpikeBridge.kt \
+  android/app/src/main/java/io/loopstring/readme/spike/SpikeService.kt \
+  scripts/spike-bridge.sh scripts/obsidian-cdp-probe.mjs
+git commit -m "spike: SPIKE-01 background bridge probe, driven from inside Obsidian (not for merge)"
 (cd android && ./gradlew --quiet :app:testDebugUnitTest)
 npm run build:release
 scripts/spike-bridge.sh media   2>&1 | tee /tmp/claude-spike01-media.txt
@@ -2563,21 +2620,14 @@ Expected: `{"bridge":"bind-failed","error":"BindException"}`, and `pidof` still 
 
 Expected: a `{"deleted":N}` payload. The line has to exist, which proves the sweep runs at service start.
 
-- [ ] **Step 8: Commit the probe, record the answer with an ADR, ship the answer**
-
-```bash
-git add android/app/src/main/java/io/loopstring/readme/spike/SpikeBridge.kt \
-  android/app/src/main/java/io/loopstring/readme/spike/SpikeService.kt \
-  scripts/spike-bridge.sh scripts/obsidian-cdp-probe.mjs
-git commit -m "spike: SPIKE-01 background bridge probe, driven from inside Obsidian (not for merge)"
-```
+- [ ] **Step 8: Record the answer with an ADR, ship the answer**
 
 The answer must state:
 - per type: the `SPIKE_FGS` result, the CDP results, the 20-call status counts, the importance values, and the token count of `0`;
 - the chosen service-type design;
 - "Not established: Android 14-16 (only the Android 17 reference device was available), targetSdk 37, screen-off bridge use while Obsidian itself is backgrounded, the real plugin's request pattern".
 
-Write `docs/adr/0003-foreground-service-types.md` (or the next free number), because the answer fixes R-M12's service type. Push the probe branch without a PR, then ship the answer and the ADR with Task 9's "Shipping a spike answer".
+Write `docs/adr/0005-foreground-service-types.md`, because the answer fixes R-M12's service type. Push the probe branch without a PR, then ship the answer and the ADR with Task 9's "Shipping a spike answer".
 
 ---
 
@@ -2602,13 +2652,17 @@ ANSWER_SHA=$(git rev-parse HEAD)
 git show --stat --format= "$ANSWER_SHA"           # must list only srs.md and docs/adr files
 git push -u origin "$PROBE"                        # probe branch: pushed, never PR'd
 git fetch origin main
+# Gitignored spike output (e.g. src/spikes/fixtures.generated.ts) is ignored only on the probe
+# branch and would show as untracked on main. Remove it; `npm run spike:fixtures` restores it.
+rm -f src/spikes/fixtures.generated.ts
 git checkout -b "$PROBE-answer" origin/main
+[ -z "$(git status --porcelain)" ] || { echo "answer branch is not clean; stop"; git status --short; }
 git config "branch.$PROBE-answer.base-branch" main
 git cherry-pick "$ANSWER_SHA"
 git diff --stat origin/main...HEAD                 # must list only srs.md and docs/adr files
 ```
 
-Then run `/ship` on the `-answer` branch (it matches `spike/rea-{N}-*`, so `/ship` treats it as a spike). After it merges, `/finish` on the `-answer` branch. The probe branch stays (Step 3 below).
+Then run `/ship` on the `-answer` branch (it matches `spike/rea-{N}-*`, so `/ship` treats it as a spike). After it merges, run `/finish` on the `-answer` branch **but skip its Step 10** (doc edits committed directly on `main`): this plan allows no direct commits to `main`, and the Known-state and roadmap updates for all spikes go in one docs branch in Step 2 below. The probe branch stays (Step 3 below). To return to the probe branch: `git checkout "$PROBE" && npm run spike:fixtures` where that script exists.
 
 Every number in an answer comes from that spike's saved output (AGENTS.md 17). An answer that rests on reasoning rather than a device run is not recorded. minSdk and targetSdk are **not** spike answers. If R-M13's "set by SPIKE-01 findings" turns out not to hold, say so in the SPIKE-01 answer and leave the values to an owner decision with an ADR.
 
@@ -2618,7 +2672,11 @@ Every number in an answer comes from that spike's saved output (AGENTS.md 17). A
 
 ```bash
 git checkout main && git pull --ff-only
-for n in 1 2 3 4 5 6; do printf "SPIKE-0$n: "; grep -A4 "SPIKE-0$n" srs.md | grep -c "Answer ("; done
+# Count "Answer (" inside each spike's bullet block (up to the next spike bullet or heading).
+for n in 1 2 3 4 5 6; do
+  printf "SPIKE-0$n: "
+  awk -v id="SPIKE-0$n" '/^- \*\*SPIKE-0[0-9]/ {blk = index($0, id) > 0; next} /^#/ {blk = 0} blk && /Answer \(/ {c++} END {print c + 0}' srs.md
+done
 grep -rnP "\x{2014}" srs.md AGENTS.md CONTEXT.md docs || echo "no em-dashes"
 ```
 
