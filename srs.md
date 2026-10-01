@@ -445,6 +445,9 @@ Each spike answers one question on the reference device and records the answer h
   Android 14+ and Android 17?
 - **SPIKE-02 - Extraction on Hermes.** Does Readability run on Hermes with a pure-JS DOM
   (e.g. linkedom), at acceptable speed for a 5 MB page? If not, extract in a hidden WebView.
+  Pass line (owner, 2026-10-01): on the reference device in a release build, a 5 MB page
+  extracts in 10 s or less with no crash, and every page under 1 MB in 1.5 s or less (median
+  of 3 runs).
 - **SPIKE-03 - `Intl.Segmenter` on Hermes.** Present? If not, R-M08's fallback is the path.
 - **SPIKE-04 - F-Droid-clean bare React Native.** A hello-world release build with the
   chosen SQLite library passes an F-Droid-style scan (no proprietary dependencies) from a
@@ -472,6 +475,7 @@ named one.
 | 2026-10-01 | Trimming: automatic extraction, then a manual trim view. Rule-based, no AI. |
 | 2026-10-01 | Distribution: GitHub APK and F-Droid; no Play in v1. iOS later. |
 | 2026-10-01 | Bare React Native, not Expo. |
+| 2026-10-01 | SPIKE-02 pass line set (5 MB in 10 s or less; under 1 MB in 1.5 s or less). |
 
 # Critique resolutions (2026-10-01)
 

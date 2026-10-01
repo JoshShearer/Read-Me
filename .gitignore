@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# React Native / Android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# Editors and OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+
+# Agent pipeline state (machine-local, never committed)
+.claude/pipeline-state*.json
+.claude/last-critique.md
+.claude/scratch/
+# Device slot lock: one attached phone, taken atomically with mkdir
+.claude/device.lock/
