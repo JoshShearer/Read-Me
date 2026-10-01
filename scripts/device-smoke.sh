@@ -10,10 +10,17 @@ device_install_release
 adb shell am force-stop "$PKG"
 adb logcat -c
 adb shell am start -W -n "$PKG/.MainActivity" | grep -E "Status|LaunchState|TotalTime"
-PID=$(adb shell pidof "$PKG" | tr -d '\r')   # taken before any crash, for the native match
+# The pid is taken before any crash, for the native match. pidof exits 1 while the process is
+# not up yet, which would end the script silently under set -e, so poll and tolerate misses.
+PID=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  PID=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+  [ -n "$PID" ] && break
+  sleep 1
+done
 sleep 3
 fail=0
-[ -n "$(adb shell pidof "$PKG" | tr -d '\r')" ] || { echo "FAIL: process not running"; fail=1; }
+[ -n "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)" ] || { echo "FAIL: process not running"; fail=1; }
 adb shell dumpsys activity activities | grep -q "topResumedActivity.*$PKG/.MainActivity" \
   || { echo "FAIL: MainActivity not resumed"; fail=1; }
 if adb logcat -d -b crash,main | device_crash_seen "$PID"; then

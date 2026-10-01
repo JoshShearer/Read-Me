@@ -59,4 +59,34 @@ check "another app's native crash is not ours" \
   "$(printf 'F libc    : Fatal signal 11 (SIGSEGV), code 1, fault addr 0x0 in tid 77 (x), pid 12345 (other.app)\nF DEBUG   : >>> com.other.app <<<\n' | seen 1234)" 1
 check "a clean log is not a crash" "$(printf 'I ReactNativeJS: Running "ReadMe"\n' | seen 1234)" 1
 
+# device-smoke.sh end to end against a stub adb: it must report, never die silently, when the
+# app is slow to start or never starts (pidof exits 1 under set -euo pipefail).
+smoke_run() {  # $1 = how many pidof calls fail before the process "appears" (99 = never)
+  mkdir -p "$T/smoke/bin" "$T/smoke/repo/scripts/lib" "$T/smoke/repo/android/app/build/outputs/apk/release"
+  cat > "$T/smoke/bin/adb" <<STUB
+#!/bin/bash
+n=\$(cat "$T/smoke/pidof-calls" 2>/dev/null || echo 0)
+case "\$*" in
+  devices) printf 'List of devices attached\nX\tdevice\n\n' ;;
+  "shell dumpsys power") echo "  mWakefulness=Awake" ;;
+  "shell dumpsys window") echo "    isKeyguardShowing=false" ;;
+  "shell dumpsys activity activities") echo "  topResumedActivity=ActivityRecord{1 u0 io.loopstring.readme/.MainActivity t1}" ;;
+  "shell pidof io.loopstring.readme")
+    echo \$((n+1)) > "$T/smoke/pidof-calls"
+    if [ "\$n" -ge "$1" ]; then echo 4242; else exit 1; fi ;;
+  "shell am start -W"*) printf 'Status: ok\nLaunchState: UNKNOWN (0)\n' ;;
+  install*) echo Success ;;
+  *) : ;;
+esac
+STUB
+  chmod +x "$T/smoke/bin/adb"; rm -f "$T/smoke/pidof-calls"
+  cp "$ROOT/scripts/lib/device.sh" "$T/smoke/repo/scripts/lib/"; cp "$ROOT/scripts/device-smoke.sh" "$T/smoke/repo/scripts/"
+  ( cd "$T/smoke/repo" && { [ -d .git ] || { git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i && git checkout -q -b t; }; }
+    touch android/app/build/outputs/apk/release/app-release.apk
+    PATH="$T/smoke/bin:$PATH" bash scripts/device-smoke.sh 2>&1 ) > "$T/smoke/out"; echo $?
+}
+check "device-smoke passes when the app starts a moment late" "$(smoke_run 2)" 0
+check "device-smoke fails loudly when the app never starts" "$(smoke_run 99)" 1
+check "and says why" "$(grep -c 'FAIL: process not running' "$T/smoke/out")" 1
+
 exit $fail
