@@ -123,7 +123,8 @@ Take the one-phone slot, and check there is exactly one device:
 ```bash
 LOCK="$HOME/Documents/Dev/Read-Me/.claude/device.lock"
 mkdir "$LOCK" 2>/dev/null || { echo "device slot held: $(cat "$LOCK/owner" 2>/dev/null)"; exit 1; }
-echo "$(git branch --show-current) $(date -Is)" > "$LOCK/owner"
+# Same owner format as worktrees.md (path line, then branch=...), read by scripts/lib/device.sh.
+printf '%s\nbranch=%s commit=%s at=%s purpose=interactive\n' "$(git rev-parse --show-toplevel)" "$(git branch --show-current)" "$(git rev-parse --short HEAD)" "$(date -Is)" > "$LOCK/owner"
 adb devices
 ```
 

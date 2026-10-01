@@ -116,7 +116,11 @@ Rule 17: do not quote a size, a gap or a latency you did not measure in this ses
 One phone, one lane. Take the slot first, in the primary repo:
 
 ```bash
-mkdir "$HOME/Documents/Dev/Read-Me/.claude/device.lock" || echo "HELD BY ANOTHER LANE - stop"
+LOCK="$HOME/Documents/Dev/Read-Me/.claude/device.lock"
+mkdir "$LOCK" 2>/dev/null || { echo "HELD BY ANOTHER LANE - stop: $(head -2 "$LOCK/owner" 2>/dev/null | tr '\n' ' ')"; exit 1; }
+# Same owner format as worktrees.md and run-tickets.md, so scripts/lib/device.sh can see
+# this lane already holds the slot when npm run device:install runs below.
+printf '%s\nbranch=%s commit=%s at=%s purpose=interactive\n' "$(git rev-parse --show-toplevel)" "$(git branch --show-current)" "$(git rev-parse --short HEAD)" "$(date -Is)" > "$LOCK/owner"
 adb devices
 ```
 
@@ -138,7 +142,7 @@ ro.build.version.release`, and the commit (`git rev-parse --short HEAD`).
 Release the slot when Step 6 is done, pass or fail:
 
 ```bash
-rmdir "$HOME/Documents/Dev/Read-Me/.claude/device.lock"
+rm -rf "$HOME/Documents/Dev/Read-Me/.claude/device.lock"
 ```
 
 ## Step 6: Drive the app as a user would
