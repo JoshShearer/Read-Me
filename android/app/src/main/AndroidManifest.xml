@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
       R-M06. An app targeting API 30+ cannot see or bind a TTS engine without this query.
@@ -34,5 +39,14 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <!-- Spike branch only (SPIKE-01, -05, -06). Started by MainActivity, never by adb. -->
+      <service
+        android:name=".spike.SpikeService"
+        android:exported="false"
+        android:foregroundServiceType="mediaPlayback|specialUse">
+        <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Loopback text-to-speech bridge serving audio to another app on this device" />
+      </service>
     </application>
 </manifest>
