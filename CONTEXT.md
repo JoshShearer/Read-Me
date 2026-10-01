@@ -24,8 +24,7 @@ Rules of the layering:
 - **JS never drives playback.** It hands `PlaybackService` the sentence list and a start offset;
   the service queues, advances, saves positions, and emits events JS may or may not be alive
   to receive.
-- **Kotlin owns the database** (owner decision 2026-10-01, roadmap finding F11; `srs.md` still
-  says TS `library` on SQLite and needs the amendment). Intake, `Fetcher` and `PlaybackService`
+- **Kotlin owns the database** (ADR 0001). Intake, `Fetcher` and `PlaybackService`
   write while JS may not be running, so JS reads and writes only through `ReadMeSpeech`.
 - **The bridge knows nothing about items.** It turns POSTed text into WAV, nothing more.
 - **Segmentation lives only in `segment`.** Everything persisted addresses text by
@@ -57,12 +56,25 @@ Obsidian plugin -> POST /synthesize?rate=1.0 -> WAV -> plugin Player applies rat
 | bridge | `BridgeServer`; the Obsidian plugin's route to native TTS |
 | reference device | Pixel 9 Pro XL, GrapheneOS, Android 17 (see `srs.md`) |
 
-## Planned source layout
+## Source layout
 
-Set by the scaffold ticket; record the real tree here when it lands. Expected shape: `src/` for
-TS modules (`intake/`, `extract/`, `segment/`, `library/`, `reader/`), `android/` for the React
-Native Android project with the Kotlin module under
-`android/app/src/main/java/.../readme/`, `__tests__/` or colocated tests, `docs/adr/`.
+Real tree since the scaffold (2026-10-01):
+
+```text
+App.tsx, index.js            React Native entry (template screen until the reader lands)
+__tests__/                   Jest tests
+android/app/src/main/java/io/loopstring/readme/   Kotlin (MainActivity, MainApplication; ReadMeSpeech planned)
+scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
+                             fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot)
+docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages)
+.github/workflows/ci.yml     CI: js job + android job
+```
+
+Planned: `src/` for TS modules (`intake/`, `extract/`, `segment/`, `library/`, `reader/`).
+
+**Identifiers:** application id `io.loopstring.readme`; launcher `io.loopstring.readme/.MainActivity`;
+JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS` (JS console),
+`ReadMeSpike` (spike branches only).
 
 ## Known structural gaps
 

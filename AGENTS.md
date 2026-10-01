@@ -23,23 +23,21 @@ opencode read the same rules.
 
 ## Quality gates
 
-**There is no code yet, so there are no gates yet.** The scaffold ticket establishes them, and
-it must replace this paragraph with the real commands and the CI workflow that runs them. Until
-then every command that runs gates reports `GATES: NOT YET ESTABLISHED` rather than inventing a
-pass. The intended set, so commands and plans agree on names:
+Established by the scaffold (feature/rea-0-scaffold; no Linear issue yet). CI runs the first seven on every PR and push to `main`
+(`.github/workflows/ci.yml`); the device gates need the phone and run locally.
 
 ```bash
-npm test                                   # TS unit tests (intake, extract, segment, library, trim)
-npm run typecheck                          # tsc --noEmit
-npm run lint                               # eslint
-(cd android && ./gradlew testDebugUnitTest) # Kotlin unit tests (Fetcher, BridgeServer, queue)
-(cd android && ./gradlew assembleRelease)  # release build, F-Droid-clean dependency set
-npm run device:install                     # adb install the release build on the attached phone
-npm run device:smoke                       # scripted on-device checks over adb (R-M14)
+npm run typecheck                           # tsc --noEmit
+npm run lint                                # eslint (app sources; .mjs dev scripts are not linted)
+npm test                                    # Jest
+npm run test:scripts                        # node:test + bash tests for scripts/ (license parser, lock rules, manifest)
+node scripts/check-licenses.mjs             # OSI licenses, ADR 0002 exceptions
+(cd android && ./gradlew testDebugUnitTest) # Kotlin unit tests
+npm run build:release                       # assembleRelease
+scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolved Gradle tree, licenses
+npm run device:install                      # takes the device slot, installs the release build
+npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
 ```
-
-None of these exist until the scaffold lands. Verify each one exists (`npm run`, `ls`) before
-depending on it - rule 14.
 
 ### Device work: the one-phone slot
 
@@ -48,7 +46,8 @@ lane at a time may hold it: a run takes `.claude/device.lock/` (in the primary c
 `mkdir` before installing, immediately writes `.claude/device.lock/owner` as two lines (the
 worktree path from `git rev-parse --show-toplevel`, then `branch=<name> commit=<hash> at=<time>
 purpose=<...>`), and removes the directory after. A lock with no owner file is treated as another
-lane's. `adb devices` must show exactly one device, or the command stops and says
+lane's. `scripts/lib/device.sh` implements it; every device script sources it. The phone has a
+secure lock screen, so device scripts stop with exit 5 when it is locked and the owner unlocks it. `adb devices` must show exactly one device, or the command stops and says
 so. Installing a build replaces whatever build another lane installed; whoever installs says so.
 
 Bridge checks also need Obsidian on the same phone with the `local-tts-reader` plugin; the
@@ -104,7 +103,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 ### Distribution
 
 14. **F-Droid-clean.** No Google Play Services, Firebase, Crashlytics, proprietary SDKs or
-    binary blobs without source. Every dependency is OSI-licensed. Check the resolved Gradle
+    binary blobs without source. Every dependency is OSI-licensed, except CC-BY-4.0 data-only
+    packages listed by name under ADR 0002 (`scripts/check-licenses.mjs`). Check the resolved Gradle
     dependency tree after any dependency change, not just `package.json`.
 
 ---
@@ -125,20 +125,19 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 
 ## Known state
 
-- **No code.** The repo holds `srs.md` (committed `08888dc`, 2026-10-01, with critique findings
-  F1-F10 resolved in place), this file, `CONTEXT.md` and the command infrastructure.
+- **Scaffold only:** RN 0.87.1 template app, gates and CI. No product modules yet.
 - **Six spikes precede implementation** (`srs.md`, "Spikes"). None has run.
 - **Measured facts this spec rests on** live in the plugin repo's `AGENTS.md`, section "Android
   playback throughput, and the native-TTS bridge (2026-10-01)": native TTS RTF 0.116-0.169 at
   rate 1.0 on the reference device, the `TTS_SERVICE` query proven causal, `::1` from
   `getLoopbackAddress()`, zero `onRangeStart` callbacks. They are cited, not re-measured here.
-- **Build toolchain on this machine** (from the prototype work, re-verify before relying on it):
-  Android SDK at `~/Android/Sdk` with build-tools 34.0.0 and platform android-34; Temurin JDK 21
-  under `~/Android/tools` (path in `~/Android/tools/jdk-path.txt`). No Gradle, Node toolchain
-  for React Native, or NDK has been verified for this repo.
-- **Placeholders the scaffold must fill:** the app's `applicationId` and its logcat tag are not
-  defined yet. The commands refer to `<applicationId>` / `$PKG` and `<AppLogTag>`; record both in
-  `CONTEXT.md` when the scaffold lands, and replace the gates paragraph above with the real gates.
+- **Build toolchain on this machine** (verified 2026-10-01 by the scaffold build): Android SDK at
+  `~/Android/Sdk` with `platforms;android-37.0`, `build-tools;37.0.0`, `build-tools;36.0.0` (AGP default), `ndk;27.1.12297006`,
+  `cmake;3.22.1`, platform-tools 37.0.1; JDK 21 on `PATH`; Node 24.21.0. Gradle 9.4.1 comes from
+  the wrapper.
+- **Identifiers:** application id `io.loopstring.readme` (`$PKG`), launcher
+  `io.loopstring.readme/.MainActivity`, JS component `ReadMe`. Log tags: `ReadMe` for native code,
+  `ReactNativeJS` for the JS console, `ReadMeSpike` on spike branches only (see `CONTEXT.md`).
 - **The GitHub repo is private** (`JoshShearer/Read-Me`); it must be public before F-Droid.
 
 ## Style

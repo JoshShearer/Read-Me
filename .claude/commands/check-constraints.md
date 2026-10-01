@@ -207,7 +207,7 @@ Mechanical proxy: is the build on the phone newer than the change?
 
 ```bash
 adb devices
-adb shell dumpsys package <applicationId> | grep -E 'versionName|lastUpdateTime'
+adb shell dumpsys package io.loopstring.readme | grep -E 'versionName|lastUpdateTime'
 git log -1 --format=%ci
 ```
 
