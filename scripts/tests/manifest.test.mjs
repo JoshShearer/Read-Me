@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const manifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
-const DOMAINS = ['root', 'file', 'database', 'sharedpref', 'external'];
+// All nine domains documented for data-extraction rules (developer.android.com/identity/data/autobackup),
+// including device-protected storage.
+const DOMAINS = ['root', 'file', 'database', 'sharedpref', 'external',
+  'device_root', 'device_file', 'device_database', 'device_sharedpref'];
 
 test('allowBackup is false', () => {
   assert.match(manifest, /android:allowBackup="false"/);

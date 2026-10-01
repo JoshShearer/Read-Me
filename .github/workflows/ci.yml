@@ -48,4 +48,6 @@ jobs:
         working-directory: android
         run: |
           ./gradlew --no-daemon --quiet :app:dependencies --configuration releaseRuntimeClasspath > deps.txt
-          ! grep -iE "com\.google\.android\.gms|firebase|crashlytics|play-services|com\.google\.android\.play" deps.txt
+          if grep -iE "com\.google\.android\.gms|firebase|crashlytics|play-services|com\.google\.android\.play" deps.txt; then
+            echo "non-free dependency in the release runtime classpath"; exit 1
+          fi

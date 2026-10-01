@@ -28,8 +28,9 @@ PY
 echo "== 2. APK binary scan"
 APK=android/app/build/outputs/apk/release/app-release.apk
 if [ ! -f "$APK" ]; then echo "missing $APK; run npm run build:release"; fail=1
-elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ]; then
-  echo "stale APK: its stamp is not HEAD; run npm run build:release"; fail=1
+elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ] \
+     || [ "$(sed -n 2p "$APK.stamp" 2>/dev/null)" != clean ]; then
+  echo "APK not built from a clean HEAD (stamp: $(tr '\n' ' ' < "$APK.stamp" 2>/dev/null)); run npm run build:release"; fail=1
 else "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1; fi
 
 echo "== 3. non-free Gradle dependencies (resolved tree)"

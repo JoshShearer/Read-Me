@@ -44,11 +44,19 @@ rm -rf "$L"
 check "a free slot is taken" "$(take)" 0
 check "and released on exit" "$([ -d "$L" ] && echo kept || echo released)" released
 
-# device-smoke.sh crash detection (F4): a native tombstone line must count as a crash.
-grep -q 'grep -iE "fatal|AndroidRuntime"' "$ROOT/scripts/device-smoke.sh"
-check "device-smoke matches crash lines case-insensitively (F4)" "$?" 0
-echo 'F libc    : Fatal signal 11 (SIGSEGV), code 1, pid 123 (io.loopstring.readme)' \
-  | grep -iE "fatal|AndroidRuntime" | grep -q io.loopstring.readme
-check "a native Fatal signal line is detected" "$?" 0
+# device_crash_seen <pid>: reads logcat on stdin. Real formats: the native libc line carries
+# /proc/self/comm, which ART truncates to the LAST 15 chars of the package ("opstring.readme"),
+# so the package name never appears on it; debuggerd prints ">>> <package> <<<"; Java crashes
+# print "AndroidRuntime: Process: <package>, PID: <pid>".
+seen() { bash -c '. scripts/lib/device.sh; device_crash_seen "$1"' _ "$1" >/dev/null 2>&1; echo $?; }
+check "native crash: truncated-comm libc line matched by pid" \
+  "$(printf 'F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 1290 (mqt_js), pid 1234 (opstring.readme)\n' | seen 1234)" 0
+check "native crash: debuggerd >>> package <<< line" \
+  "$(printf 'F DEBUG   : pid: 1234, tid: 1290, name: mqt_js  >>> io.loopstring.readme <<<\n' | seen 9999)" 0
+check "java crash: AndroidRuntime Process line" \
+  "$(printf 'E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: Process: io.loopstring.readme, PID: 1234\n' | seen 1234)" 0
+check "another app's native crash is not ours" \
+  "$(printf 'F libc    : Fatal signal 11 (SIGSEGV), code 1, fault addr 0x0 in tid 77 (x), pid 12345 (other.app)\nF DEBUG   : >>> com.other.app <<<\n' | seen 1234)" 1
+check "a clean log is not a crash" "$(printf 'I ReactNativeJS: Running "ReadMe"\n' | seen 1234)" 1
 
 exit $fail

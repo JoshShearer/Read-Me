@@ -37,6 +37,7 @@ device_take() {
     trap - EXIT
     echo "device slot held by another lane:" >&2
     cat "$DEVICE_LOCK/owner" >&2 2>/dev/null || true
+    echo "if that holder is gone (a killed script or session), release it by hand: rm -rf $DEVICE_LOCK" >&2
     exit 3
   fi
 }
@@ -91,6 +92,15 @@ device_require_measured_build() {
     echo "the APK was not built from this clean commit (stamp: $(tr '\n' ' ' < "$stamp" 2>/dev/null || echo none)); run npm run build:release" >&2
     exit 6
   fi
+}
+
+# device_crash_seen <pid>: reads logcat on stdin; exits 0 if it shows a crash of $PKG.
+# The native libc "Fatal signal ... pid N (comm)" line carries /proc/self/comm, which ART
+# truncates to the last 15 chars of the package, so it is matched by pid, not by name.
+# debuggerd's ">>> <package> <<<" line and Java's "Process: <package>, PID" line carry the name.
+device_crash_seen() {
+  local pid=${1:-none}
+  grep -qE "Fatal signal .*[^0-9]pid $pid [(]|>>> $PKG <<<|AndroidRuntime: Process: $PKG,"
 }
 
 device_install_release() {
