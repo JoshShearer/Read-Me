@@ -15,7 +15,8 @@ fail=0
 [ -n "$(adb shell pidof "$PKG" | tr -d '\r')" ] || { echo "FAIL: process not running"; fail=1; }
 adb shell dumpsys activity activities | grep -q "topResumedActivity.*$PKG/.MainActivity" \
   || { echo "FAIL: MainActivity not resumed"; fail=1; }
-if adb logcat -d -b crash,main | grep -E "FATAL|AndroidRuntime" | grep -q "$PKG"; then
+# Case-insensitive: native crashes log "Fatal signal", Java ones "FATAL EXCEPTION".
+if adb logcat -d -b crash,main | grep -iE "fatal|AndroidRuntime" | grep -q "$PKG"; then
   echo "FAIL: crash logged"; fail=1
 fi
 echo "device:smoke $([ $fail -eq 0 ] && echo PASS || echo FAIL)"

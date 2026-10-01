@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "build:release": "scripts/build-release.sh",
     "device:install": "scripts/device-install.sh",
-    "device:smoke": "scripts/device-smoke.sh"
+    "device:smoke": "scripts/device-smoke.sh",
+    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh"
   },
   "dependencies": {
     "react": "19.2.3",

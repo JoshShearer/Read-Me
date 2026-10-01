@@ -26,7 +26,9 @@ device_take() {
   trap _device_exit EXIT
   if mkdir "$DEVICE_LOCK" 2>/dev/null; then
     DEVICE_LOCK_OURS=1
-    printf '%s\n%s\n' "$(git rev-parse --show-toplevel)" "$(_device_owner_line "$purpose")" > "$DEVICE_LOCK/owner"
+    # purpose=script:... marks a lock a device script took for itself; it is never adopted, so
+    # two scripts in one lane cannot install over each other.
+    printf '%s\n%s\n' "$(git rev-parse --show-toplevel)" "$(_device_owner_line "script:$purpose")" > "$DEVICE_LOCK/owner"
   elif _device_lock_held_by_this_lane; then
     # /ship, /verify, /worktrees and /run-tickets take the lock themselves and then call
     # npm run device:install. Reuse it, and leave it for the caller to release.
@@ -40,15 +42,22 @@ device_take() {
 }
 
 # Every lock taker (worktrees.md, run-tickets.md, ship.md, verify.md) writes the worktree path
-# on line 1 and "branch=<name> ..." on line 2. Ours = same worktree AND same named branch.
-# A detached HEAD has no branch name, so it never adopts a lock. An ownerless lock (someone
-# mid-mkdir, or an old command) is never ours.
+# on line 1 and "branch=<name> ... purpose=<p>" on line 2. Ours = same worktree, same named
+# branch (compared literally, not as a regex), and not a lock another device script took
+# (purpose=script:...). A detached HEAD has no branch name, so it never adopts a lock. An
+# ownerless lock (someone mid-mkdir, or an old command) is never ours.
 _device_lock_held_by_this_lane() {
-  local owner="$DEVICE_LOCK/owner" top branch
+  local owner="$DEVICE_LOCK/owner" top branch line2
   [ -f "$owner" ] || return 1
   top=$(git rev-parse --show-toplevel); branch=$(git branch --show-current)
   [ -n "$branch" ] || return 1
-  [ "$(sed -n 1p "$owner")" = "$top" ] && grep -q "^branch=$branch " "$owner"
+  [ "$(sed -n 1p "$owner")" = "$top" ] || return 1
+  line2=$(sed -n 2p "$owner")
+  case "$line2" in
+    *" purpose=script:"*) return 1 ;;
+    "branch=$branch "*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 _device_exit() {

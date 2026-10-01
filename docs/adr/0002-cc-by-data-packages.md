@@ -22,5 +22,7 @@ list is an owner decision recorded by amending this ADR.
 ## Consequences
 
 - `scripts/check-licenses.mjs` reports every violation, not only the first.
-- F-Droid's inclusion policy accepts free-culture data licenses. Re-confirm when the F-Droid
-  metadata is written (roadmap Phase 6).
+- F-Droid's Inclusion Policy (f-droid.org/docs/Inclusion_Policy, read 2026-10-01) allows
+  non-functional assets under less restrictive licenses provided redistribution is allowed.
+  CC-BY-4.0 allows redistribution. Whether F-Droid treats build-time browser data as such an
+  asset is not established; re-confirm when the F-Droid metadata is written (roadmap Phase 6).

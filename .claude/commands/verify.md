@@ -2,9 +2,9 @@
 description: Run the local gates if they exist, install the release build on the attached phone, walk a manual test plan over adb, and post what was actually observed to the Linear issue.
 ---
 
-Verify a change. There is no code yet, so there are no gates and no CI workflow yet; the
-scaffold ticket establishes both (`AGENTS.md`, "Quality gates"). Until then this command reports
-`GATES: NOT YET ESTABLISHED` and never invents a pass. Once CI exists it is a backstop, not the
+Verify a change. The gates and the CI workflow exist since the scaffold (`AGENTS.md`, "Quality
+gates" is the one list); a gate missing from `package.json` is still reported missing by name and
+never as passing. Once CI exists it is a backstop, not the
 source of truth: you **may** read a check conclusion once and report it; you **must not** wait on
 it.
 

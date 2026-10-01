@@ -5,9 +5,8 @@ description: Run the gates, take an adversarial pass over the diff, commit, push
 Conventions: `.claude/linear.md`. Rules and gates: `AGENTS.md`. Architecture: `CONTEXT.md`.
 Spec: `srs.md`.
 
-**There are no gates and no CI yet.** The scaffold ticket establishes both and records them in
-`AGENTS.md`'s quality-gates block. Until then this command reports `GATES: NOT YET ESTABLISHED`
-in Step 4 and in the PR, and never invents a pass. Once CI exists, you **may** read a check
+**Gates and CI exist since the scaffold** (`AGENTS.md`, "Quality gates"). Run the ones that exist,
+report any missing one by name, and never invent a pass. Once CI exists you **may** read a check
 conclusion once and report it; you **must not** wait on it, and nothing runs the gates for you
 at the moment you commit.
 

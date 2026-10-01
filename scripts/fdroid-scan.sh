@@ -10,9 +10,10 @@ export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 VENV=.venv-fdroid
 [ -x "$VENV/bin/fdroid" ] || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5; } || exit 1
 fail=0
+SRC=$(mktemp -d); DEPS=$(mktemp)
+trap 'rm -rf "$SRC" "$DEPS"' EXIT
 
 echo "== 1. source scan of clean HEAD export"
-SRC=$(mktemp -d)
 git archive HEAD | tar -x -C "$SRC"
 "$VENV/bin/python" - "$SRC" <<'PY' || fail=1
 import sys, logging
@@ -26,12 +27,13 @@ PY
 
 echo "== 2. APK binary scan"
 APK=android/app/build/outputs/apk/release/app-release.apk
-if [ -f "$APK" ]; then "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1
-else echo "missing $APK; run npm run build:release"; fail=1; fi
+if [ ! -f "$APK" ]; then echo "missing $APK; run npm run build:release"; fail=1
+elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ]; then
+  echo "stale APK: its stamp is not HEAD; run npm run build:release"; fail=1
+else "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1; fi
 
 echo "== 3. non-free Gradle dependencies (resolved tree)"
 # Capture first: a failed gradlew piped straight into grep would read as "none found".
-DEPS=$(mktemp)
 if ! ( cd android && ./gradlew --quiet :app:dependencies --configuration releaseRuntimeClasspath ) > "$DEPS"; then
   echo "gradlew dependencies failed"; fail=1
 elif grep -niE "com\.google\.android\.gms|firebase|crashlytics|play-services|com\.google\.android\.play" "$DEPS"; then
