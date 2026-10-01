@@ -452,6 +452,35 @@ Each spike answers one question on the reference device and records the answer h
 - **SPIKE-04 - F-Droid-clean bare React Native.** A hello-world release build with the
   chosen SQLite library passes an F-Droid-style scan (no proprietary dependencies) from a
   clean checkout.
+  **Answer (2026-10-01; build host only, no device needed; RN 0.87.1 scaffold, build a091d37
+  on feature/rea-0-scaffold; fresh `git clone`, `npm ci`, `npm run build:release`,
+  `scripts/fdroid-scan.sh`, then fdroidserver 2.4.5 `scanner.scan_source` over the clone after
+  `npm ci`):** no proprietary dependencies, but not F-Droid-clean as is: the release build runs
+  a prebuilt `hermesc`, and the tree after `npm ci` holds binaries an F-Droid recipe must remove
+  or replace.
+  Observed: the documented commands built `app-release.apk` (54055877 bytes, stamp a091d37 clean)
+  with no extra step. `scripts/fdroid-scan.sh` printed all four sections and `== result: CLEAN`:
+  source scan of the git export `source problems: 0`; APK dexdump scan found no non-free
+  classes; resolved Gradle tree `none` for gms, firebase, crashlytics and play-services; npm
+  `450 production packages, 1 recorded data exception(s)` (`caniuse-lite`, ADR 0002). The
+  F-Droid scanner over the clone after `npm ci` (build output excluded) reported 46 errors in
+  four packages: three prebuilt `hermesc` (Linux, macOS, Windows) in `node_modules/hermes-compiler`
+  (RN's Gradle plugin runs the Linux one to compile the release bundle unless
+  `react.hermesCommand` names another); five `fb-dotslash` launchers; 36 iOS-only
+  `fbt_language_pack.bin` files in `node_modules/react-native/React/I18n`; and unknown maven repos
+  in `react-native/ReactAndroid/publish.gradle` and `react-native-safe-area-context/android/build.gradle`.
+  It also warned on nine Windows DLLs beside `hermesc.exe`.
+  SQLite: platform `android.database.sqlite`, no dependency (ADR 0001).
+  Not established: an actual F-Droid build server run; whether F-Droid accepts the
+  `react-android` and `hermes-android` AARs (prebuilt native libraries, resolved from Maven
+  Central) or requires them built from source; a hermesc built from source producing the same
+  bundle. The caches in `~/.gradle` and `~/.npm` were warm, so this was a clean checkout, not a
+  clean machine.
+  Consequence: R-M13 holds for dependencies and licences. The Phase 6 F-Droid recipe needs a
+  `prebuild` that builds `hermesc` from the Hermes source and sets `react.hermesCommand`, and
+  `scandelete` for the dotslash, iOS and Windows binaries; `scripts/fdroid-scan.sh` should then
+  scan the tree after `npm ci` with the same deletions, since a git export misses everything in
+  `node_modules`. No ADR: no decision changes.
 - **SPIKE-05 - Gapless queueing at 2x.** Measure the inter-utterance gap as R-M07 defines
   it (`onDone(n)` to `onStart(n+1)`), with `QUEUE_ADD` and two `TextToSpeech` instances
   alive, on the reference device.
