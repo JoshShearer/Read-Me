@@ -1,45 +1,26 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, {useEffect, useState} from 'react';
+import {StyleSheet, Text, View} from 'react-native';
+import {runSpike} from './src/spikes/run';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+type Props = {spike?: string};
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+export default function App({spike}: Props) {
+  const [status, setStatus] = useState(spike ? `running spike: ${spike}` : 'Read Me');
+
+  useEffect(() => {
+    if (spike) {
+      runSpike(spike).then(setStatus);
+    }
+  }, [spike]);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
+    <View style={styles.root}>
+      <Text style={styles.text}>{status}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  root: {flex: 1, alignItems: 'center', justifyContent: 'center'},
+  text: {fontSize: 18},
 });
-
-export default App;
