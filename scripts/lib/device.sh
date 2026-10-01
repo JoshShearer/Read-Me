@@ -68,10 +68,17 @@ _device_exit() {
   exit $rc
 }
 
+# Every adb answer is read whole into a variable before it is searched. Piping adb into
+# `grep -q` under pipefail is wrong: grep exits at the first match, adb dies of SIGPIPE on a
+# large answer (dumpsys and logcat -d run to MBs), the pipeline returns 141, and a match reads
+# as a miss. device_has <text> <ERE> searches text that is already in hand.
+device_has() { grep -qE -- "$2" <<<"$1"; }
+
 # The phone has a secure lock screen that no script can dismiss. Stop early and say so.
 device_require_unlocked() {
-  if ! adb shell dumpsys power | grep -q 'mWakefulness=Awake' \
-     || ! adb shell dumpsys window | grep -q 'isKeyguardShowing=false'; then
+  local power window
+  power=$(adb shell dumpsys power); window=$(adb shell dumpsys window)
+  if ! device_has "$power" 'mWakefulness=Awake' || ! device_has "$window" 'isKeyguardShowing=false'; then
     echo "the phone is asleep or locked: ask the owner to unlock it, leave the screen on, rerun" >&2
     exit 5
   fi
@@ -94,20 +101,33 @@ device_require_measured_build() {
   fi
 }
 
-# device_crash_seen <pid>: reads logcat on stdin; exits 0 if it shows a crash of $PKG.
+# device_crash_seen <pid>: reads ALL of logcat on stdin (see device_has); exits 0 if it shows a
+# crash of $PKG.
 # The native libc "Fatal signal ... pid N (comm)" line carries /proc/self/comm, which ART
 # truncates to the last 15 chars of the package, so it is matched by pid, not by name.
 # debuggerd's ">>> <package> <<<" line and Java's "Process: <package>, PID" line carry the name.
 device_crash_seen() {
-  local pid=${1:-none}
-  grep -qE "Fatal signal .*[^0-9]pid $pid [(]|>>> $PKG <<<|AndroidRuntime: Process: $PKG,"
+  local pid=${1:-none} log
+  log=$(cat)
+  device_has "$log" "Fatal signal .*[^0-9]pid $pid [(]|>>> $PKG <<<|AndroidRuntime: Process: $PKG,"
 }
 
+# Installs only an APK that `npm run build:release` stamped from this HEAD, and records the
+# stamp (commit and clean/dirty), not HEAD: commit, build, commit again and HEAD names a build
+# the phone is not running. A dirty stamp is allowed here and recorded as dirty; spike runs
+# also call device_require_measured_build, which requires clean.
 device_install_release() {
+  local stamp="$APK.stamp" built
   [ -f "$APK" ] || { echo "missing $APK; run npm run build:release" >&2; exit 1; }
+  built=$(sed -n 1p "$stamp" 2>/dev/null || true)
+  if [ "$built" != "$(git rev-parse HEAD)" ]; then
+    echo "the APK was not built from HEAD (stamp: ${built:-none}); run npm run build:release" >&2
+    exit 6
+  fi
   adb install -r "$APK"
   mkdir -p "$PRIMARY/.claude/scratch"
-  printf '%s\n%s\n' "$(git rev-parse --show-toplevel)" "$(_device_owner_line installed)" \
+  printf '%s\nbranch=%s commit=%s tree=%s at=%s purpose=installed\n' "$(git rev-parse --show-toplevel)" \
+    "$(git branch --show-current)" "${built:0:7}" "$(sed -n 2p "$stamp")" "$(date -Iseconds)" \
     > "$PRIMARY/.claude/scratch/device-installed-from"
-  echo "installed $(git rev-parse --short HEAD) on the phone (replaces whatever build was there)"
+  echo "installed ${built:0:7} ($(sed -n 2p "$stamp")) on the phone (replaces whatever build was there)"
 }

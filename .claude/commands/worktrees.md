@@ -63,8 +63,9 @@ the checks or manual test that follow. It is released by `rm -rf "$PRIMARY/.clau
 by the holder only. A lock whose holder is gone is reported with its age and owner; it is never
 broken silently.
 
-**The installed-from marker** is `$PRIMARY/.claude/scratch/device-installed-from`, same format,
-written after every successful install. It outlives the lock, so it says which build the phone is
+**The installed-from marker** is `$PRIMARY/.claude/scratch/device-installed-from`, same format
+plus `tree=clean|dirty`, written by `npm run device:install` after every successful install. Its
+commit is the APK stamp's (the commit the build came from), not HEAD's. It outlives the lock, so it says which build the phone is
 running between sessions.
 
 **The marker is a declaration, not proof.** A session elsewhere may have installed without
@@ -333,9 +334,7 @@ mkdir "$PRIMARY/.claude/device.lock" || { echo "lock taken by someone else just 
 cd "${PRIMARY}-rea-<NUM>"
 LINE="branch=$(git branch --show-current) commit=$(git rev-parse --short HEAD) at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s\n%s purpose=interactive\n' "$(pwd)" "$LINE" > "$PRIMARY/.claude/device.lock/owner"
-npm run device:install
-mkdir -p "$PRIMARY/.claude/scratch"
-printf '%s\n%s\n' "$(pwd)" "$LINE" > "$PRIMARY/.claude/scratch/device-installed-from"
+npm run device:install   # refuses an APK not stamped from HEAD; writes the installed-from marker
 ```
 
 5. **Never wipe the app's data to get an install through.** If the install fails on a signature
