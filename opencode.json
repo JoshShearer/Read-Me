@@ -50,7 +50,12 @@
       "git *--upload-pack*": "ask",
       "git *-c *": "ask",
       "*>*": "ask",
+      "git *--no-index*": "ask",
+      "./gradlew *--init-script*": "ask",
+      "./gradlew *-I *": "ask",
+      "*.env*": "ask",
       "npm publish*": "deny"
-    }
+    },
+    "external_directory": "ask"
   }
 }
