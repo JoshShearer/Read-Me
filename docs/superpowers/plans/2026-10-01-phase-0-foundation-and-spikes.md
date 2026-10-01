@@ -8,7 +8,7 @@
 
 **Tech Stack:** React Native 0.87.1 (bare, Hermes, new architecture), `@react-native-community/cli` 20.2.0, TypeScript, Jest (`@react-native/jest-preset`), ESLint 8, Kotlin 2.2.0, Gradle 9.4.1, JUnit 4.13.2, GitHub Actions. Spike-only: `@mozilla/readability` 0.6.0, `linkedom` 0.18.13, `@babel/plugin-transform-export-namespace-from` 7.29.7. Dev tools: fdroidserver 2.4.5, `license-checker-rseidelsohn` 5.0.1.
 
-**Spec:** `srs.md` (SPEC-001). Rules: `AGENTS.md`. Architecture: `CONTEXT.md`. Roadmap and SRS review: `docs/superpowers/plans/2026-10-01-roadmap.md`. Revision 2 resolves the first critique (2026-10-01, BLOCK 35, F1-F15). Revision 3 resolves the second (CONCERNS 58, F1-F12). Revision 4 resolves the third (CONCERNS 60, F1-F13; `/verify` and `/ship` lock owner format normalised in the repo).
+**Spec:** `srs.md` (SPEC-001). Rules: `AGENTS.md`. Architecture: `CONTEXT.md`. Roadmap and SRS review: `docs/superpowers/plans/2026-10-01-roadmap.md`. Revision 2 resolves the first critique (2026-10-01, BLOCK 35, F1-F15). Revision 3 resolves the second (CONCERNS 58, F1-F12). Revision 4 resolves the third (CONCERNS 60, F1-F13; `/verify` and `/ship` lock owner format normalised in the repo). Revision 5 resolves the fourth (CONCERNS 72, F1-F6).
 
 ## Global Constraints
 
@@ -23,10 +23,11 @@
 - R-M12: the bridge binds `127.0.0.1` explicitly, never `InetAddress.getLoopbackAddress()`.
 - Every script that installs on or drives the phone sources `scripts/lib/device.sh`. That helper takes `$PRIMARY/.claude/device.lock/` with `mkdir`, writes the `owner` file in the `worktrees.md` format, requires exactly one device in state `device` and an unlocked, awake screen, and releases the lock on exit.
 - **Device runs are owner-attended.** The phone has a lock screen (`lock_settings get-disabled` is `false`), and `KEYCODE_SLEEP`, which every gap run uses, locks it. No script can unlock it. Every device script stops with exit 5 if the phone is asleep or locked, and the executor then asks the owner to unlock it. Do not try to work around the lock.
-- No commit lands on `main` directly. Branch per issue: `feature/rea-{N}-{slug}` or `spike/rea-{N}-{slug}` (`.claude/linear.md`). Stage explicit paths, never `git add -A`. Ship with `/ship`.
+- No commit lands on `main` directly, except the docs-only commits that `/finish` Step 10 and `/update-docs` are documented to make (`update-docs.md`, "Docs-only changes may go straight to `main`"). Branch per issue: `feature/rea-{N}-{slug}` or `spike/rea-{N}-{slug}` (`.claude/linear.md`). Stage explicit paths, never `git add -A`. Ship with `/ship`.
 - License policy (owner decision 2026-10-01, ADR 0002): production npm dependencies must be OSI-licensed, except CC-BY-4.0 **data-only** packages listed by name in `scripts/check-licenses.mjs`.
 - Reference device: Pixel 9 Pro XL, GrapheneOS, Android 17, adb serial `48071FDAS004PV`. Engines installed: `app.grapheneos.speechservices` (default) and `com.google.android.tts`.
 - Timing spikes use **release** builds only (`npm run build:release`). Debug builds run JS from Metro.
+- Raw spike output goes to `$PRIMARY/.claude/scratch/SPIKE-0N/` (gitignored, survives reboots; `/tmp` on this machine is wiped at boot by the `D /tmp` tmpfiles rule), the `run-tickets.md` convention.
 - Docs and comments use no em-dash characters.
 
 ## Review Focus
@@ -84,7 +85,8 @@ babel.config.js, metro.config.js, jest.config.js, tsconfig.json     template
 __tests__/App.test.tsx                                               template test
 android/...                                                          template + TTS query
 .gitignore                                                           existing file + template entries
-scripts/lib/device.sh          device slot: lock, one-device and unlocked checks, install, marker
+scripts/lib/device.sh          device slot: lock, one-device and unlocked checks, build stamp check, install, marker
+scripts/build-release.sh       npm run build:release: assembleRelease + commit stamp
 scripts/device-install.sh      npm run device:install
 scripts/device-smoke.sh        npm run device:smoke (launch + no FATAL; grows with R-M14)
 scripts/check-licenses.mjs     OSI check with recorded data exceptions
@@ -149,7 +151,7 @@ Branch: `/start-issue <scaffold issue>` creates `feature/rea-N-scaffold`.
   - `scripts/lib/device.sh`, sourced, provides:
     - `device_take <purpose>`: exits 3 if another lane holds the slot or there isn't exactly one device. If this lane already holds it (a `/ship` or `/verify` run that took the lock before calling `npm run device:install`), it reuses the lock and leaves releasing it to the caller.
     - `device_require_unlocked`: exits 5 if the screen is off or locked.
-    - `device_require_committed`: exits 6 if the working tree has uncommitted changes (spike scripts call it so every answer names the build that was measured).
+    - `device_require_measured_build`: exits 6 unless the tree is clean (ignoring `.claude/`) and the APK's stamp from `npm run build:release` names HEAD, built clean. Spike scripts call it so every answer names the build that was measured.
     - `device_install_release`: installs `android/app/build/outputs/apk/release/app-release.apk` and writes `$PRIMARY/.claude/scratch/device-installed-from`.
     - `DEVICE_ON_EXIT`: the name of a function that runs before the lock is released.
     - `PKG=io.loopstring.readme`.
@@ -277,11 +279,19 @@ device_require_unlocked() {
   fi
 }
 
-# Spike runs must name the commit that was measured (AGENTS.md 17), so refuse a dirty tree.
-device_require_committed() {
-  if [ -n "$(git status --porcelain)" ]; then
-    echo "uncommitted changes: commit first so the answer can cite the measured build" >&2
-    git status --short >&2
+# Spike runs must name the build that was measured (AGENTS.md 17): a clean tree, AND an APK
+# stamped by `npm run build:release` from exactly this commit while the tree was clean. A clean
+# tree alone is not enough: commit, build, commit again and the APK is the older commit's.
+device_require_measured_build() {
+  local stamp="$APK.stamp"
+  if [ -n "$(git status --porcelain -- . ':(exclude).claude')" ]; then
+    echo "uncommitted changes: commit, then npm run build:release" >&2
+    git status --short -- . ':(exclude).claude' >&2
+    exit 6
+  fi
+  if [ ! -f "$stamp" ] || [ "$(sed -n 1p "$stamp")" != "$(git rev-parse HEAD)" ] \
+     || [ "$(sed -n 2p "$stamp")" != clean ]; then
+    echo "the APK was not built from this clean commit (stamp: $(tr '\n' ' ' < "$stamp" 2>/dev/null || echo none)); run npm run build:release" >&2
     exit 6
   fi
 }
@@ -339,13 +349,35 @@ exit $fail
 chmod +x scripts/device-install.sh scripts/device-smoke.sh
 ```
 
+`scripts/build-release.sh`:
+
+```bash
+#!/usr/bin/env bash
+# npm run build:release - assembleRelease, then stamp the APK with the commit it was built from
+# and whether the tree was clean, so a spike answer can prove which build it measured
+# (AGENTS.md 17). .claude/ is excluded: tools write untracked files there.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+( cd android && ./gradlew --quiet assembleRelease )
+STAMP=android/app/build/outputs/apk/release/app-release.apk.stamp
+{
+  git rev-parse HEAD
+  if [ -z "$(git status --porcelain -- . ':(exclude).claude')" ]; then echo clean; else echo dirty; fi
+} > "$STAMP"
+echo "built $(sed -n 1p "$STAMP" | cut -c1-12) ($(sed -n 2p "$STAMP"))"
+```
+
+```bash
+chmod +x scripts/build-release.sh
+```
+
 - [ ] **Step 5: Add the npm scripts**
 
 In `package.json` `"scripts"`, keep the template's `lint`, `test` and `start`. Remove `ios`, and add:
 
 ```json
     "typecheck": "tsc --noEmit",
-    "build:release": "cd android && ./gradlew --quiet assembleRelease",
+    "build:release": "scripts/build-release.sh",
     "device:install": "scripts/device-install.sh",
     "device:smoke": "scripts/device-smoke.sh",
 ```
@@ -389,6 +421,7 @@ ls "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claud
 
 Expected:
 - The build succeeds. The first build downloads Gradle 9.4.1 and the RN artifacts, so it takes minutes.
+- The build prints `built <12-char hash> (clean)` once the tree is committed, or `(dirty)` before the Step 8 commit. Either is fine for the smoke test.
 - `device:smoke PASS`.
 - `slot released`.
 - `adb exec-out screencap -p > /tmp/claude-readme-shot.png`, opened with the Read tool, shows the RN welcome screen.
@@ -398,7 +431,7 @@ Expected:
 ```bash
 git add package.json package-lock.json app.json index.js App.tsx babel.config.js metro.config.js \
   jest.config.js tsconfig.json .eslintrc.js .prettierrc.js .watchmanconfig .bundle __tests__ android \
-  .gitignore scripts/lib/device.sh scripts/device-install.sh scripts/device-smoke.sh
+  .gitignore scripts/lib/device.sh scripts/build-release.sh scripts/device-install.sh scripts/device-smoke.sh
 git status --short   # nothing staged from .claude/, no local.properties, no build output
 git commit -m "chore: scaffold bare React Native 0.87.1 app (io.loopstring.readme)
 
@@ -716,11 +749,12 @@ Branch: `spike/rea-N-fdroid-clean`, from `main` after Task 2 merges. No probe co
 - [ ] **Step 1: Clean clone, documented commands only**
 
 ```bash
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-04"
 CLEAN=$(mktemp -d)
 git clone -q "$(git remote get-url origin)" "$CLEAN/rm" && cd "$CLEAN/rm"
 npm ci && printf 'sdk.dir=%s\n' "$HOME/Android/Sdk" > android/local.properties
 npm run build:release && ls -l android/app/build/outputs/apk/release/app-release.apk
-scripts/fdroid-scan.sh 2>&1 | tee /tmp/claude-spike04.txt; echo "exit=${PIPESTATUS[0]}"
+scripts/fdroid-scan.sh 2>&1 | tee "$SCR/SPIKE-04/fdroid-scan.txt"; echo "exit=${PIPESTATUS[0]}"
 git rev-parse --short HEAD
 ```
 
@@ -947,7 +981,7 @@ const styles = StyleSheet.create({
 # Run one JS spike probe in the release build, `runs` times, and print one JSON payload per run.
 # Usage: scripts/spike-js.sh <ping|segmenter|extract> [timeout_s=120] [runs=1]
 # Exit: 0 results printed, 1 timeout, 2 app died (crash lines printed), 3 no slot, 5 phone locked,
-# 6 uncommitted changes.
+# 6 uncommitted changes, or the APK was not built from HEAD.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 NAME=${1:?usage: spike-js.sh <name> [timeout_s] [runs]}
@@ -956,7 +990,7 @@ TIMEOUT=${2:-120}; RUNS=${3:-1}
 cleanup() { adb shell am force-stop "$PKG" >/dev/null 2>&1 || true; }
 DEVICE_ON_EXIT=cleanup
 device_take interactive
-device_require_committed
+device_require_measured_build
 device_require_unlocked
 device_install_release
 for run in $(seq "$RUNS"); do
@@ -986,16 +1020,17 @@ chmod +x scripts/spike-js.sh
 
 - [ ] **Step 7: Run on the device (Review Focus 1, then SPIKE-03)**
 
-Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+Commit the probe first, then build: the scripts refuse to run unless the tree is clean and the APK's stamp names HEAD, so the hash printed at the end is the build that was measured.
 
 ```bash
 git add App.tsx android/app/src/main/java/io/loopstring/readme/MainActivity.kt src/spikes \
   __tests__/spikes.test.ts scripts/spike-js.sh
 git commit -m "spike: SPIKE-03 probe harness and Intl.Segmenter probe (not for merge)"
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-03"
 npm run build:release
 scripts/spike-js.sh ping
 scripts/spike-js.sh does-not-exist
-scripts/spike-js.sh segmenter 120 3 | tee /tmp/claude-spike03.jsonl
+scripts/spike-js.sh segmenter 120 3 | tee "$SCR/SPIKE-03/segmenter.jsonl"
 git rev-parse --short HEAD
 ```
 
@@ -1236,15 +1271,16 @@ Expected: PASS, 6 tests in 2 suites. Typecheck and lint exit 0. This exact code 
 
 - [ ] **Step 6: Run SPIKE-02 on the device, three times**
 
-Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+Commit the probe first, then build: the scripts refuse to run unless the tree is clean and the APK's stamp names HEAD, so the hash printed at the end is the build that was measured.
 
 ```bash
 git add package.json package-lock.json babel.config.js jest.config.js .gitignore \
   scripts/fetch-spike-fixtures.sh scripts/make-spike-fixtures.mjs spikes/fixtures \
   src/spikes/run.ts src/spikes/extractProbe.ts __tests__/spikes.test.ts
 git commit -m "spike: SPIKE-02 Readability+linkedom probe with real-page fixtures (not for merge)"
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-02"
 npm run build:release
-scripts/spike-js.sh extract 300 3 | tee /tmp/claude-spike02.jsonl
+scripts/spike-js.sh extract 300 3 | tee "$SCR/SPIKE-02/extract.jsonl"
 git rev-parse --short HEAD
 ```
 
@@ -2015,7 +2051,7 @@ restore() {
 DEVICE_ON_EXIT=restore
 device_take interactive
 trap 'exit 130' INT TERM
-device_require_committed
+device_require_measured_build
 device_require_unlocked
 device_install_release
 WIFI_WAS=$(adb shell settings get global wifi_on | tr -d '\r')
@@ -2046,7 +2082,7 @@ chmod +x scripts/spike-gap.sh
 
 - [ ] **Step 8: Unit tests, build, and a 1-minute smoke run**
 
-Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+Commit the probe first, then build: the scripts refuse to run unless the tree is clean and the APK's stamp names HEAD, so the hash printed at the end is the build that was measured.
 
 ```bash
 git add android/app/build.gradle android/app/src/main/AndroidManifest.xml \
@@ -2094,8 +2130,9 @@ Expected: the original airplane value (`0` if it was off before), the original W
 Each run takes `minutes + ~1`. Use `run_in_background`, wait for the completion notification, and have the owner unlock the phone between runs.
 
 ```bash
-scripts/spike-gap.sh single 10 | tee -a /tmp/claude-spike05.jsonl   # baseline, one instance
-scripts/spike-gap.sh idle2 10  | tee -a /tmp/claude-spike05.jsonl   # as SPIKE-05 specifies: two instances alive
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-05"
+scripts/spike-gap.sh single 10 | tee -a "$SCR/SPIKE-05/gap.jsonl"   # baseline, one instance
+scripts/spike-gap.sh idle2 10  | tee -a "$SCR/SPIKE-05/gap.jsonl"   # as SPIKE-05 specifies: two instances alive
 git rev-parse --short HEAD
 ```
 
@@ -2105,10 +2142,10 @@ Decision rule: compare `idle2` `gapP95` and `gapMax` against R-M07: p95 at most 
 
 - [ ] **Step 12: Record the answer, ship the answer**
 
-If any step above changed code, it was committed before the run that measured it (the scripts enforce this).
+If any step above changed code, it was committed and rebuilt before the run that measured it. The scripts check the APK's build stamp against HEAD and refuse otherwise.
 
 The answer must state:
-- `single` and `idle2` `gapP50`, `gapP95`, `gapMax`, `stalls` and `reason` against R-M07;
+- `single` and `idle2` `gapP50`, `gapP95`, `gapMax`, `stalls`, `reason` and `usPerCharP50` (Task 7 compares against it) against R-M07;
 - whether a wake lock was needed;
 - the Step 9 refusal line;
 - whether R-M07's 300 ms target stands. If it has to change, amend R-M07 with the old value, the new value and the measurement;
@@ -2125,13 +2162,14 @@ Branch: probe branch from `/start-issue <SPIKE-06 issue>`, then `git merge --no-
 - [ ] **Step 1: Run the concurrency matrix (owner unlocks the phone before each run)**
 
 ```bash
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-06"
 npm run build:release
-scripts/spike-gap.sh concurrent 10 | tee -a /tmp/claude-spike06.jsonl   # speak() + synthesizeToFile() at once
-scripts/spike-gap.sh synthonly 3   | tee -a /tmp/claude-spike06.jsonl   # synth baseline, no playback
+scripts/spike-gap.sh concurrent 10 | tee -a "$SCR/SPIKE-06/gap.jsonl"   # speak() + synthesizeToFile() at once
+scripts/spike-gap.sh synthonly 3   | tee -a "$SCR/SPIKE-06/gap.jsonl"   # synth baseline, no playback
 git rev-parse --short HEAD
 ```
 
-Compare against the Task 6 `idle2` line in `/tmp/claude-spike05.jsonl`.
+Compare against the Task 6 `idle2` line in `$SCR/SPIKE-05/gap.jsonl` (kept under the primary's `.claude/scratch/`, which survives reboots; `/tmp` here is wiped at boot) or, failing that, the `usPerCharP50` and `gapP95` recorded in the SPIKE-05 answer.
 
 - [ ] **Step 2: Apply the decision rule**
 
@@ -2529,7 +2567,7 @@ cleanup() {
 }
 DEVICE_ON_EXIT=cleanup
 device_take interactive
-device_require_committed
+device_require_measured_build
 device_require_unlocked
 device_install_release
 TOK=$(openssl rand -hex 16)   # generated here; the app never logs it (AGENTS.md 4)
@@ -2572,7 +2610,7 @@ The last line must print `0`. The `curl` calls pass the token in a header on the
 
 - [ ] **Step 5: Build and run SPIKE-01 under both types (owner unlocks the phone before each)**
 
-Commit the probe first: the scripts refuse a dirty tree, and the hash printed at the end is then the build that was measured.
+Commit the probe first, then build: the scripts refuse to run unless the tree is clean and the APK's stamp names HEAD, so the hash printed at the end is the build that was measured.
 
 ```bash
 git add android/app/src/main/java/io/loopstring/readme/spike/SpikeBridge.kt \
@@ -2581,8 +2619,9 @@ git add android/app/src/main/java/io/loopstring/readme/spike/SpikeBridge.kt \
 git commit -m "spike: SPIKE-01 background bridge probe, driven from inside Obsidian (not for merge)"
 (cd android && ./gradlew --quiet :app:testDebugUnitTest)
 npm run build:release
-scripts/spike-bridge.sh media   2>&1 | tee /tmp/claude-spike01-media.txt
-scripts/spike-bridge.sh special 2>&1 | tee /tmp/claude-spike01-special.txt
+SCR="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/scratch"; mkdir -p "$SCR/SPIKE-01"
+scripts/spike-bridge.sh media   2>&1 | tee "$SCR/SPIKE-01/media.txt"
+scripts/spike-bridge.sh special 2>&1 | tee "$SCR/SPIKE-01/special.txt"
 git rev-parse --short HEAD
 ```
 
@@ -2643,26 +2682,29 @@ Write `docs/adr/0005-foreground-service-types.md`, because the answer fixes R-M1
   Consequence: <requirement or phase that changes, with the ADR if any, or "none">.
 ```
 
-**Shipping a spike answer.** The probe branch holds the probe commits. The answer is one commit containing only `srs.md` and any new `docs/adr/*.md`:
+**Shipping a spike answer.** The probe branch holds only probe commits: the answer is never committed there. That keeps stacked branches (Tasks 5, 7, 8 merge a parent probe branch) free of answer text, so an answer reworded during review can't conflict with the next stack. Write the answer on an answer branch cut from `main`:
 
 ```bash
 PROBE=$(git branch --show-current)                 # e.g. spike/rea-7-hermes-segmenter
-git add srs.md docs/adr && git commit -m "docs(srs): record SPIKE-0N answer"
-ANSWER_SHA=$(git rev-parse HEAD)
-git show --stat --format= "$ANSWER_SHA"           # must list only srs.md and docs/adr files
+BUILD=$(git rev-parse --short HEAD)                # the measured build; cite it in the answer
 git push -u origin "$PROBE"                        # probe branch: pushed, never PR'd
 git fetch origin main
 # Gitignored spike output (e.g. src/spikes/fixtures.generated.ts) is ignored only on the probe
 # branch and would show as untracked on main. Remove it; `npm run spike:fixtures` restores it.
 rm -f src/spikes/fixtures.generated.ts
-git checkout -b "$PROBE-answer" origin/main
-[ -z "$(git status --porcelain)" ] || { echo "answer branch is not clean; stop"; git status --short; }
+git checkout --no-track -b "$PROBE-answer" origin/main
+[ -z "$(git status --porcelain -- . ':(exclude).claude')" ] \
+  || { echo "answer branch is not clean; stop"; git status --short; exit 1; }
 git config "branch.$PROBE-answer.base-branch" main
-git cherry-pick "$ANSWER_SHA"
+echo "write the answer for build $BUILD into srs.md (and docs/adr/ if needed), then:"
+```
+
+```bash
+git add srs.md docs/adr && git commit -m "docs(srs): record SPIKE-0N answer"
 git diff --stat origin/main...HEAD                 # must list only srs.md and docs/adr files
 ```
 
-Then run `/ship` on the `-answer` branch (it matches `spike/rea-{N}-*`, so `/ship` treats it as a spike). After it merges, run `/finish` on the `-answer` branch **but skip its Step 10** (doc edits committed directly on `main`): this plan allows no direct commits to `main`, and the Known-state and roadmap updates for all spikes go in one docs branch in Step 2 below. The probe branch stays (Step 3 below). To return to the probe branch: `git checkout "$PROBE" && npm run spike:fixtures` where that script exists.
+Then run `/ship` on the `-answer` branch (it matches `spike/rea-{N}-*`, so `/ship` treats it as a spike). After it merges, run `/finish` on the `-answer` branch; its Step 10 docs-only commit on `main` is the repo's documented exception (Global Constraints). The probe branch stays (Step 3 below). To return to it: `git checkout "$PROBE" && npm run spike:fixtures` where that script exists. The raw output stays in `$SCR/SPIKE-0N/` (F3 convention below), not in the answer branch.
 
 Every number in an answer comes from that spike's saved output (AGENTS.md 17). An answer that rests on reasoning rather than a device run is not recorded. minSdk and targetSdk are **not** spike answers. If R-M13's "set by SPIKE-01 findings" turns out not to hold, say so in the SPIKE-01 answer and leave the values to an owner decision with an ADR.
 
@@ -2684,7 +2726,7 @@ Expected: each spike shows `1`, and the last line is `no em-dashes`.
 
 - [ ] **Step 2: Run `/update-docs`**
 
-Bring AGENTS.md "Known state" (replace "Six spikes ... None has run" with one line per verdict), CONTEXT.md "Known structural gaps", and the roadmap's Phase 0 row ("done (date)", verdicts listed) in line with the merged answers. Commit on a `feature/rea-N-*` docs branch, then `/ship`.
+Bring AGENTS.md "Known state" (replace "Six spikes ... None has run" with one line per verdict), CONTEXT.md "Known structural gaps", and the roadmap's Phase 0 row ("done (date)", verdicts listed) in line with the merged answers. `/update-docs` commits these docs-only changes on `main` as its documented exception; an ADR, if one is needed, still goes through a branch and `/ship`.
 
 - [ ] **Step 3: Keep the spike branches**
 
