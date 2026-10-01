@@ -451,6 +451,30 @@ Each spike answers one question on the reference device and records the answer h
   Pass line (owner, 2026-10-01): on the reference device in a release build, a 5 MB page
   extracts in 10 s or less with no crash, and every page under 1 MB in 1.5 s or less (median
   of 3 runs).
+  **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
+  build 6139cf0 on spike/rea-0-readability-hermes; `scripts/spike-js.sh extract 300 3`):**
+  passes. `@mozilla/readability` 0.6.0 over `linkedom` 0.18.13 runs on Hermes in the release
+  build within the pass line on every fixture, with no crash, so extraction stays in JS with
+  linkedom; no hidden WebView, no ADR 0003.
+  Observed (HTML to paragraphs, `parseMs + readabilityMs + blocksMs`, runs 1/2/3, median):
+  synthetic page of real prose at the cap, 5,241,998 bytes: 7982/8193/9337 ms, median 8193
+  (limit 10000); Gutenberg *Pride and Prejudice*, 852,590 bytes: 1196/1251/1349, median 1251
+  (limit 1500); Wikipedia "Speech synthesis", 705,129 bytes: 1293/1354/1431, median 1354 (limit
+  1500); MDN "SpeechSynthesis", 157,106 bytes: 200/206/224, median 206 (limit 1500). Readability
+  is the largest share (5502 ms of the 5 MB median run). Every run found a title and 28 to
+  14,363 blocks. Each fixture was slower in each successive run (the 5 MB page by 17% from run 1
+  to run 3), and Wikipedia's median sits at 90% of its limit.
+  Build facts Phase 1 inherits: `@babel/plugin-transform-export-namespace-from` in
+  `babel.config.js` (htmlparser2, via linkedom, ships `export * as ns`), and Jest's
+  `transformIgnorePatterns` must transform `linkedom|css-select|css-what|htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities|nth-check|boolbase`.
+  Readability is Apache-2.0 and linkedom ISC; the licence check passed with them added.
+  Not established: pages that need JS to render, non-Latin scripts, memory headroom with the
+  app's real UI loaded; the cause of the run-to-run slowdown (thermal or heap state; the three
+  runs were back to back, each in a fresh process); timings on a slower device.
+  Consequence: Phase 1 `extract` uses Readability over linkedom on Hermes. Since a median under
+  1 MB is at 90% of its limit and the runs drifted upward, Phase 1 re-measures `extract` on the
+  device with its own code. The JS thread is busy for seconds on a large page, so Phase 4's
+  list shows an extracting state rather than waiting on JS.
 - **SPIKE-03 - `Intl.Segmenter` on Hermes.** Present? If not, R-M08's fallback is the path.
 - **SPIKE-04 - F-Droid-clean bare React Native.** A hello-world release build with the
   chosen SQLite library passes an F-Droid-style scan (no proprietary dependencies) from a
