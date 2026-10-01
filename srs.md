@@ -259,7 +259,8 @@ The bridge MUST run only while enabled, and its foreground notification MUST say
 
 - v1 ships as a signed APK on GitHub Releases, then on F-Droid.
 - The build MUST be F-Droid-clean from v1: no Google Play Services, Firebase, Crashlytics,
-  proprietary SDKs, or binary blobs without source; all dependencies under OSI licenses;
+  proprietary SDKs, or binary blobs without source; all dependencies under OSI licenses, except CC-BY-4.0 data-only packages listed
+  under ADR 0002;
   builds from a clean checkout with documented commands.
 - Third-party license notices MUST ship in the app (Settings > Licenses).
 - `minSdk` and `targetSdk` are set by SPIKE-01 findings; `targetSdk` follows the current
@@ -371,7 +372,7 @@ share-intent hand-off, the one network fetch, and the bridge.
 | `intake` | Classify shared text (R-M02), create the item | native share hand-off |
 | `extract` | HTML to title/byline/paragraphs (R-M04) | Readability + a JS DOM implementation |
 | `segment` | Paragraphs to sentences with offsets (R-M08) | `Intl.Segmenter` or fallback |
-| `library` | Items, cuts, positions, archive; markdown export | SQLite |
+| `library` | Typed facade over the native Store (ADR 0001): items, cuts, positions, archive; markdown export | `ReadMeSpeech` |
 | `reader` | Screens; a view of `PlaybackService`, never its driver (R-M07) | `library`, `segment`, `ReadMeSpeech` |
 
 There is no JS network module. The R-M09 network guard asserts that no JS source references
@@ -379,6 +380,8 @@ There is no JS network module. The R-M09 network guard asserts that no JS source
 `Fetcher`.
 
 ## Data model
+
+Stored by the Kotlin Store (ADR 0001).
 
 ```text
 Item       id, kind(link|text), url?, title, site?, byline?, createdAt,
@@ -476,6 +479,8 @@ named one.
 | 2026-10-01 | Distribution: GitHub APK and F-Droid; no Play in v1. iOS later. |
 | 2026-10-01 | Bare React Native, not Expo. |
 | 2026-10-01 | SPIKE-02 pass line set (5 MB in 10 s or less; under 1 MB in 1.5 s or less). |
+| 2026-10-01 | Kotlin owns the database; JS goes through ReadMeSpeech (ADR 0001). |
+| 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
 
 # Critique resolutions (2026-10-01)
 

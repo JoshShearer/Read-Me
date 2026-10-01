@@ -88,3 +88,6 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# fdroidserver venv for scripts/fdroid-scan.sh
+.venv-fdroid/

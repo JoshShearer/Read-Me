@@ -140,10 +140,10 @@ Installing replaces whatever build another lane had on the phone. Say in your re
 did. Then drive the change as a user would, over adb:
 
 ```bash
-adb shell am start -n <applicationId>/.MainActivity
+adb shell am start -n io.loopstring.readme/.MainActivity
 adb shell input tap <x> <y>          # coordinates from the dump below, not guessed
 adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml
-adb logcat -d -s <AppLogTag>:V       # never paste item text from it; there should be none
+adb logcat -d -s ReadMe:V ReactNativeJS:V       # never paste item text from it; there should be none
 ```
 
 What to do, by area:

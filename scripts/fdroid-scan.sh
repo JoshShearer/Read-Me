@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# R-M13 / AGENTS.md 14: F-Droid-style checks. Runs all four and exits 0 only if all pass.
+#   1. fdroidserver source scan of a clean export of HEAD (what F-Droid's builder sees).
+#   2. fdroidserver binary scan of the release APK (known non-free classes).
+#   3. No Play Services / Firebase / Crashlytics in the resolved release runtime classpath.
+#   4. Production npm licenses (scripts/check-licenses.mjs, ADR 0002).
+set -uo pipefail
+cd "$(dirname "$0")/.."
+export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
+VENV=.venv-fdroid
+[ -x "$VENV/bin/fdroid" ] || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5; } || exit 1
+fail=0
+
+echo "== 1. source scan of clean HEAD export"
+SRC=$(mktemp -d)
+git archive HEAD | tar -x -C "$SRC"
+"$VENV/bin/python" - "$SRC" <<'PY' || fail=1
+import sys, logging
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+from fdroidserver import common, scanner
+common.get_config()
+n = scanner.scan_source(sys.argv[1])
+print("source problems:", n)
+sys.exit(1 if n else 0)
+PY
+
+echo "== 2. APK binary scan"
+APK=android/app/build/outputs/apk/release/app-release.apk
+if [ -f "$APK" ]; then "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1
+else echo "missing $APK; run npm run build:release"; fail=1; fi
+
+echo "== 3. non-free Gradle dependencies (resolved tree)"
+# Capture first: a failed gradlew piped straight into grep would read as "none found".
+DEPS=$(mktemp)
+if ! ( cd android && ./gradlew --quiet :app:dependencies --configuration releaseRuntimeClasspath ) > "$DEPS"; then
+  echo "gradlew dependencies failed"; fail=1
+elif grep -niE "com\.google\.android\.gms|firebase|crashlytics|play-services|com\.google\.android\.play" "$DEPS"; then
+  echo "non-free dependency found"; fail=1
+else echo "none"; fi
+
+echo "== 4. npm production licenses"
+node scripts/check-licenses.mjs || fail=1
+
+echo "== result: $([ $fail -eq 0 ] && echo CLEAN || echo PROBLEMS)"
+exit $fail
