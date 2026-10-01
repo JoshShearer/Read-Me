@@ -91,3 +91,6 @@ yarn-error.log
 
 # fdroidserver venv for scripts/fdroid-scan.sh
 .venv-fdroid/
+
+# SPIKE-02 generated fixtures
+src/spikes/fixtures.generated.ts
