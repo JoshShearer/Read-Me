@@ -44,6 +44,9 @@ npm run device:gap        # gap check: 2 min at 2x on battery (simulated), force
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
+npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
+                            # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
+npm run brand               # regenerates launcher, notification and store icons from scripts/gen-brand.py (needs Pillow)
 ```
 
 ### Device work: the one-phone slot

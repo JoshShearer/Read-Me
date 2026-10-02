@@ -24,6 +24,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import io.loopstring.readme.MainActivity
+import io.loopstring.readme.R
 import io.loopstring.readme.playback.PlaybackCommands.Route
 import io.loopstring.readme.store.Settings
 import io.loopstring.readme.store.Store
@@ -379,7 +380,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     val open = PendingIntent.getActivity(
       this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
     )
-    return b.setSmallIcon(android.R.drawable.ic_media_play)
+    return b.setSmallIcon(R.drawable.ic_stat_readme)
       .setContentTitle(title)
       .setContentText(if (s.playing) "Reading" else "Paused")
       .setContentIntent(open)

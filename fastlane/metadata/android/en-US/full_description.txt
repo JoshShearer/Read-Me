@@ -1,0 +1,22 @@
+Read Me Offline reads articles and text aloud with the text-to-speech voice already on your phone. Share a link from your browser or selected text from any app, cut the parts you don't want, and listen with the screen off.
+
+<b>Share it, trim it, listen to it</b>
+<ul>
+<li>Share a link and Read Me Offline fetches the page once and keeps only the article.</li>
+<li>Share selected text from any app and it is ready to read straight away.</li>
+<li>Trim before you listen: tap a paragraph to cut it (a newsletter plug, a comment section), or cut everything before or after a point. Cuts are never destructive; tap again to restore.</li>
+<li>The sentence being read is highlighted, and playback keeps going with the screen off. Media buttons and headset controls work.</li>
+<li>Speed from 0.5x to 4x. Your place is saved as you go, and finished items move to the Archive.</li>
+</ul>
+
+<b>Private by design</b>
+<ul>
+<li>Speech is made on your phone by Android's text-to-speech engine. Voices that need a network connection are never offered or used.</li>
+<li>The only network request is fetching a link you shared, or retrying one when you ask. No accounts, analytics, crash reporting, ads or update checks.</li>
+<li>What you save stays in the app's private storage and is never written to logs. Deleting an item deletes its text.</li>
+</ul>
+
+<b>A voice for Obsidian on Android</b>
+Obsidian on Android gives plugins no way to use the phone's speech engine. Read Me Offline can run a small speech service, reachable only from the phone itself, that the local-tts-reader Obsidian plugin uses to read your notes aloud with the same on-device voices. It is off until you turn it on in Settings.
+
+Read Me Offline needs a text-to-speech engine with at least one offline voice. Most phones have one; if yours doesn't, the app tells you and links to Android's speech settings.

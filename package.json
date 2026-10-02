@@ -21,7 +21,9 @@
     "device:playback": "bash scripts/device-playback-e2e.sh",
     "device:gap": "bash scripts/device-gap.sh",
     "notices": "node scripts/make-notices.mjs",
-    "device:ui": "bash scripts/device-ui-e2e.sh"
+    "device:ui": "bash scripts/device-ui-e2e.sh",
+    "brand": "python3 scripts/gen-brand.py",
+    "device:screenshots": "bash scripts/device-screenshots.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
