@@ -24,11 +24,13 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Taken before anything can insert: a share that starts this process is not recovered.
+    val startedAt = System.currentTimeMillis()
     loadReactNative(this)
     // R-M02 recovery at every process start, off the main thread (WorkManager queries block).
     Thread {
       try {
-        Recovery.run(this)
+        Recovery.run(this, startedAt)
       } catch (t: Throwable) {
         // AGENTS.md 1: the exception's class only; its message could carry a URL.
         Log.w("ReadMe", "recovery failed: ${t.javaClass.simpleName}")

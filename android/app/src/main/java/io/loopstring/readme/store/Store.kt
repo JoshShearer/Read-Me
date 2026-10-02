@@ -99,7 +99,7 @@ class Store private constructor(context: Context) :
       ContentValues().apply {
         put("kind", "link")
         put("url", url)
-        put("title", title)
+        put("title", cap(title))
         put("created_at", now)
         put("state", States.FETCHING)
       },
@@ -118,7 +118,7 @@ class Store private constructor(context: Context) :
         null,
         ContentValues().apply {
           put("kind", "text")
-          put("title", title)
+          put("title", cap(title))
           put("created_at", now)
           put("state", States.READY)
         },
@@ -164,8 +164,11 @@ class Store private constructor(context: Context) :
       out
     }
 
-  fun idsInState(state: String): List<Long> =
-    readableDatabase.rawQuery("SELECT id FROM items WHERE state = ?", arrayOf(state)).use {
+  fun idsInState(state: String, createdBefore: Long = Long.MAX_VALUE): List<Long> =
+    readableDatabase.rawQuery(
+      "SELECT id FROM items WHERE state = ? AND created_at < ?",
+      arrayOf(state, createdBefore.toString()),
+    ).use {
       val out = ArrayList<Long>(it.count)
       while (it.moveToNext()) out.add(it.getLong(0))
       out
@@ -177,7 +180,8 @@ class Store private constructor(context: Context) :
     val tmp = File(bodies, "$id.html.tmp")
     tmp.writeText(html, Charsets.UTF_8)
     if (!tmp.renameTo(bodyFile(id))) throw IllegalStateException("body rename failed")
-    setStateIf(id, States.FETCHING, States.FETCHED, null)
+    // Deleted (or no longer fetching) while the request ran: nothing will ever read this body.
+    if (!setStateIf(id, States.FETCHING, States.FETCHED, null)) bodyFile(id).delete()
   }
 
   fun fetchFailed(id: Long, reason: String) {
@@ -216,9 +220,9 @@ class Store private constructor(context: Context) :
       val updated = db.update(
         "items",
         ContentValues().apply {
-          put("title", title)
-          put("site", site)
-          put("byline", byline)
+          put("title", cap(title))
+          put("site", cap(site))
+          put("byline", cap(byline))
           put("state", if (poor) States.EXTRACT_POOR else States.READY)
           putNull("fail_reason")
         },
@@ -291,6 +295,7 @@ class Store private constructor(context: Context) :
   fun delete(id: Long) {
     writableDatabase.delete("items", "id = ?", arrayOf(id.toString()))
     bodyFile(id).delete()
+    File(bodies, "$id.html.tmp").delete()
     ItemEvents.changed()
   }
 
@@ -301,7 +306,7 @@ class Store private constructor(context: Context) :
     val stmt = db.compileStatement(
       "INSERT INTO paragraphs (item_id, idx, kind, text) VALUES (?, ?, ?, ?)",
     )
-    paragraphs.forEachIndexed { i, p ->
+    paragraphs.flatMap { p -> splitLong(p.text).map { ParagraphRow(p.kind, it) } }.forEachIndexed { i, p ->
       stmt.clearBindings()
       stmt.bindLong(1, id)
       stmt.bindLong(2, i.toLong())
@@ -334,6 +339,33 @@ class Store private constructor(context: Context) :
   companion object {
     private const val DB_NAME = "readme.db"
     private const val VERSION = 1
+    // A row over Android's 2 MB CursorWindow throws on every read of its table, which would hide
+    // the whole library behind one hostile page. Titles are capped; long paragraphs are split.
+    const val MAX_FIELD_CHARS = 1_000
+    const val MAX_PARAGRAPH_CHARS = 500_000 // at most 1.5 MB of UTF-8
+
+    internal fun cap(s: String?, max: Int = MAX_FIELD_CHARS): String? =
+      if (s == null || s.length <= max) s else s.substring(0, safeEnd(s, max))
+
+    /** Pieces of at most [max] chars that concatenate back to [text], cut after whitespace when possible. */
+    internal fun splitLong(text: String, max: Int = MAX_PARAGRAPH_CHARS): List<String> {
+      if (text.length <= max) return listOf(text)
+      val out = ArrayList<String>()
+      var start = 0
+      while (text.length - start > max) {
+        var end = start + max
+        val ws = (end - 1 downTo start + max / 2).firstOrNull { text[it].isWhitespace() }
+        end = if (ws != null) ws + 1 else safeEnd(text, end)
+        out.add(text.substring(start, end))
+        start = end
+      }
+      out.add(text.substring(start))
+      return out
+    }
+
+    // Never cut between the halves of a surrogate pair.
+    private fun safeEnd(s: String, end: Int) =
+      if (end > 0 && end < s.length && Character.isHighSurrogate(s[end - 1])) end - 1 else end
 
     @Volatile private var instance: Store? = null
 

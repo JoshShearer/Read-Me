@@ -34,7 +34,7 @@ class RecoveryTest {
   @Test fun aFetchingItemWithNoWorkIsInterrupted() {
     val store = Store.get(ctx)
     val id = store.insertLink("https://example.com/a", "example.com", 1000)
-    Recovery.run(ctx)
+    Recovery.run(ctx, startedAt = 2000)
     assertEquals(States.FETCH_FAILED, store.item(id)!!.state)
     assertEquals("interrupted", store.item(id)!!.failReason)
   }
@@ -44,7 +44,7 @@ class RecoveryTest {
     val store = Store.get(ctx)
     val id = store.insertLink("https://example.com/a", "example.com", 1000)
     FetchWorker.enqueue(ctx, id) // queued; the NEVER executor keeps it from running
-    Recovery.run(ctx)
+    Recovery.run(ctx, startedAt = 2000)
     assertEquals(States.FETCHING, store.item(id)!!.state)
   }
 
@@ -52,7 +52,15 @@ class RecoveryTest {
     val store = Store.get(ctx)
     val id = store.insertLink("https://example.com/a", "example.com", 1000)
     store.fetchSucceeded(id, "<html/>")
-    Recovery.run(ctx)
+    Recovery.run(ctx, startedAt = 2000)
     assertEquals(States.FETCHED, store.item(id)!!.state)
+  }
+
+  // Final review 3: a share that started this process is not yet enqueued when recovery runs.
+  @Test fun anItemCreatedAfterTheProcessStartedIsLeftFetching() {
+    val store = Store.get(ctx)
+    val id = store.insertLink("https://example.com/a", "example.com", 2000)
+    Recovery.run(ctx, startedAt = 2000)
+    assertEquals(States.FETCHING, store.item(id)!!.state)
   }
 }

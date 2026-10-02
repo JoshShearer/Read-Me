@@ -52,9 +52,13 @@ class StoreTest {
 
   @Test fun aLongSingleParagraphRoundTrips() {
     // Review Focus 5: hundreds of KB in one paragraph.
-    val big = "x".repeat(600_000)
+    val big = "x".repeat(400_000)
     val id = store.insertText("t", listOf(big), 1000)
     assertEquals(big, store.paragraphs(id).single().text)
+    // Past the row cap it is split, never cut: the text reads back whole.
+    val huge = "y ".repeat(350_000)
+    val id2 = store.insertText("t", listOf(huge), 1000)
+    assertEquals(huge, store.paragraphs(id2).joinToString("") { it.text })
   }
 
   @Test fun deleteRemovesTheItemAndEverythingUnderIt() {

@@ -73,32 +73,39 @@ export async function getItem(id: number): Promise<ItemDetail | null> {
   };
 }
 
+async function drainItem(item: Item, extract: Extract): Promise<boolean> {
+  // Null when the body is gone; the native side has already failed the item.
+  const html = await Native.getBody(item.id);
+  if (html === null) return false;
+  let ex: ReturnType<Extract>;
+  try {
+    ex = extract(html, item.url);
+  } catch {
+    ex = { title: '', paragraphs: [], poor: true };
+  }
+  const paragraphs: NativeParagraph[] = ex.paragraphs.map(p => ({
+    kind: p.kind,
+    text: p.text,
+  }));
+  return Native.completeExtraction(
+    item.id,
+    ex.title || item.title,
+    ex.site ?? null,
+    ex.byline ?? null,
+    paragraphs,
+    ex.poor,
+  );
+}
+
 async function drainOnce(extract: Extract): Promise<number> {
   let n = 0;
   for (const item of await listItems()) {
     if (item.state !== 'fetched') continue;
-    // Null when the body is gone; the native side has already failed the item.
-    const html = await Native.getBody(item.id);
-    if (html === null) continue;
-    let ex: ReturnType<Extract>;
+    // One item's native failure (deleted mid-drain, a storage error) must not hold up the rest;
+    // the item stays fetched and the next drain tries it again.
     try {
-      ex = extract(html, item.url);
-    } catch {
-      ex = { title: '', paragraphs: [], poor: true };
-    }
-    const paragraphs: NativeParagraph[] = ex.paragraphs.map(p => ({
-      kind: p.kind,
-      text: p.text,
-    }));
-    await Native.completeExtraction(
-      item.id,
-      ex.title || item.title,
-      ex.site ?? null,
-      ex.byline ?? null,
-      paragraphs,
-      ex.poor,
-    );
-    n++;
+      if (await drainItem(item, extract)) n++;
+    } catch {}
   }
   return n;
 }

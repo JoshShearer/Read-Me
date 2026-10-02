@@ -1,6 +1,7 @@
 package io.loopstring.readme.store
 
 import android.content.Context
+import java.io.File
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -118,5 +119,38 @@ class StoreLifecycleTest {
     store.fetchSucceeded(link, "<html/>")
     store.delete(link)
     assertFalse(store.bodyFile(link).exists())
+  }
+
+  // Final review 1 (AGENTS.md 3): a fetch that finishes after Delete must not leave the page on disk.
+  @Test fun aFetchFinishingAfterDeleteLeavesNoBody() {
+    store.delete(link)
+    store.fetchSucceeded(link, "<html>page</html>")
+    assertFalse(store.bodyFile(link).exists())
+    assertFalse(File(store.bodyFile(link).path + ".tmp").exists())
+  }
+
+  @Test fun deleteRemovesAHalfWrittenBody() {
+    val tmp = File(store.bodyFile(link).path + ".tmp")
+    tmp.parentFile!!.mkdirs()
+    tmp.writeText("<html>half")
+    store.delete(link)
+    assertFalse(tmp.exists())
+  }
+
+  // Final review 2: one row over CursorWindow's 2 MB must not make the library unreadable.
+  @Test fun anOversizedTitleOrParagraphIsBoundedAndTheLibraryStaysReadable() {
+    store.fetchSucceeded(link, "<html/>")
+    val cjk = "\u4e2d".repeat(800_000) // 2.4 MB in UTF-8, no spaces to split on
+    assertTrue(
+      store.completeExtraction(
+        link, "t".repeat(3_000_000), "s".repeat(3_000_000), null,
+        listOf(ParagraphRow("p", cjk)), false,
+      ),
+    )
+    val item = store.items().single { it.id == link }
+    assertTrue(item.title.length <= Store.MAX_FIELD_CHARS)
+    val paras = store.paragraphs(link)
+    assertTrue(paras.size > 1)
+    assertEquals(cjk, paras.joinToString("") { it.text })
   }
 }

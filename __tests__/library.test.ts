@@ -108,3 +108,13 @@ test('a second drain request during a drain runs again (Review Focus 2)', async 
   expect(await second).toBe(2);
   expect(mockCompleted.map(c => c.id).sort()).toEqual([1, 2]);
 });
+
+test('one item whose native calls fail does not stop the rest (final review 5)', async () => {
+  const Native = jest.requireMock('../src/native/NativeReadMeSpeech').default;
+  mockRows.push(row(1, 'fetched', 'a'), row(2, 'fetched', 'b'));
+  Native.getBody.mockImplementationOnce(async () => {
+    throw new Error('FileNotFoundException');
+  });
+  expect(await drainFetched(fakeExtract)).toBe(1);
+  expect(mockCompleted.map(c => c.id)).toEqual([2]);
+});

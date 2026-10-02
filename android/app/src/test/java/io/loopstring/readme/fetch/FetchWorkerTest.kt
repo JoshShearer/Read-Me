@@ -9,6 +9,7 @@ import io.loopstring.readme.store.States
 import io.loopstring.readme.store.Store
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,5 +64,20 @@ class FetchWorkerTest {
     store.fetchFailed(id, "offline")
     run(id)
     assertEquals(0, server.requestCount)
+  }
+
+  // Final review 4: a throw while storing the outcome must not leave the item fetching.
+  @Test fun aThrowWhileStoringTheBodyFailsTheItemAsInterrupted() {
+    server.enqueue(MockResponse().setBody("<html>page</html>"))
+    File(ctx.filesDir, "bodies").apply { deleteRecursively(); writeText("not a directory") }
+    val store = Store.get(ctx)
+    val id = store.insertLink(server.url("/a").toString(), "host", 1000)
+    try {
+      assertTrue(run(id) is ListenableWorker.Result.Success)
+      assertEquals(States.FETCH_FAILED, store.item(id)!!.state)
+      assertEquals("interrupted", store.item(id)!!.failReason)
+    } finally {
+      File(ctx.filesDir, "bodies").delete()
+    }
   }
 }

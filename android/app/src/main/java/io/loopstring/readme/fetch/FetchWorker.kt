@@ -27,15 +27,22 @@ class FetchWorker(context: Context, params: WorkerParameters) : Worker(context, 
     val url = item.url
     if (item.state != States.FETCHING || url == null) return Result.success()
     val started = System.nanoTime()
-    val outcome = when (val r = Fetcher().fetch(url)) {
-      is FetchResult.Ok -> {
-        store.fetchSucceeded(id, r.html)
-        "ok"
+    val outcome = try {
+      when (val r = Fetcher().fetch(url)) {
+        is FetchResult.Ok -> {
+          store.fetchSucceeded(id, r.html)
+          "ok"
+        }
+        is FetchResult.Failed -> {
+          store.fetchFailed(id, r.reason)
+          r.reason
+        }
       }
-      is FetchResult.Failed -> {
-        store.fetchFailed(id, r.reason)
-        r.reason
-      }
+    } catch (t: Throwable) {
+      // Disk full, a failed rename, a SQLite error: without this the item would sit in fetching
+      // until the next process start. The class name only (AGENTS.md 1).
+      runCatching { store.fetchFailed(id, "interrupted") }
+      "interrupted:${t.javaClass.simpleName}"
     }
     val ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
     // AGENTS.md 1: an id, a reason class and a duration; never the URL.
