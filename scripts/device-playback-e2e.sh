@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # npm run device:playback - R-M07/R-M11 on the phone, as a user would. Clears Read Me's data,
-# shares a text, taps it to play, pauses and resumes by tapping, then turns the screen off,
+# shares a text, opens it (Trim, then the Reader), plays, pauses and resumes with the Reader's button, then turns the screen off,
 # pauses and resumes with media-button presses, and waits for the item to finish. Checks the
 # service's log lines, that reading advanced with the screen off, that the item archived, and
 # that no log line carries the text (AGENTS.md 1). Leaves the screen off: unlock it after.
@@ -27,6 +27,9 @@ printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND 
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 
 ui() {
+  # Remove the last dump first: uiautomator cannot dump while the Reader's highlight moves,
+  # and a failed dump must not hand back the previous screen.
+  adb shell rm -f /sdcard/readme-ui.xml
   adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
   adb shell cat /sdcard/readme-ui.xml 2>/dev/null || true
 }
@@ -38,6 +41,19 @@ tap() {
   [ -n "$b" ] || { echo "FAIL: nothing on screen matches $1"; exit 1; }
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+}
+# centre_of <ERE on content-desc>: "x y" of the first matching node, retrying for 10 s.
+centre_of() {
+  local b=""
+  for _ in $(seq 10); do
+    b=$(ui | grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+      | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+    [ -n "$b" ] && break
+    sleep 1
+  done
+  [ -n "$b" ] || { echo "FAIL: nothing on screen has content-desc $1" >&2; exit 1; }
+  set -- $b
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
 logs() { adb logcat -d -s ReadMe:I; }
 # wait_count <ERE> <count> <seconds>
@@ -55,14 +71,19 @@ on_screen() {
 
 fail=0
 on_screen 'text="ready"' || fail=1
+# Phase 4: a first open goes to Trim; Done goes to the Reader, whose Play/Pause button is
+# one button in one place (relabelled), so its position is taken once.
 tap 'ready'
+done_at=$(centre_of 'trim done')
+adb shell input tap $done_at
+play_at=$(centre_of play)
+adb shell input tap $play_at
 wait_count 'playback start item=1 ' 1 20 || fail=1
-on_screen 'text="playing"' || fail=1
 sleep 4
-tap 'ready'
+adb shell input tap $play_at
 wait_count 'playback paused item=1 ' 1 10 || fail=1
-on_screen 'text="paused"' || fail=1
-tap 'ready'
+on_screen 'content-desc="play"' || fail=1
+adb shell input tap $play_at
 wait_count 'playback resumed item=1' 1 10 || fail=1
 
 # Screen off, then media-button controls (lock screen / headset path, R-M07).

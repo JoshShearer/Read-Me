@@ -24,7 +24,15 @@ class Settings(context: Context) {
       prefs.edit().putFloat(KEY_RATE, Rate.clamp(value)).apply()
     }
 
+  /** R-M01 Settings "voice": a voice name; null means the engine's default (R-M06 rules apply). */
+  var voice: String?
+    get() = prefs.getString(KEY_VOICE, null)
+    set(value) {
+      prefs.edit().apply { if (value == null) remove(KEY_VOICE) else putString(KEY_VOICE, value) }.apply()
+    }
+
   private companion object {
     const val KEY_RATE = "rate"
+    const val KEY_VOICE = "voice"
   }
 }

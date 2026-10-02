@@ -4,7 +4,13 @@ import type {
 } from '../src/native/NativeReadMeSpeech';
 
 const mockPlays: { id: number; title: string; sentences: NativeSentence[]; start: number }[] = [];
-const mockState = { resume: true, position: null as null | { paragraphIndex: number; charOffset: number } };
+const mockState = {
+  resume: true,
+  cutAll: false,
+  cuts: [] as number[],
+  playback: null as null | { itemId: number | null; playing: boolean },
+  position: null as null | { paragraphIndex: number; charOffset: number },
+};
 
 jest.mock('../src/native/NativeReadMeSpeech', () => ({
   __esModule: true,
@@ -21,15 +27,22 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
               { kind: 'p', text: 'One here. Two here.' },
               { kind: 'p', text: 'Three here.' },
             ],
-            cuts: id === 2 ? [0, 1] : [],
+            cuts: id === 2 || mockState.cutAll ? [0, 1] : mockState.cuts,
           },
     ),
     getPosition: jest.fn(async () => mockState.position),
+    getPlayback: jest.fn(async () => ({
+      itemId: mockState.playback?.itemId ?? null,
+      playing: mockState.playback?.playing ?? false,
+      paragraphIndex: -1, start: 0, end: 0, rate: 2, engine: 'ready',
+    })),
     play: jest.fn(async (id: number, title: string, sentences: NativeSentence[], start: number) => {
       mockPlays.push({ id, title, sentences, start });
       return true;
     }),
     pause: jest.fn(async () => true),
+    setCuts: jest.fn(async () => undefined),
+    stop: jest.fn(async () => true),
     resume: jest.fn(async () => mockState.resume),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
@@ -37,7 +50,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
 }));
 
 import Native from '../src/native/NativeReadMeSpeech';
-import { engineProblem, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
+import { applyCuts, engineBlocked, engineProblem, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
 import type { Item } from '../src/library/library';
 
 const paragraphs = [
@@ -50,6 +63,9 @@ beforeEach(() => {
   mockPlays.length = 0;
   mockState.resume = true;
   mockState.position = null;
+  mockState.cutAll = false;
+  mockState.cuts = [];
+  mockState.playback = null;
   jest.clearAllMocks();
 });
 
@@ -138,3 +154,63 @@ test('markers and the engine problem', () => {
 
 // Keeps the NativePlayback import used: the facade's event shape is the spec's.
 export type _Shape = NativePlayback;
+
+describe('applyCuts', () => {
+  // applyCuts reads the service's state itself: a screen's copy can be stale or not loaded yet.
+  const serviceHas = (itemId: number, playing: boolean) => {
+    mockState.playback = { itemId, playing };
+  };
+
+  test('a cut change while playing re-plays; while paused stops', async () => {
+    // Review Focus 1: the service must never go on reading paragraphs that are now cut.
+    serviceHas(1, true);
+    await applyCuts(1, new Set([1, 0]));
+    expect(Native.setCuts).toHaveBeenCalledWith(1, [0, 1]);
+    expect(mockPlays).toHaveLength(1);
+    serviceHas(1, false);
+    await applyCuts(1, new Set([0]));
+    expect(Native.stop).toHaveBeenCalledTimes(1);
+    expect(mockPlays).toHaveLength(1);
+  });
+
+  test('cutting everything left while playing stops the service', async () => {
+    // Final review Critical 1: plan() is null, so playItem cannot replace the old queue.
+    serviceHas(1, true);
+    mockState.cutAll = true;
+    await applyCuts(1, new Set([0, 1]));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test('cutting everything after the position while playing stops, not restarts', async () => {
+    // /critique run B F2: plan() would fall back to the first sentence.
+    serviceHas(1, true);
+    mockState.position = { paragraphIndex: 1, charOffset: 0 };
+    mockState.cuts = [1];
+    await applyCuts(1, new Set([1]));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test('a cut change while the screen had no playback state yet still re-plans', async () => {
+    // /critique run A F3: Trim tapped before its getPlayback() resolved.
+    serviceHas(1, true);
+    await applyCuts(1, new Set([0]));
+    expect(mockPlays).toHaveLength(1);
+  });
+
+  test('a cut change on another item leaves playback alone', async () => {
+    serviceHas(1, true);
+    await applyCuts(2, new Set([0]));
+    expect(Native.stop).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+});
+
+test('the engine blocks only when there is no engine or no offline voice', () => {
+  expect(engineBlocked('no-voice')).toBe(true);
+  expect(engineBlocked('no-engine')).toBe(true);
+  expect(engineBlocked('ready')).toBe(false);
+  expect(engineBlocked('unknown')).toBe(false);
+  expect(engineBlocked(undefined)).toBe(false);
+});

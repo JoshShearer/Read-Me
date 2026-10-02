@@ -28,6 +28,8 @@ export type Item = {
   failReason?: string;
   openedAt?: number;
   archivedAt?: number;
+  words: number;
+  progress: number;
 };
 
 export type ItemDetail = { item: Item; paragraphs: Paragraph[]; cuts: number[] };
@@ -53,6 +55,8 @@ export function toItem(n: NativeItem): Item {
     failReason: opt(n.failReason),
     openedAt: opt(n.openedAt),
     archivedAt: opt(n.archivedAt),
+    words: n.words,
+    progress: n.progress,
   };
 }
 
@@ -140,6 +144,8 @@ export const deleteItem = (id: number) => Native.deleteItem(id);
 export const markOpened = (id: number) => Native.markOpened(id);
 export const setCut = (id: number, paragraphIndex: number, cut: boolean) =>
   Native.setCut(id, paragraphIndex, cut);
+export const setCuts = (id: number, indices: readonly number[]) =>
+  Native.setCuts(id, [...indices]);
 export const archiveItem = (id: number) => Native.archiveItem(id);
 export const restoreItem = (id: number) => Native.restoreItem(id);
 

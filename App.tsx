@@ -1,99 +1,76 @@
-// A plain list of items. Tap a row to play it, tap again to pause or resume; the marker
-// shows what the service is doing. The real list, Trim and Reader screens are Phase 4.
+// R-M01: four screens, opening on the list. A route stack plus the hardware back button;
+// four routes do not need a navigation library (AGENTS.md 14 keeps dependencies minimal).
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  FlatList,
-  Linking,
-  Pressable,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-import {
-  drainFetched,
-  listItems,
-  onItemsChanged,
-  type Item,
-} from './src/library/library';
-import {
-  engineProblem,
-  getPlayback,
-  marker,
-  onPlayback,
-  toggle,
-  type Playback,
-} from './src/library/playback';
+import { BackHandler, StatusBar, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { markOpened, type Item } from './src/library/library';
+import { LicensesScreen } from './src/ui/LicensesScreen';
+import { ListScreen } from './src/ui/ListScreen';
+import { ReaderScreen } from './src/ui/ReaderScreen';
+import { SettingsScreen } from './src/ui/SettingsScreen';
+import { TrimScreen } from './src/ui/TrimScreen';
+import { back, openRoute, push, trimDone, type Route } from './src/ui/model';
+import { ui } from './src/ui/ui';
 
-function Library() {
+function Main() {
   const insets = useSafeAreaInsets();
-  const [items, setItems] = useState<Item[]>([]);
-  const [playback, setPlayback] = useState<Playback | null>(null);
-
-  const refresh = useCallback(() => {
-    listItems().then(setItems, () => setItems([]));
-  }, []);
+  const [stack, setStack] = useState<Route[]>([{ name: 'list' }]);
+  const top = stack[stack.length - 1];
 
   useEffect(() => {
-    refresh();
-    drainFetched().catch(() => undefined);
-    return onItemsChanged(() => {
-      refresh();
-      drainFetched().catch(() => undefined);
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      const next = back(stack);
+      if (next === null) return false;
+      setStack(next);
+      return true;
     });
-  }, [refresh]);
+    return () => sub.remove();
+  }, [stack]);
 
-  useEffect(() => {
-    getPlayback().then(setPlayback, () => undefined);
-    return onPlayback(setPlayback);
-  }, []);
-
-  const onPress = useCallback(
-    (id: number) => {
-      toggle(id, playback).catch(() => undefined);
+  const go = useCallback((r: Route) => setStack(s => push(s, r)), []);
+  const toList = useCallback(() => setStack([{ name: 'list' }]), []);
+  const open = useCallback(
+    (item: Item) => {
+      go(openRoute(item));
+      markOpened(item.id).catch(() => undefined);
     },
-    [playback],
+    [go],
   );
 
+  let screen: React.ReactElement;
+  switch (top.name) {
+    case 'list':
+      screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
+      break;
+    case 'trim':
+      screen = (
+        <TrimScreen id={top.id} onDone={() => setStack(s => trimDone(s, top.id))} onGone={toList} />
+      );
+      break;
+    case 'reader':
+      screen = <ReaderScreen id={top.id} onTrim={() => go({ name: 'trim', id: top.id })} onGone={toList} />;
+      break;
+    case 'settings':
+      screen = <SettingsScreen onLicenses={() => go({ name: 'licenses' })} />;
+      break;
+    case 'licenses':
+      screen = <LicensesScreen />;
+      break;
+    default:
+      screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
+  }
+  // Each screen gets its own unflattened view, keyed by route. Fabric flattens layout-only
+  // views, so screens' children were mounted straight into a shared parent, and swapping List
+  // for Trim intermittently crashed with "addViewAt: failed to insert view ... at index N"
+  // (parent [2] = SafeAreaProvider, then [34] = this wrapper once it was unflattened;
+  // reproduced 2026-10-02 on builds 65ef1b2 and e9574f4, about 4 in 10 taps). With a keyed
+  // view per route a switch removes one native view and inserts a new one.
+  const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      {engineProblem(playback) ? (
-        <View style={styles.problem}>
-          <Text>
-            No offline text-to-speech voice is available, so Read Me cannot read aloud.
-          </Text>
-          <Pressable
-            onPress={() =>
-              Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(
-                () => undefined,
-              )
-            }>
-            <Text style={styles.link}>Open text-to-speech settings</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      <FlatList
-        data={items}
-        keyExtractor={item => String(item.id)}
-        ListEmptyComponent={<Text style={styles.empty}>Share a link or text to Read Me.</Text>}
-        renderItem={({ item }) => {
-          const mark = marker(item, playback);
-          return (
-            <Pressable style={styles.row} onPress={() => onPress(item.id)}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.state}>
-                {item.state}
-                {item.failReason ? `: ${item.failReason}` : ''}
-              </Text>
-              {mark ? <Text style={styles.state}>{mark}</Text> : null}
-            </Pressable>
-          );
-        }}
-      />
+    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top }]}>
+      <View key={key} collapsable={false} style={ui.screen}>
+        {screen}
+      </View>
     </View>
   );
 }
@@ -102,17 +79,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="default" />
-      <Library />
+      <Main />
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  empty: { padding: 24 },
-  problem: { padding: 16, gap: 8 },
-  link: { textDecorationLine: 'underline' },
-  row: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { fontSize: 16 },
-  state: { fontSize: 13, opacity: 0.7 },
-});

@@ -28,6 +28,9 @@ data class ParagraphRow(val kind: String, val text: String)
 /** R-M11: a character offset in a paragraph, never a sentence index (AGENTS.md 10). */
 data class PositionRow(val paragraphIndex: Int, val charOffset: Int)
 
+/** R-M01: the list's length estimate and progress, over kept paragraphs only. */
+data class ItemStats(val words: Int, val keptChars: Int, val readChars: Int)
+
 object States {
   const val FETCHING = "fetching"
   const val FETCHED = "fetched"
@@ -167,6 +170,50 @@ class Store private constructor(context: Context) :
       while (it.moveToNext()) out.add(it.getInt(0))
       out
     }
+
+  /**
+   * One aggregate query, so the list never loads item text (a paragraph can be 500K chars).
+   * Words are space-separated runs; read is every kept character before the saved position.
+   * SQLite counts characters, JS offsets count UTF-16 units: an emoji-heavy text's progress is
+   * off by a little, which an estimate tolerates.
+   */
+  fun stats(only: Long? = null): Map<Long, ItemStats> =
+    readableDatabase.rawQuery(
+      """SELECT p.item_id,
+           SUM(CASE WHEN length(trim(p.text)) = 0 THEN 0
+                    ELSE length(trim(p.text)) - length(replace(trim(p.text), ' ', '')) + 1 END),
+           SUM(length(p.text)),
+           SUM(CASE WHEN pos.item_id IS NULL THEN 0
+                    WHEN p.idx < pos.paragraph_index THEN length(p.text)
+                    WHEN p.idx = pos.paragraph_index THEN MIN(pos.char_offset, length(p.text))
+                    ELSE 0 END)
+         FROM paragraphs p
+         LEFT JOIN cuts c ON c.item_id = p.item_id AND c.paragraph_index = p.idx
+         LEFT JOIN positions pos ON pos.item_id = p.item_id
+         WHERE c.item_id IS NULL${if (only == null) "" else " AND p.item_id = ?"}
+         GROUP BY p.item_id""",
+      if (only == null) null else arrayOf(only.toString()),
+    ).use {
+      val out = HashMap<Long, ItemStats>(it.count)
+      while (it.moveToNext()) out[it.getLong(0)] = ItemStats(it.getInt(1), it.getInt(2), it.getInt(3))
+      out
+    }
+
+  /** R-M05: replaces the item's whole cut set at once ("Cut everything after this"). */
+  fun setCuts(id: Long, indices: List<Int>) {
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+      db.delete("cuts", "item_id = ?", arrayOf(id.toString()))
+      for (i in indices.distinct()) {
+        db.execSQL("INSERT INTO cuts (item_id, paragraph_index) VALUES (?, ?)", arrayOf<Any>(id, i))
+      }
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+    ItemEvents.changed()
+  }
 
   fun idsInState(state: String, createdBefore: Long = Long.MAX_VALUE): List<Long> =
     readableDatabase.rawQuery(

@@ -15,6 +15,9 @@ export type NativeItem = {
   failReason: string | null;
   openedAt: number | null;
   archivedAt: number | null;
+  // R-M01: over kept paragraphs; progress is read characters / kept characters, 0..1.
+  words: number;
+  progress: number;
 };
 
 export type NativeParagraph = { kind: string; text: string };
@@ -45,6 +48,15 @@ export type NativePlayback = {
   end: number;
   rate: number;
   engine: string;
+};
+
+export type NativeVoice = { name: string; language: string; quality: number };
+
+// R-M06: status 'ready', 'no-engine' or 'no-voice'; voices are offline and installed only.
+export type NativeEngine = {
+  status: string;
+  voices: NativeVoice[];
+  selected: string | null;
 };
 
 export interface Spec extends TurboModule {
@@ -80,6 +92,11 @@ export interface Spec extends TurboModule {
   getRate(): Promise<number>;
   getPlayback(): Promise<NativePlayback>;
   getPosition(itemId: number): Promise<NativePosition | null>;
+  setCuts(id: number, indices: number[]): Promise<void>;
+  stop(): Promise<boolean>;
+  getEngine(): Promise<NativeEngine>;
+  setVoice(name: string | null): Promise<void>;
+  getNotices(): Promise<string>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

@@ -52,6 +52,8 @@ const row = (id: number, state: string, body: string | null = null): Row => ({
   failReason: null,
   openedAt: null,
   archivedAt: null,
+  words: 0,
+  progress: 0,
   body,
 });
 
@@ -117,4 +119,12 @@ test('one item whose native calls fail does not stop the rest (final review 5)',
   });
   expect(await drainFetched(fakeExtract)).toBe(1);
   expect(mockCompleted.map(c => c.id)).toEqual([2]);
+});
+
+test('items carry their word count and progress', async () => {
+  mockRows.length = 0;
+  mockRows.push({ ...row(1, 'ready'), words: 120, progress: 0.25 });
+  const [item] = await listItems();
+  expect(item.words).toBe(120);
+  expect(item.progress).toBe(0.25);
 });

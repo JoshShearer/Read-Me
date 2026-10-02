@@ -63,7 +63,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       )
     }
     session = MediaSession(this, "ReadMe").apply { setCallback(sessionCallback, main) }
-    speaker = TtsSpeaker(this, this)
+    speaker = TtsSpeaker(this, this, Settings(this).voice)
     queue = PlaybackQueue(speaker, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars())
     PlaybackHub.queue = queue
     PlaybackHub.controller = ::handle
