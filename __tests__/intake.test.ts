@@ -49,6 +49,15 @@ describe('classifyShare (R-M02)', () => {
     }
   });
 
+  test('an em or en dash ends the URL', () => {
+    for (const dash of ['\u2014', '\u2013']) {
+      expect(classifyShare(`Look${dash}https://x.com/a${dash}wow`)).toEqual({
+        kind: 'link',
+        url: 'https://x.com/a',
+      });
+    }
+  });
+
   test('an invisible format character ends the URL', () => {
     // Messaging apps insert zero-width and direction marks; none can be part of a URL.
     for (const mark of ['\u200b', '\u200e', '\u200f', '\u2060', '\ufeff']) {
