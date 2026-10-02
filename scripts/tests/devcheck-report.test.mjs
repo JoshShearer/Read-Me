@@ -59,3 +59,16 @@ test('with one launch per fixture, any launch not on Hermes fails its run', () =
   const r = report([env(1, false), env(1, true), row(1), env(2, true), row(2), env(3, true), row(3)], 3);
   assert.equal(r.status, 1, r.stdout);
 });
+
+const thermal = (run, status) => `run=${run} DEVCHECK_THERMAL {"name":"page","status":${status}}`;
+
+test('a launch that started throttled fails: its timings are not an F17 measurement', () => {
+  const r = report([1, 2, 3].flatMap(n => [thermal(n, n === 2 ? 1 : 0), env(n, true), row(n)]), 3);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /throttled/);
+});
+
+test('launches all at thermal status 0 pass', () => {
+  const r = report([1, 2, 3].flatMap(n => [thermal(n, 0), env(n, true), row(n)]), 3);
+  assert.equal(r.status, 0, r.stdout);
+});

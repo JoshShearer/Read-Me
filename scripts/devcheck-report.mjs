@@ -13,7 +13,16 @@ if (!Number.isInteger(RUNS) || RUNS < 1) {
 const expected = JSON.parse(readFileSync(expectedPath, 'utf8'));
 const runs = new Map();
 const envs = new Map();
+const throttled = [];
 for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
+  const t = /^run=(\d+) DEVCHECK_THERMAL (\{.*\})$/.exec(line);
+  if (t) {
+    // Heat throttles the CPU, so a launch that started above status 0 measures the phone's
+    // temperature, not the code (fdaafaa: parse 2.4x slower at status 1).
+    const th = JSON.parse(t[2]);
+    if (th.status !== 0) throttled.push(`run ${t[1]} ${th.name} status ${th.status}`);
+    continue;
+  }
   const m = /^run=(\d+) DEVCHECK(_ENV)? (\{.*\})$/.exec(line);
   if (!m) continue;
   const d = JSON.parse(m[3]);
@@ -77,6 +86,10 @@ for (const e of expected) {
       stagesMedianMs: stageMedians(rs),
     }),
   );
+}
+if (throttled.length > 0) {
+  ok = false;
+  console.log(`throttled launches (timings not valid for F17): ${throttled.join('; ')}`);
 }
 console.log(ok ? 'devcheck: PASS' : 'devcheck: FAIL');
 process.exit(ok ? 0 : 1);

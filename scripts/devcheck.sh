@@ -45,12 +45,25 @@ echo "installed DEVCHECK build $HEAD7 on the phone (replaces whatever build was 
 # 1344 ms alone (a544319, reference device).
 NAMES=$(node -e "for (const e of require(process.argv[1])) console.log(e.name)" "$EXPECTED")
 [ -n "$NAMES" ] || { echo "no fixtures in $EXPECTED" >&2; exit 1; }
+# Heat throttles the CPU: at thermal status 1 parsing ran 2.4x slower (fdaafaa). Wait up to
+# 15 min for status 0 before each launch, and log the status the launch started at; the report
+# rejects the timings of any launch that started above 0.
+thermal_status() {
+  local t
+  t=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
+  sed -n 's/^Thermal Status: *\([0-9]*\).*/\1/p' <<<"$t" | head -1
+}
 for run in $(seq "$RUNS"); do
-  # Heat throttles the CPU; record it so a slow run can be told apart from a slow page.
-  thermal=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
-  echo "run $run: $(grep -m1 -i 'Thermal Status' <<<"$thermal" || echo 'thermal status unknown')"
   for name in $NAMES; do
     adb shell am force-stop "$PKG"
+    status=$(thermal_status)
+    for _ in $(seq 60); do
+      [ "${status:-x}" = 0 ] && break
+      echo "run $run $name: thermal status ${status:-unknown}, waiting to cool"
+      sleep 15
+      status=$(thermal_status)
+    done
+    printf 'run=%s DEVCHECK_THERMAL {"name":"%s","status":%s}\n' "$run" "$name" "${status:-99}" >> "$DEVICE_OUT"
     adb logcat -c
     # -W waits for the launch; without it the first pidof can run before the process exists
     # and a healthy run is reported as a death.
