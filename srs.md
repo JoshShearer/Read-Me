@@ -529,6 +529,27 @@ Each spike answers one question on the reference device and records the answer h
 - **SPIKE-05 - Gapless queueing at 2x.** Measure the inter-utterance gap as R-M07 defines
   it (`onDone(n)` to `onStart(n+1)`), with `QUEUE_ADD` and two `TextToSpeech` instances
   alive, on the reference device.
+  **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
+  build 46a4f8e on spike/rea-0-gapless-2x; `scripts/spike-gap.sh single 10` and
+  `scripts/spike-gap.sh idle2 10`; engine `app.grapheneos.speechservices`, offline (airplane
+  mode, Wi-Fi off, confirmed by a failed ping), screen off, app backgrounded, foreground service
+  type `mediaPlayback`, no wake lock):** gapless. With two instances alive the gap is far inside
+  R-M07, and the 300 ms target stands.
+  Observed: `idle2` (playback instance plus a second bound, idle instance; `load.initStatus` 0):
+  10 min, 127 utterances, 0 errors, gap p50 4 ms, p95 11 ms, max 22 ms, 0 stalls, `reason`
+  `done`, `usPerCharP50` 34923. `single` (one instance, baseline): 10 min, 128 utterances, 0
+  errors, gap p50 2 ms, p95 8 ms, max 16 ms, 0 stalls, `reason` `done`, `usPerCharP50` 34923.
+  No wake lock was needed: neither run hung or stalled with only the foreground service holding
+  the process. A direct `adb shell am start-foreground-service` of the unexported service was
+  refused with `Error: Requires permission not exported from uid 10346`, so spike runs start it
+  through the exported activity.
+  Not established: a second instance that is synthesizing rather than idle (SPIKE-06); other
+  engines (`com.google.android.tts` is installed but was not the default); rates other than
+  2.0x; targetSdk 37; playback with a MediaSession and audio focus; battery power and Doze (the
+  phone was on USB power, `USB powered: true`, `stay_on_while_plugged_in=7`).
+  Consequence: R-M07 unchanged. PlaybackService can queue with `QUEUE_ADD` three utterances
+  ahead under a `mediaPlayback` foreground service; a wake lock is not required by this
+  evidence, but Doze on battery is still open.
 - **SPIKE-06 - Two engine instances.** Do two `TextToSpeech` instances in one process,
   bound to the same engine, run `speak()` and `synthesizeToFile()` concurrently without one
   cancelling or serializing behind the other? If not, R-M07/R-M12 need a contention policy
