@@ -4,7 +4,7 @@
 # the list shows both with their R-M10 states; opening the text goes to Trim (first open);
 # cutting paragraph 2 and Done goes to the Reader, which plays only the kept sentences and
 # highlights the current one; back to the list shows progress; the dead link is deleted;
-# Settings lists a voice and Licenses lists react-native. Checks logs for text and crashes.
+# Settings lists a voice and Licenses lists packages. Checks logs for text and crashes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
@@ -106,12 +106,16 @@ device_has "$(logs)" 'playback start item=1 sentences=20 ' || { echo "FAIL: expe
 sleep 2
 px=$(highlight_px)
 [ "${px:-0}" -gt 1000 ] || { echo "FAIL: no highlighted sentence on screen ($px px)"; fail=1; }
-# Pause sits where Play was (the same button, relabelled).
+# Let it read on (a cold engine can take seconds to start), then pause where Play was (the
+# same button, relabelled).
+sleep 10
 adb shell input tap $play_at
 for _ in $(seq 10); do device_has "$(logs)" 'playback paused item=1 ' && break; sleep 1; done
 device_has "$(logs)" 'playback paused item=1 ' || { echo "FAIL: the Reader's pause did not pause"; fail=1; }
 on_screen 'content-desc="play"' || fail=1
-on_screen 'content-desc="current paragraph"' || fail=1
+device_has "$(logs)" 'playback paused item=1 paragraph=0 offset=0$' && { echo "FAIL: paused before reading anything"; fail=1; }
+px=$(highlight_px)
+[ "${px:-0}" -gt 1000 ] || { echo "FAIL: the paused sentence is not highlighted ($px px)"; fail=1; }
 
 # Back to the list: progress shows (R-M01)
 adb shell input keyevent KEYCODE_BACK
@@ -128,7 +132,8 @@ tap_node content-desc 'settings'
 on_screen 'content-desc="voice [^"]+"' || fail=1
 on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
 tap_node content-desc 'licenses'
-on_screen 'text="react-native [0-9.]+"' || fail=1
+# Alphabetical, so check what is on screen: packages with a license line.
+on_screen 'text="(MIT|Apache-2.0|ISC|BSD-3-Clause)"' || fail=1
 adb shell input keyevent KEYCODE_BACK
 adb shell input keyevent KEYCODE_BACK
 on_screen 'text="Read Me"' || fail=1
