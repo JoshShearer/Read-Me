@@ -47,7 +47,9 @@ lane at a time may hold it: a run takes `.claude/device.lock/` (in the primary c
 worktree path from `git rev-parse --show-toplevel`, then `branch=<name> commit=<hash> at=<time>
 purpose=<...>`), and removes the directory after. A lock with no owner file is treated as another
 lane's. `scripts/lib/device.sh` implements it; every device script sources it. The phone has a
-secure lock screen, so device scripts stop with exit 5 when it is locked and the owner unlocks it. `adb devices` must show exactly one device, or the command stops and says
+secure lock screen, so device scripts stop with exit 5 when it is locked and the owner unlocks it.
+Never put a secret on an `adb shell` command line: adbd logs every argv command to logcat
+(SPIKE-01); send the command on stdin instead (`scripts/lib/spike.sh` on the spike branches). `adb devices` must show exactly one device, or the command stops and says
 so. Installing a build replaces whatever build another lane installed; whoever installs says so.
 
 Bridge checks also need Obsidian on the same phone with the `local-tts-reader` plugin; the
@@ -126,7 +128,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 ## Known state
 
 - **Scaffold only:** RN 0.87.1 template app, gates and CI. No product modules yet.
-- **Six spikes precede implementation** (`srs.md`, "Spikes"). None has run.
+- **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
+  stays on its `spike/rea-0-*` branch.
+  - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
+    `mediaPlayback` foreground service hosts playback and the bridge (ADR 0005).
+  - SPIKE-02: Readability over linkedom passes F17 on Hermes (5 MB page median 8.2 s; Wikipedia
+    at 90% of its 1.5 s line, so Phase 1 re-measures).
+  - SPIKE-03: no `Intl.Segmenter` on Hermes; R-M08's regex fallback is the device path.
+  - SPIKE-04: no proprietary dependencies, but the release build runs a prebuilt `hermesc` and
+    `node_modules` holds binaries the Phase 6 F-Droid recipe must remove or rebuild.
+  - SPIKE-05: gap p95 11 ms, max 22 ms at 2x with two instances alive, no wake lock; R-M07 stands.
+  - SPIKE-06: two instances serialize (playback stalls up to 3.5 s while the other synthesizes);
+    the bridge answers 503 while Read Me is playing (ADR 0004).
 - **Measured facts this spec rests on** live in the plugin repo's `AGENTS.md`, section "Android
   playback throughput, and the native-TTS bridge (2026-10-01)": native TTS RTF 0.116-0.169 at
   rate 1.0 on the reference device, the `TTS_SERVICE` query proven causal, `::1` from

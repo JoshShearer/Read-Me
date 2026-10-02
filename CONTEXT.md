@@ -79,7 +79,10 @@ JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS
 ## Known structural gaps
 
 - The whole tree. Every requirement is unmet until built and observed on the device.
-- Six spikes (`srs.md`) can each change a design decision; SPIKE-06 can replace the
-  separate-instances rule.
+- Spike answers that bind later phases (`srs.md`, "Spikes"): playback and bridge synthesis
+  serialize on the reference engine, so the bridge answers 503 while playback speaks (ADR 0004);
+  one `mediaPlayback` service hosts both (ADR 0005); `segment` has no `Intl.Segmenter` on Hermes;
+  `extract` is Readability over linkedom with little headroom under 1 MB. Not covered by any
+  spike: Android 14-16, targetSdk 37, battery power and Doze, the Google TTS engine.
 - Roadmap findings F11-F21 (`docs/superpowers/plans/2026-10-01-roadmap.md`) propose SRS
   amendments not yet applied, including a `fetched` state between fetch and extraction (F12).
