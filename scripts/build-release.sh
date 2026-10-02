@@ -13,6 +13,11 @@ rm -f "$STAMP"
 # devcheck bundle, so look for its marker in the bundle that was actually packaged.
 # grep -c reads the whole stream: grep -q would exit early, unzip would die of SIGPIPE, and
 # under pipefail the check would read as no match (the Phase 0 F1 trap).
+if ! unzip -l "$APK" assets/index.android.bundle >/dev/null 2>&1; then
+  rm -f "$APK"
+  echo "refused: no assets/index.android.bundle in the APK, so its entry cannot be checked" >&2
+  exit 1
+fi
 marker=$(unzip -p "$APK" assets/index.android.bundle | grep -ac DEVCHECK_DONE || true)
 if [ "${marker:-0}" != 0 ]; then
   rm -f "$APK"
