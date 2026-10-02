@@ -1,6 +1,6 @@
 # ADR 0004: The bridge answers 503 while Read Me is playing
 
-- Status: accepted
+- Status: accepted; the in-flight rule confirmed 2026-10-02 (REA-14)
 - Date: 2026-10-01
 - Deciders: owner
 - Amends: srs.md R-M12 (bridge), "Bridge contract (v1)"; records SPIKE-06's answer for

@@ -80,12 +80,14 @@ The app MUST register as an `ACTION_SEND` target for `text/plain`.
   not in the JS runtime.
 - **Recovery:** on every app start, any item still in `fetching` whose fetch is not
   actually running MUST move to `fetch-failed` with reason `interrupted`, so no item can sit
-  in `fetching` forever.
+  in `fetching` forever. Recovery does not touch `fetched` items; JS extracts every `fetched`
+  item on each start (ADR 0007).
 
 ### R-M03 - Fetching a shared link
 
-Sharing a link to Read Me IS the user's request to fetch it. No other code path may initiate
-a network request (R-M09).
+Sharing a link to Read Me IS the user's request to fetch it, and the user's Retry of that
+link's failed fetch is the same request. No other code path may initiate a network request
+(R-M09).
 
 The fetch MUST be performed by the native `Fetcher` (Kotlin, on the OkHttp client React Native
 already bundles, so no new dependency), not by JS `fetch` or `XMLHttpRequest`. Reasons, from
@@ -104,9 +106,10 @@ be enforced from JS.
 - Limits: 20 s total timeout (call timeout, not per-read), 5 MB response cap enforced while
   streaming: the read aborts at the 5,242,881st byte regardless of `Content-Length`.
   Exceeding either is a failed fetch.
-- The fetched body is handed to JS extraction (R-M04) through the native module.
-- A failed fetch MUST leave the item in a `fetch-failed` state with Retry and
-  "Share the text instead" guidance (R-M10). It MUST NOT be silently deleted.
+- The fetched body is written to app-private storage and the item moves to `fetched` until JS
+  extraction (R-M04) reads it through the native module (ADR 0007).
+- A failed fetch MUST leave the item in a `fetch-failed` state with Retry, "Share the text
+  instead" guidance and Delete (R-M10). It MUST NOT be silently deleted.
 
 ### R-M04 - Article extraction
 
@@ -116,10 +119,12 @@ on-device.
 
 - Headings and list items become their own paragraphs; tables, figures, code blocks, image
   captions and embedded media are dropped in v1.
-- Raw HTML MUST be discarded after extraction; only the extracted structure is stored.
+- Raw HTML MUST be discarded after extraction: the stored body of a `fetched` item is deleted
+  in the same transaction that stores the extracted structure (ADR 0007).
 - If extraction yields fewer than 3 paragraphs or under 500 characters, the item MUST enter
-  an `extract-poor` state that still shows what was found and offers "Share the text
-  instead". Pages built by JavaScript or behind paywalls are expected to land here.
+  an `extract-poor` state that still shows what was found and offers Read anyway, "Share the
+  text instead" guidance and Delete (R-M10). Pages built by JavaScript or behind paywalls are
+  expected to land here.
 - A page on which Readability is predicted to stall (over 4 s under 1 MiB, over 8 s above, or
   nested deeper than 200 levels) skips Readability and is `extract-poor` with the page's own
   text (ADR 0006). Slower pages still run Readability.
@@ -193,7 +198,12 @@ These are promises. Breaking one is a release blocker.
 
 1. **No cloud TTS, ever**, and no automatic fallback to a network voice (R-M06).
 2. **The only outbound network use is R-M03.** No analytics, crash reporting, telemetry,
-   update checks, remote config, web fonts or CDN loads. A test MUST enforce this (R-M14).
+   update checks, remote config, web fonts or CDN loads. A test MUST enforce this (R-M14):
+   no JS source references `fetch`, `XMLHttpRequest` or `WebSocket`, and no Kotlin file other
+   than `Fetcher` makes an outbound connection (`Socket(`, `openConnection`, `OkHttpClient`);
+   `ServerSocket` is allowed only in `BridgeServer`. Because bundled third-party JS is not
+   scanned, release builds also replace `fetch`, `XMLHttpRequest` and `WebSocket` with
+   throwing stubs before the app loads.
 3. **No item text in any log.** Logs carry counts, ids, states and durations only. Error
    messages MUST NOT be built from item text or URLs' paths and queries; a host name is
    the most a log line may carry.
@@ -209,8 +219,8 @@ toast:
 
 | State | Shown as | User actions |
 |---|---|---|
-| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, interrupted) | Retry, Delete |
-| `extract-poor` | item badge, partial text visible | Read anyway, Delete |
+| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, interrupted) | Retry, "Share the text instead" guidance, Delete |
+| `extract-poor` | item badge, partial text visible | Read anyway, "Share the text instead" guidance, Delete |
 | no TTS engine / no offline voice | blocking card on Reader | Open TTS settings |
 | bridge port in use | Settings bridge row | Retry |
 | bridge request rejected | HTTP status to caller; counter in Settings | none |
@@ -221,7 +231,8 @@ The position (item id, paragraph index, character offset within that paragraph) 
 saved by the service after every completed sentence and on pause/stop, and restored when the
 item is reopened by resuming at the start of the sentence that contains that offset under the
 current segmentation. A sentence index MUST NOT be persisted. An item that reaches its
-last kept sentence MUST move to Archive (not be deleted). Archive items can be restored or
+last kept sentence MUST move to Archive (not be deleted): `archivedAt` is set and the item
+keeps its state (ADR 0007). Archive items can be restored (which clears `archivedAt`) or
 deleted. Deleting an item deletes all of its stored text.
 
 ### R-M12 - Obsidian bridge
@@ -231,7 +242,9 @@ When the user enables it in Settings, the app MUST serve a loopback HTTP bridge 
 
 - Binds `127.0.0.1` explicitly (not `getLoopbackAddress()`, which returned `::1` on
   Android 17), on a fixed default port 8787, configurable.
-- Every route except `GET /health` requires `Authorization: Bearer <token>`. The token is
+- Every route except `GET /health` requires `Authorization: Bearer <token>`. `/health` stays
+  unauthenticated by owner decision (2026-10-02, roadmap F21): any app on the device can see
+  that the bridge runs and which engine and voice it uses, but no item data. The token is
   128 bits of randomness, generated once, shown in Settings with a Copy button, persisted
   until the user regenerates it. It MUST NOT be logged.
 - Header bytes capped at 16 KiB (431), body capped at 64 KiB (413), Content-Length
@@ -271,8 +284,9 @@ The bridge MUST run only while enabled, and its foreground notification MUST say
   under ADR 0002;
   builds from a clean checkout with documented commands.
 - Third-party license notices MUST ship in the app (Settings > Licenses).
-- `minSdk` and `targetSdk` are set by SPIKE-01 findings; `targetSdk` follows the current
-  F-Droid and Android requirements at release time.
+- `minSdk` 24 and `targetSdk` 36 (owner, 2026-10-02: SPIKE-01 found nothing that sets them;
+  24 is React Native 0.87's floor). `targetSdk` follows the current F-Droid and Android
+  requirements at release time.
 
 ### R-M14 - Verification
 
@@ -393,7 +407,9 @@ Stored by the Kotlin Store (ADR 0001).
 
 ```text
 Item       id, kind(link|text), url?, title, site?, byline?, createdAt,
-           state(fetching|fetch-failed|extract-poor|ready|archived), failReason?
+           state(fetching|fetched|fetch-failed|extract-poor|ready), failReason?,
+           openedAt?, archivedAt?                      (ADR 0007)
+Body       itemId, html                       (only while state = fetched)
 Paragraph  itemId, index, kind(p|heading|li), text
 Cut        itemId, paragraphIndex            (presence = cut)
 Position   itemId, paragraphIndex, charOffset, updatedAt
@@ -636,6 +652,7 @@ named one.
 | 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
 | 2026-10-01 | TTS contention (SPIKE-06): the bridge answers 503 while Read Me is playing (ADR 0004). |
 | 2026-10-01 | One foreground service, type `mediaPlayback`, hosts playback and the bridge (SPIKE-01, ADR 0005). |
+| 2026-10-02 | REA-14 (delegated to Claude by the owner): F12 `fetched` state and F15 `openedAt`/`archivedAt` (ADR 0007); F13 Retry is the same request; F14 failure actions unified; F16 runtime JS guard and Kotlin outbound-only rule; F21 unauthenticated `/health` accepted; minSdk 24, targetSdk 36; ADR 0004's in-flight rule kept. |
 | 2026-10-02 | Readability runs on every real page; F17's 1.5 s becomes a target, 5 s the hard line; only a predicted stall skips Readability (ADR 0006). |
 
 # Critique resolutions (2026-10-01)

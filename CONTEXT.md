@@ -38,7 +38,8 @@ Rules of the layering:
 ## Data flow
 
 ```text
-share -> intake -> [link] Fetcher -> extract -> library (ready | extract-poor | fetch-failed)
+share -> intake -> [link] Fetcher -> fetched (body app-private) -> extract -> library
+                                                        (ready | extract-poor | fetch-failed)
                 -> [text] split on blank lines -> library (ready)
 open item -> Trim (first time) -> Reader -> segment -> PlaybackService queue -> TTS
 onDone(n) -> position saved (paragraph, offset) -> next utterance
@@ -104,5 +105,5 @@ JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS
   `extract` is Readability over linkedom on the JS thread, so a heavy page freezes the screen
   for seconds (ADR 0006). Not covered by any
   spike: Android 14-16, targetSdk 37, battery power and Doze, the Google TTS engine.
-- Roadmap findings F11-F21 (`docs/superpowers/plans/2026-10-01-roadmap.md`) propose SRS
-  amendments not yet applied, including a `fetched` state between fetch and extraction (F12).
+- Roadmap finding F18 (`docs/superpowers/plans/2026-10-01-roadmap.md`) still proposes an SRS
+  amendment not yet applied; F12-F16 and F21 are applied (ADR 0007, REA-14).
