@@ -63,6 +63,43 @@ for (const depth of [60, 120]) {
   });
 }
 
+// Critique round 3: element count drives Readability's time too, and the model's large-page
+// side was never measured above 19 M units. These check the fitted model (ADR 0006) on the
+// device: a comment thread, a long link index, and the 5 MB page wrapped four levels deeper.
+const sentences = inner
+  .replace(/<[^>]+>/g, ' ')
+  .split(/(?<=[.!?])\s+/)
+  .filter(x => x.length > 40)
+  .slice(0, 4000);
+let thread = '';
+for (let i = 0; i < 2000; i++) {
+  thread +=
+    `<div class="comment"><div class="meta"><a href="/u/${i}">user${i}</a> <span>${i}h</span></div>` +
+    `<div class="body"><p>${sentences[i % sentences.length]}</p></div></div>`;
+}
+pages.push({
+  name: 'synthetic-comment-thread',
+  html: `<!doctype html><html><head><title>Thread</title></head><body><main>${thread}</main></body></html>`,
+});
+let links = '';
+for (let i = 0; links.length < 940 * 1024; i++) {
+  links += `<li><a href="/page/${i}">${sentences[i % sentences.length].slice(
+    0,
+    60,
+  )}</a></li>`;
+}
+pages.push({
+  name: 'synthetic-link-index',
+  html: `<!doctype html><html><head><title>Index</title></head><body><ul>${links}</ul></body></html>`,
+});
+pages.push({
+  name: 'synthetic-5mb-wrapped',
+  html:
+    head.replace('<article>', '<div><div><div><div><article>') +
+    big +
+    tail.replace('</article>', '</article></div></div></div></div>'),
+});
+
 // Pages that may not be committed (Wikipedia and MDN are CC BY-SA) can still be measured:
 // put them in the gitignored .claude/scratch/devcheck/local-pages/. They run as local-<name>
 // and never leave this machine.

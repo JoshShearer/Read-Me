@@ -1,5 +1,6 @@
-// Compares the devcheck's device fingerprints with Node's and applies SPIKE-02's F17 line
-// (median extract time: 10 s for the 5 MB page, 1.5 s for every page under 1 MB).
+// Compares the devcheck's device fingerprints with Node's, and checks median extract time
+// (ADR 0006): a hard stall ceiling (5 s under 1 MB, 10 s above) fails the devcheck; F17's
+// 1.5 s line for pages under 1 MB is a target, reported MET or MISSED.
 // Fails closed: every one of the RUNS runs must report Hermes and a result for every fixture.
 // Usage: devcheck-report.mjs expected.json device.txt RUNS
 import { readFileSync } from 'node:fs';
@@ -7,7 +8,9 @@ import { readFileSync } from 'node:fs';
 const [expectedPath, devicePath, runsArg] = process.argv.slice(2);
 const RUNS = Number(runsArg);
 if (!Number.isInteger(RUNS) || RUNS < 1) {
-  console.log('devcheck: FAIL (RUNS argument missing or not a positive integer)');
+  console.log(
+    'devcheck: FAIL (RUNS argument missing or not a positive integer)',
+  );
   process.exit(1);
 }
 const expected = JSON.parse(readFileSync(expectedPath, 'utf8'));
@@ -22,7 +25,8 @@ for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
     // temperature, not the code (fdaafaa: parse 2.4x slower at status 1).
     const th = JSON.parse(t[2]);
     thermalSeen.set(t[1], (thermalSeen.get(t[1]) ?? 0) + 1);
-    if (th.status !== 0) throttled.push(`run ${t[1]} ${th.name} status ${th.status}`);
+    if (th.status !== 0)
+      throttled.push(`run ${t[1]} ${th.name} status ${th.status}`);
     continue;
   }
   const m = /^run=(\d+) DEVCHECK(_ENV)? (\{.*\})$/.exec(line);
@@ -56,7 +60,8 @@ const stageMedians = rs => {
 let ok = expected.length > 0;
 for (let r = 1; r <= RUNS; r++) {
   const launches = envs.get(String(r)) ?? [];
-  if (launches.length === 0 || !launches.every(e => e.hermes === true)) ok = false;
+  if (launches.length === 0 || !launches.every(e => e.hermes === true))
+    ok = false;
 }
 const distinct = [
   ...new Set([...envs.values()].flat().map(e => JSON.stringify(e))),
@@ -67,11 +72,14 @@ for (const e of expected) {
   const parity = rs.length === RUNS && rs.every(r => r.hash === e.hash);
   const extract = rs.map(r => r.extractMs);
   const med = median(extract);
-  const limit =
-    e.bytes === undefined ? null : e.bytes < 1024 * 1024 ? 1500 : 10000;
+  const small = e.bytes !== undefined && e.bytes < 1024 * 1024;
+  const ceiling = e.bytes === undefined ? null : small ? 5000 : 10000;
+  const target = e.bytes === undefined ? null : small ? 1500 : 10000;
+  const stall =
+    ceiling === null || med === null ? 'n/a' : med <= ceiling ? 'PASS' : 'FAIL';
   const f17 =
-    limit === null || med === null ? 'n/a' : med <= limit ? 'PASS' : 'FAIL';
-  if (!parity || f17 === 'FAIL') ok = false;
+    target === null || med === null ? 'n/a' : med <= target ? 'MET' : 'MISSED';
+  if (!parity || stall === 'FAIL') ok = false;
   console.log(
     JSON.stringify({
       name: e.name,
@@ -82,7 +90,9 @@ for (const e of expected) {
       sentences: e.sentences,
       extractMs: extract,
       medianExtractMs: med,
-      limitMs: limit,
+      ceilingMs: ceiling,
+      stall,
+      f17TargetMs: target,
       f17,
       segmentMs: rs.map(r => r.segmentMs),
       stagesMedianMs: stageMedians(rs),
@@ -93,12 +103,18 @@ for (const e of expected) {
 for (let r = 1; r <= RUNS; r++) {
   const launches = (envs.get(String(r)) ?? []).length;
   if ((thermalSeen.get(String(r)) ?? 0) < launches) {
-    throttled.push(`run ${r}: ${launches - (thermalSeen.get(String(r)) ?? 0)} launch(es) with no thermal status`);
+    throttled.push(
+      `run ${r}: ${
+        launches - (thermalSeen.get(String(r)) ?? 0)
+      } launch(es) with no thermal status`,
+    );
   }
 }
 if (throttled.length > 0) {
   ok = false;
-  console.log(`throttled launches (timings not valid for F17): ${throttled.join('; ')}`);
+  console.log(
+    `throttled launches (timings not valid for F17): ${throttled.join('; ')}`,
+  );
 }
 console.log(ok ? 'devcheck: PASS' : 'devcheck: FAIL');
 process.exit(ok ? 0 : 1);

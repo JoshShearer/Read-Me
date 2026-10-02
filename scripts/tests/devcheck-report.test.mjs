@@ -77,3 +77,16 @@ test('a launch with no thermal line fails: it cannot be shown to be cool', () =>
   const r = report([thermal(1, 0), env(1, true), row(1), env(2, true), row(2), thermal(3, 0), env(3, true), row(3)], 3);
   assert.equal(r.status, 1, r.stdout);
 });
+
+const slow = (run, ms) => `run=${run} DEVCHECK {"name":"page","hash":"h1","extractMs":${ms},"segmentMs":1}`;
+
+test('a small page over F17s 1.5 s but under its 5 s ceiling passes, reported as a missed target', () => {
+  const r = report([1, 2, 3].flatMap(n => [thermal(n, 0), env(n, true), slow(n, 2100)]), 3);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /"f17":"MISSED"/);
+});
+
+test('a small page over its 5 s ceiling fails', () => {
+  const r = report([1, 2, 3].flatMap(n => [thermal(n, 0), env(n, true), slow(n, 5200)]), 3);
+  assert.equal(r.status, 1, r.stdout);
+});
