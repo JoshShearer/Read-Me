@@ -11,7 +11,12 @@
     "build:release": "scripts/build-release.sh",
     "device:install": "scripts/device-install.sh",
     "device:smoke": "scripts/device-smoke.sh",
-    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh"
+    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh",
+    "devcheck:fixtures": "node scripts/make-devcheck-fixtures.mjs",
+    "postinstall": "node scripts/make-devcheck-fixtures.mjs",
+    "pretest": "node scripts/make-devcheck-fixtures.mjs",
+    "pretypecheck": "node scripts/make-devcheck-fixtures.mjs",
+    "device:devcheck": "scripts/devcheck.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
