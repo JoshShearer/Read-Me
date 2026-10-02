@@ -6,7 +6,8 @@ import { join } from 'node:path';
 // R-M09.2 and AGENTS.md 6, JS half: no app source may reference the JS network APIs. The
 // Kotlin half (only Fetcher opens a connection) lands with Fetcher in Phase 2.
 const ROOT = join(__dirname, '..');
-const BANNED = /\b(fetch|XMLHttpRequest|WebSocket)\b/;
+// A hyphen after the word is a state name ('fetch-failed', srs.md data model), never an API.
+const BANNED = /\b(fetch|XMLHttpRequest|WebSocket)\b(?!-)/;
 const SOURCE = /\.(ts|tsx|js|jsx)$/;
 
 function sources(dir: string): string[] {
@@ -24,6 +25,8 @@ test('the guard pattern catches each banned API', () => {
   expect(BANNED.test('new XMLHttpRequest()')).toBe(true);
   expect(BANNED.test('new WebSocket(u)')).toBe(true);
   expect(BANNED.test('the body was fetched natively')).toBe(false);
+  expect(BANNED.test("state === 'fetch-failed'")).toBe(false);
+  expect(BANNED.test('globalThis.fetch')).toBe(true);
 });
 
 test('no app source references fetch, XMLHttpRequest or WebSocket', () => {
