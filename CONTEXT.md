@@ -79,6 +79,8 @@ src/trim/                    R-M05: cut operations and position remapping
 src/native/                  NativeReadMeSpeech.ts: the TurboModule spec (codegen)
 src/library/                 TS facade over ReadMeSpeech: items, actions, fetched drain, change events;
                              playback.ts: R-M07/R-M11 play plan (start sentence from the saved offset), controls, playback events
+src/ui/                      R-M01 screens: model.ts (routes, R-M10 actions, list rows, reader
+                             spans; pure), List, Trim, Reader, Settings, Licenses
 src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
                              (fixtures.generated.ts is gitignored, written by make-devcheck-fixtures.mjs)
@@ -89,7 +91,8 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
   lifecycle per ADR 0007; Settings: the rate), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
-  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; PlaybackHub: in-process hand-off and
+  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; EngineProbe: engine and offline voices before any play;
+  PlaybackHub: in-process hand-off and
   ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
@@ -97,13 +100,14 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
                              device-intake-e2e.sh (share a link, a text and a dead link),
                              device-playback-e2e.sh (play, pause, media keys screen-off, archive),
                              device-gap.sh (R-M07 gaps, 10 min at 2x, battery + Doze),
+                             device-ui-e2e.sh (every screen), make-notices.mjs (Settings > Licenses asset),
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
-Planned: `src/reader/`, `BridgeServer`.
+Planned: `BridgeServer`.
 
 **Identifiers:** application id `io.loopstring.readme`; launcher `io.loopstring.readme/.MainActivity`;
 JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS` (JS console),

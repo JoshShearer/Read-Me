@@ -42,6 +42,8 @@ npm run device:intake     # shares an https link, an http link, a text and a dea
 npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text (clears app data)
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
+npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
+npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
 ```
 
 ### Device work: the one-phone slot
@@ -153,9 +155,14 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   10 min at 2x, battery, forced Doze, screen off), `npm run device:intake` (build da81794);
   app code identical across the three. A cold engine took 8 s to first audio once (the
   engine's own `time-to-first-audio: 8056` log, build 446b630, device:playback run).
-  R-M06 is partial: the no-engine / no-voice state shows only after a play attempt and does
-  not block the list; Phase 4 probes the engine at launch.
-  No reader, trim screen or bridge yet.
+  R-M06's blocking state: the Reader probes the engine on open (Phase 4).
+- **UI (Phase 4, REA-19):** List (unread / Archive, words, progress, R-M10 states and
+  actions), Trim (first open; tap, "Cut everything after this", "Start here"), Reader
+  (highlight kept in view, transport, engine card probed on open), Settings (offline voices,
+  default rate, storage, Licenses from a generated asset). Verified by `npm run device:ui`
+  (2026-10-02, build c870f28). No bridge yet (Settings has no bridge row until Phase 5).
+  Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
+  when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
