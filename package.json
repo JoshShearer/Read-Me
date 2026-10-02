@@ -11,16 +11,24 @@
     "build:release": "scripts/build-release.sh",
     "device:install": "scripts/device-install.sh",
     "device:smoke": "scripts/device-smoke.sh",
-    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh"
+    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh",
+    "devcheck:fixtures": "node scripts/make-devcheck-fixtures.mjs",
+    "postinstall": "node scripts/make-devcheck-fixtures.mjs",
+    "pretest": "node scripts/make-devcheck-fixtures.mjs",
+    "pretypecheck": "node scripts/make-devcheck-fixtures.mjs",
+    "device:devcheck": "scripts/devcheck.sh"
   },
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "@react-native/new-app-screen": "0.87.1",
+    "linkedom": "0.18.13",
     "react": "19.2.3",
     "react-native": "0.87.1",
-    "@react-native/new-app-screen": "0.87.1",
     "react-native-safe-area-context": "^5.5.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@babel/plugin-transform-export-namespace-from": "7.29.7",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
     "@react-native-community/cli": "20.2.0",
@@ -32,6 +40,7 @@
     "@react-native/metro-config": "0.87.1",
     "@react-native/typescript-config": "0.87.1",
     "@types/jest": "^29.5.13",
+    "@types/node": "24.19.1",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^8.19.0",

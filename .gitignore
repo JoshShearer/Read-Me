@@ -91,3 +91,6 @@ yarn-error.log
 
 # fdroidserver venv for scripts/fdroid-scan.sh
 .venv-fdroid/
+
+# Phase 1 devcheck generated fixtures
+src/devcheck/fixtures.generated.ts

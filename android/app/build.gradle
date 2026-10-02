@@ -37,7 +37,9 @@ react {
     // bundleAssetName = "MyApplication.android.bundle"
     //
     //   The entry file for bundle generation. Default is 'index.android.js' or 'index.js'
-    // entryFile = file("../js/MyApplication.android.js")
+    // The product entry is index.js. scripts/devcheck.sh passes -PreadmeEntryFile to build
+    // the devcheck bundle instead (Phase 1 Task 6); nothing else sets it.
+    entryFile = file(project.findProperty("readmeEntryFile") ?: "../../index.js")
     //
     //   A list of extra flags to pass to the 'bundle' commands.
     //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
