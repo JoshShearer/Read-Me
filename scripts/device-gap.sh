@@ -27,6 +27,8 @@ node -e '
   process.stdout.write(out);
 ' > "$TXT"
 adb push "$TXT" /data/local/tmp/readme-gap.txt >/dev/null
+want=$(wc -c < "$TXT"); got=$(adb shell wc -c /data/local/tmp/readme-gap.txt | awk '{print $1}')
+[ "$got" = "$want" ] || { echo "FAIL: pushed $got of $want bytes"; exit 1; }
 rm -f "$TXT"
 
 restore() {
@@ -39,8 +41,11 @@ DEVICE_ON_EXIT=restore
 adb shell pm clear "$PKG" >/dev/null
 adb logcat -c
 # The device's shell expands the file into the extra; nothing long rides the adb argv.
-echo "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT \"\$(cat /data/local/tmp/readme-gap.txt)\"" \
-  | adb shell >/dev/null
+# Two runs started 2 s after an unlock ended with an empty list (2026-10-02); the same share
+# by hand worked. Say what am answered rather than guess next time.
+started=$(echo "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT \"\$(cat /data/local/tmp/readme-gap.txt)\"" \
+  | adb shell 2>&1 || true)
+device_has "$started" 'Status: ok' || { echo "FAIL: the share did not start:"; grep -vE '^$' <<<"$started" | head -5; exit 1; }
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 b=""
 # A 60 KB share takes a few seconds to land in the list; poll rather than look once.
