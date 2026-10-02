@@ -37,6 +37,7 @@ npm run build:release                       # assembleRelease
 scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolved Gradle tree, licenses
 npm run device:install                      # takes the device slot, installs the release build
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
+npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 ```
 
 ### Device work: the one-phone slot
@@ -127,7 +128,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 
 ## Known state
 
-- **Scaffold only:** RN 0.87.1 template app, gates and CI. No product modules yet.
+- **Text pipeline (Phase 1, REA-15):** `intake`, `extract`, `segment`, `trim` in TS, pure
+  functions with no native, storage or UI; verified on Hermes by `npm run device:devcheck`
+  (2026-10-01, build a4336b9: parity on all fixtures, 5 MB median 8640 ms). No native module,
+  storage, playback or screens yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
