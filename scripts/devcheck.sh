@@ -43,14 +43,19 @@ echo "installed DEVCHECK build $HEAD7 on the phone (replaces whatever build was 
 for run in $(seq "$RUNS"); do
   adb shell am force-stop "$PKG"
   adb logcat -c
-  adb shell am start -n "$PKG/.MainActivity" >/dev/null
+  # -W waits for the launch; without it the first pidof can run before the process exists and
+  # a healthy run is reported as a death.
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
   done_=""
   logs=""
+  seen=""
   for _ in $(seq 300); do
     # Read whole, then search (scripts/lib/device.sh, device_has).
     logs=$(adb logcat -d -s ReactNativeJS:I)
     if device_has "$logs" 'DEVCHECK_DONE'; then done_=1; break; fi
-    if [ -z "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)" ]; then
+    pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+    if [ -n "$pid" ]; then seen=1; fi
+    if [ -n "$seen" ] && [ -z "$pid" ]; then
       echo "run $run: app process died during the devcheck" >&2
       crash=$(adb logcat -d -b crash,main)
       grep -E "AndroidRuntime|FATAL|libc|OutOfMemory|hermes" <<<"$crash" | tail -20 >&2 || true
@@ -58,7 +63,7 @@ for run in $(seq "$RUNS"); do
     fi
     sleep 1
   done
-  [ -n "$done_" ] || { echo "run $run: no DEVCHECK_DONE within 300 s" >&2; exit 1; }
+  [ -n "$done_" ] || { echo "run $run: no DEVCHECK_DONE within 300 s (process seen: ${seen:-no})" >&2; exit 1; }
   grep -oE 'DEVCHECK(_ENV)? \{.*\}' <<<"$logs" | sed "s/^/run=$run /" >> "$DEVICE_OUT"
 done
 node scripts/devcheck-report.mjs "$EXPECTED" "$DEVICE_OUT"
