@@ -22,6 +22,7 @@ class SpikeService : Service() {
   private val handler = Handler(Looper.getMainLooper())
   private var gap: GapProbe? = null
   private var load: SynthLoad? = null
+  private var bridge: SpikeBridge? = null
   private var wakeLock: PowerManager.WakeLock? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
@@ -36,6 +37,7 @@ class SpikeService : Service() {
     goForeground(intent?.getStringExtra("fgs") ?: "media", cmd)
     when (cmd) {
       "gap" -> startGap(intent!!)
+      "bridge" -> startBridge(intent!!)
       else -> {
         stopEverything()
         stopSelf()
@@ -113,11 +115,28 @@ class SpikeService : Service() {
     }
   }
 
+  private fun startBridge(intent: Intent) {
+    stopEverything()
+    val token = intent.getStringExtra("token")
+    if (token == null || !TOKEN.matches(token)) {
+      report("RESULT", JSONObject().put("bridge", "bad-token"))
+      return
+    }
+    try {
+      bridge = SpikeBridge(this, token)
+      report("RESULT", JSONObject().put("bridge", "listening").put("port", 8787))
+    } catch (e: java.net.BindException) {
+      report("RESULT", JSONObject().put("bridge", "bind-failed").put("error", e.javaClass.simpleName))
+    }
+  }
+
   private fun stopEverything() {
     gap?.cancel()
     gap = null
     load?.let { report("RESULT", JSONObject().put("cancelledLoad", it.stopAndReport())) }
     load = null
+    bridge?.close()
+    bridge = null
     handler.removeCallbacksAndMessages(null)
     releaseWakeLock()
   }
@@ -136,6 +155,7 @@ class SpikeService : Service() {
     const val TAG = "ReadMeSpike"
     private const val CHANNEL = "spike"
     private const val NOTIFICATION_ID = 7001
+    private val TOKEN = Regex("[0-9a-f]{32}")
 
     fun report(kind: String, json: JSONObject) {
       Log.i(TAG, "SPIKE_$kind $json")
