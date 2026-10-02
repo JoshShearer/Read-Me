@@ -59,7 +59,16 @@ function Main() {
     default:
       screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
   }
-  return <View style={[ui.screen, { paddingTop: insets.top }]}>{screen}</View>;
+  // collapsable={false}: Fabric flattens layout-only views, which mounted every screen's
+  // children straight into SafeAreaProvider's native view; switching List to Trim then
+  // crashed with "addViewAt: failed to insert view [134] into parent [2] at index 3"
+  // (parent 2 = SafeAreaProvider; reproduced 2026-10-02, build 65ef1b2, device:ui). A real
+  // wrapper gives the provider exactly one child and keeps screen swaps inside our own view.
+  return (
+    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top }]}>
+      {screen}
+    </View>
+  );
 }
 
 export default function App() {
