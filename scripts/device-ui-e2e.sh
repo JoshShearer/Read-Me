@@ -12,11 +12,16 @@ device_take interactive
 device_require_unlocked
 device_install_release
 
-TEXT='Alpha one is here. Alpha two is here.
+# Ten four-word sentences in each kept paragraph: playback must outlast the screen checks
+# (two sentences each finished in 8 s, before the first uiautomator dump; 2026-10-02).
+words=(one two three four five six seven eight nine ten)
+alpha=""; gamma=""
+for w in "${words[@]}"; do alpha+="Alpha $w is here. "; gamma+="Gamma $w is here. "; done
+TEXT="${alpha% }
 
 Beta one is cut. Beta two is cut. Beta three is cut.
 
-Gamma one is here. Gamma two is here.'
+${gamma% }"
 
 adb shell pm clear "$PKG" >/dev/null
 adb logcat -c
@@ -55,13 +60,13 @@ logs() { adb logcat -d -s ReadMe:I; }
 
 fail=0
 # List (R-M01, R-M10)
-on_screen 'text="Shared text · 28 words"' || fail=1
+on_screen 'text="Shared text · 92 words"' || fail=1
 on_screen 'text="fetch-failed: offline"' || fail=1
 on_screen 'content-desc="retry 127.0.0.1"' || fail=1
 on_screen 'share the text to Read Me' || fail=1
 
 # First open goes to Trim (R-M05); cut paragraph 2 by tapping it, then Done
-tap_node text 'Shared text · 28 words'
+tap_node text 'Shared text · 92 words'
 on_screen 'content-desc="trim done"' || fail=1
 tap_node content-desc 'paragraph 2'
 on_screen 'content-desc="paragraph 2 cut"' || fail=1
@@ -73,7 +78,7 @@ tap_node content-desc 'trim done'
 on_screen 'content-desc="play"' || fail=1
 tap_node content-desc 'play'
 for _ in $(seq 20); do device_has "$(logs)" 'playback start item=1 ' && break; sleep 1; done
-device_has "$(logs)" 'playback start item=1 sentences=4 ' || { echo "FAIL: expected 4 kept sentences"; logs | grep 'playback start' | sed 's/^/  /'; fail=1; }
+device_has "$(logs)" 'playback start item=1 sentences=20 ' || { echo "FAIL: expected 20 kept sentences"; logs | grep 'playback start' | sed 's/^/  /'; fail=1; }
 on_screen 'content-desc="current paragraph"' || fail=1
 sleep 3
 tap_node content-desc 'pause'
