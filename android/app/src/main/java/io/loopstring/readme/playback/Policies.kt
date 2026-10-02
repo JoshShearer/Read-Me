@@ -63,17 +63,20 @@ object PlaybackCommands {
   const val ACTION_PREVIOUS = P + "PREVIOUS"
   const val ACTION_BACK_PARAGRAPH = P + "BACK_PARAGRAPH"
   const val ACTION_STOP = P + "STOP"
+  const val ACTION_BRIDGE = P + "BRIDGE"
+  const val ACTION_BRIDGE_OFF = P + "BRIDGE_OFF"
 
   private val CONTROLS = setOf(
     ACTION_PLAY, ACTION_PAUSE, ACTION_TOGGLE, ACTION_NEXT, ACTION_PREVIOUS, ACTION_BACK_PARAGRAPH, ACTION_STOP,
   )
 
-  enum class Route { START, CONTROL, IGNORE, STOP }
+  enum class Route { START, CONTROL, BRIDGE, IGNORE, STOP }
 
-  fun route(action: String?, hasPending: Boolean, hasItem: Boolean): Route = when {
+  fun route(action: String?, hasPending: Boolean, hasItem: Boolean, bridgeOn: Boolean = false): Route = when {
     action == ACTION_START && hasPending -> Route.START
+    action == ACTION_BRIDGE || action == ACTION_BRIDGE_OFF -> Route.BRIDGE
     action in CONTROLS && hasItem -> Route.CONTROL
-    hasItem -> Route.IGNORE
+    hasItem || bridgeOn -> Route.IGNORE
     else -> Route.STOP
   }
 }
@@ -90,4 +93,23 @@ data class PauseHold(val foreground: Boolean, val noisy: Boolean, val focus: Boo
  */
 object PausePolicy {
   fun hold(pausedForFocus: Boolean) = PauseHold(pausedForFocus, pausedForFocus, pausedForFocus)
+}
+
+/** R-M12, ADR 0005: the bridge needs the foreground service whether or not anything plays. */
+object ServiceLife {
+  fun foreground(playing: Boolean, pausedForFocus: Boolean, bridgeOn: Boolean) =
+    playing || PausePolicy.hold(pausedForFocus).foreground || bridgeOn
+
+  fun keepAlive(hasItem: Boolean, bridgeOn: Boolean) = hasItem || bridgeOn
+}
+
+/** R-M12: "its foreground notification MUST say so". */
+object ServiceText {
+  data class Text(val title: String, val body: String, val media: Boolean)
+
+  fun of(itemTitle: String, s: PlaybackSnapshot, bridgeOn: Boolean): Text {
+    if (s.itemId == null) return Text("Read Me", if (bridgeOn) "Obsidian bridge on" else "Starting", false)
+    val state = if (s.playing) "Reading" else "Paused"
+    return Text(itemTitle, if (bridgeOn) "$state · Obsidian bridge on" else state, true)
+  }
 }

@@ -51,4 +51,14 @@ class PlaybackHubStopItemTest {
     PlaybackHub.stopItem(1)
     assertFalse(PlaybackHub.hasPending())
   }
+
+  @Test fun bridgeStatusIsPublishedToListeners() {
+    val seen = mutableListOf<BridgeStatus>()
+    PlaybackHub.addBridgeListener { seen += it }
+    PlaybackHub.publishBridge(BridgeStatus("on", 8787, null))
+    assertEquals(BridgeStatus("on", 8787, null), PlaybackHub.bridge)
+    assertEquals(listOf(BridgeStatus("on", 8787, null)), seen)
+    PlaybackHub.resetForTest()
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+  }
 }
