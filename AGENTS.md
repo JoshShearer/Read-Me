@@ -23,7 +23,7 @@ opencode read the same rules.
 
 ## Quality gates
 
-Established by the scaffold (feature/rea-0-scaffold; no Linear issue yet). CI runs the first seven on every PR and push to `main`
+Established by the scaffold (REA-5, PR #1). CI runs the first seven on every PR and push to `main`
 (`.github/workflows/ci.yml`); the device gates need the phone and run locally.
 
 ```bash
