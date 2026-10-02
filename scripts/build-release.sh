@@ -16,7 +16,6 @@ if [ -d android/app/.cxx ] && { [ ! -f "$CXX_STAMP" ] || [ "$SPEC_TS" -nt "$CXX_
   echo "the TurboModule spec changed since the native build cache was made; cleared it"
 fi
 ( cd android && ./gradlew --quiet assembleRelease )
-mkdir -p android/app/.cxx && touch "$CXX_STAMP"
 # The entry file is a Gradle property, which ORG_GRADLE_PROJECT_readmeEntryFile or a
 # gradle.properties can set without anyone passing it. A product build must never carry the
 # devcheck bundle, so look for its marker in the bundle that was actually packaged.
@@ -48,6 +47,9 @@ if [ -n "$SPEC" ]; then
     exit 1
   fi
 fi
+# Only a cache that produced a complete codegen is marked current; a refused build stays
+# stale so the next run clears it.
+mkdir -p android/app/.cxx && touch "$CXX_STAMP"
 if ! unzip -l "$APK" assets/index.android.bundle >/dev/null 2>&1; then
   rm -f "$APK"
   echo "refused: no assets/index.android.bundle in the APK, so its entry cannot be checked" >&2

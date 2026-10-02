@@ -150,7 +150,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   2026-10-02 on the reference device: `npm run device:playback` (build ec5bce1),
   `npm run device:gap` (build 59324f5: n=92 p50=7 p95=17 max=31 ms, stalls 0, errors 0,
   10 min at 2x, battery, forced Doze, screen off), `npm run device:intake` (build da81794);
-  app code identical across the three. A cold engine took 8 s to first audio once.
+  app code identical across the three. A cold engine took 8 s to first audio once (the
+  engine's own `time-to-first-audio: 8056` log, build 446b630, device:playback run).
+  R-M06 is partial: the no-engine / no-voice state shows only after a play attempt and does
+  not block the list; Phase 4 probes the engine at launch.
   No reader, trim screen or bridge yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
