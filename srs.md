@@ -222,7 +222,7 @@ toast:
 
 | State | Shown as | User actions |
 |---|---|---|
-| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, interrupted) | Retry, "Share the text instead" guidance, Delete |
+| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, network, unsupported redirect, bad URL, interrupted) | Retry, "Share the text instead" guidance, Delete |
 | `extract-poor` | item badge, partial text visible | Read anyway, "Share the text instead" guidance, Delete |
 | no TTS engine / no offline voice | blocking card on Reader | Open TTS settings |
 | bridge port in use | Settings bridge row | Retry |
