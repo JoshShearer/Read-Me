@@ -7,6 +7,14 @@ cd "$(dirname "$0")/.."
 APK=android/app/build/outputs/apk/release/app-release.apk
 STAMP=$APK.stamp
 rm -f "$STAMP"
+# A spec change needs a fresh codegen; a CMake cache from before it silently keeps the old one
+# (the 964fef0 trap). The stamp records which spec the cache was built from.
+SPEC_TS=src/native/NativeReadMeSpeech.ts
+CXX_STAMP=android/app/.cxx/.readme-spec-stamp
+if [ -d android/app/.cxx ] && { [ ! -f "$CXX_STAMP" ] || [ "$SPEC_TS" -nt "$CXX_STAMP" ]; }; then
+  rm -rf android/app/.cxx android/app/build/intermediates/cxx
+  echo "the TurboModule spec changed since the native build cache was made; cleared it"
+fi
 ( cd android && ./gradlew --quiet assembleRelease )
 # The entry file is a Gradle property, which ORG_GRADLE_PROJECT_readmeEntryFile or a
 # gradle.properties can set without anyone passing it. A product build must never carry the
@@ -18,14 +26,30 @@ rm -f "$STAMP"
 # and the app then dies at TurboModuleRegistry.getEnforcing (reproduced 2026-10-02, 964fef0).
 SPEC=$(node -e "console.log((require('./package.json').codegenConfig||{}).name||'')")
 if [ -n "$SPEC" ]; then
-  hits=$(unzip -p "$APK" lib/arm64-v8a/libappmodules.so | grep -ac "$SPEC" || true)
-  if [ "${hits:-0}" = 0 ]; then
+  SO=$(mktemp)
+  unzip -p "$APK" lib/arm64-v8a/libappmodules.so > "$SO"
+  missing=""
+  # Every method of the spec interface must be compiled in, not only the module name: a cache
+  # that predates one method leaves the app crashing when JS first calls it. Only names of 9+
+  # characters are checkable: clang writes shorter literals as immediates, so "getItem" is in
+  # no string table even in a good build (seen 2026-10-02 on the Phase 3 build).
+  for m in "$SPEC" $(node -e "
+    const s=require('fs').readFileSync('$SPEC_TS','utf8');
+    const body=s.slice(s.indexOf('interface Spec'));
+    console.log([...body.matchAll(/^  (\w{9,})\(/gm)].map(x=>x[1]).join(' '))"); do
+    [ "$(grep -ac "$m" "$SO" || true)" = 0 ] && missing="$missing $m"
+  done
+  rm -f "$SO"
+  if [ -n "$missing" ]; then
     rm -f "$APK"
-    echo "refused: libappmodules.so lacks the app codegen ($SPEC); the native build cache is" >&2
+    echo "refused: libappmodules.so lacks the app codegen for:$missing; the native build cache is" >&2
     echo "stale. Run: rm -rf android/app/.cxx android/app/build/intermediates/cxx, then rebuild" >&2
     exit 1
   fi
 fi
+# Only a cache that produced a complete codegen is marked current; a refused build stays
+# stale so the next run clears it.
+mkdir -p android/app/.cxx && touch "$CXX_STAMP"
 if ! unzip -l "$APK" assets/index.android.bundle >/dev/null 2>&1; then
   rm -f "$APK"
   echo "refused: no assets/index.android.bundle in the APK, so its entry cannot be checked" >&2

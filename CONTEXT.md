@@ -77,7 +77,8 @@ src/segment/                 R-M08: paragraphs to sentences with offsets, Intl o
                              R-M11: which sentence a position resumes at
 src/trim/                    R-M05: cut operations and position remapping
 src/native/                  NativeReadMeSpeech.ts: the TurboModule spec (codegen)
-src/library/                 TS facade over ReadMeSpeech: items, actions, fetched drain, change events
+src/library/                 TS facade over ReadMeSpeech: items, actions, fetched drain, change events;
+                             playback.ts: R-M07/R-M11 play plan (start sentence from the saved offset), controls, playback events
 src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
                              (fixtures.generated.ts is gitignored, written by make-devcheck-fixtures.mjs)
@@ -86,18 +87,23 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
-  lifecycle per ADR 0007), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery)
+  lifecycle per ADR 0007; Settings: the rate), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
+  playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
+  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; PlaybackHub: in-process hand-off and
+  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
                              devcheck.sh + devcheck-report.mjs (pipeline on Hermes vs Node),
                              device-intake-e2e.sh (share a link, a text and a dead link),
+                             device-playback-e2e.sh (play, pause, media keys screen-off, archive),
+                             device-gap.sh (R-M07 gaps, 10 min at 2x, battery + Doze),
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
-Planned: `src/reader/`, `PlaybackService`, `BridgeServer`.
+Planned: `src/reader/`, `BridgeServer`.
 
 **Identifiers:** application id `io.loopstring.readme`; launcher `io.loopstring.readme/.MainActivity`;
 JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS` (JS console),

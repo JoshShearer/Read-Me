@@ -3,6 +3,7 @@ package io.loopstring.readme.store
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
+import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.annotation.VisibleForTesting
@@ -23,6 +24,9 @@ data class ItemRow(
 )
 
 data class ParagraphRow(val kind: String, val text: String)
+
+/** R-M11: a character offset in a paragraph, never a sentence index (AGENTS.md 10). */
+data class PositionRow(val paragraphIndex: Int, val charOffset: Int)
 
 object States {
   const val FETCHING = "fetching"
@@ -274,6 +278,46 @@ class Store private constructor(context: Context) :
 
   fun restore(id: Long) {
     writableDatabase.execSQL("UPDATE items SET archived_at = NULL WHERE id = ?", arrayOf<Any>(id))
+    ItemEvents.changed()
+  }
+
+  /**
+   * R-M11: written by PlaybackService after every sentence and on pause. False when the item is
+   * gone (deleted while it played): the foreign key refuses the row. No ItemEvents: a list
+   * refresh per sentence would be waste, and the list does not show positions.
+   */
+  fun savePosition(id: Long, paragraphIndex: Int, charOffset: Int, now: Long): Boolean =
+    try {
+      writableDatabase.execSQL(
+        "INSERT OR REPLACE INTO positions (item_id, paragraph_index, char_offset, updated_at) " +
+          "VALUES (?, ?, ?, ?)",
+        arrayOf<Any>(id, paragraphIndex, charOffset, now),
+      )
+      true
+    } catch (e: SQLiteConstraintException) {
+      false
+    }
+
+  fun position(id: Long): PositionRow? =
+    readableDatabase.rawQuery(
+      "SELECT paragraph_index, char_offset FROM positions WHERE item_id = ?",
+      arrayOf(id.toString()),
+    ).use { c -> if (c.moveToFirst()) PositionRow(c.getInt(0), c.getInt(1)) else null }
+
+  /**
+   * R-M11, ADR 0007: the last kept sentence finished. Archive (state kept) and drop the
+   * position, so reopening the item starts from the top rather than past its end.
+   */
+  fun finishReading(id: Long, now: Long) {
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+      db.execSQL("UPDATE items SET archived_at = ? WHERE id = ?", arrayOf<Any>(now, id))
+      db.delete("positions", "item_id = ?", arrayOf(id.toString()))
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
     ItemEvents.changed()
   }
 

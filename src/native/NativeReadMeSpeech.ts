@@ -25,6 +25,28 @@ export type NativeItemDetail = {
   cuts: number[];
 };
 
+// One utterance for PlaybackService (R-M07): text is paragraph.text.slice(start, end).
+export type NativeSentence = {
+  paragraphIndex: number;
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type NativePosition = { paragraphIndex: number; charOffset: number };
+
+// The service's state. paragraphIndex is -1 when there is no current sentence. engine is
+// 'unknown' until a service has started, then 'pending', 'ready', 'no-engine' or 'no-voice'.
+export type NativePlayback = {
+  itemId: number | null;
+  playing: boolean;
+  paragraphIndex: number;
+  start: number;
+  end: number;
+  rate: number;
+  engine: string;
+};
+
 export interface Spec extends TurboModule {
   listItems(): Promise<NativeItem[]>;
   getItem(id: number): Promise<NativeItemDetail | null>;
@@ -43,6 +65,21 @@ export interface Spec extends TurboModule {
   setCut(id: number, paragraphIndex: number, cut: boolean): Promise<void>;
   archiveItem(id: number): Promise<void>;
   restoreItem(id: number): Promise<void>;
+  play(
+    itemId: number,
+    title: string,
+    sentences: NativeSentence[],
+    startIndex: number,
+  ): Promise<boolean>;
+  pause(): Promise<boolean>;
+  resume(): Promise<boolean>;
+  next(): Promise<boolean>;
+  previous(): Promise<boolean>;
+  backParagraph(): Promise<boolean>;
+  setRate(rate: number): Promise<number>;
+  getRate(): Promise<number>;
+  getPlayback(): Promise<NativePlayback>;
+  getPosition(itemId: number): Promise<NativePosition | null>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

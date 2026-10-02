@@ -2,6 +2,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- R-M07, ADR 0005: playback (and in Phase 5 the bridge) runs in one mediaPlayback
+         foreground service; the wake lock is held only while speaking. No POST_NOTIFICATIONS:
+         a media-session notification is exempt from the Android 13 notification permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!--
       R-M06. An app targeting API 30+ cannot see or bind a TTS engine without this query.
       Proven causal by single-variable A/B on the reference device (srs.md, Background).
@@ -50,5 +57,9 @@
             <data android:mimeType="text/plain" />
         </intent-filter>
       </activity>
+      <service
+        android:name=".playback.PlaybackService"
+        android:exported="false"
+        android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>

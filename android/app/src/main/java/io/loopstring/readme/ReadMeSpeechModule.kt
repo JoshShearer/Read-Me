@@ -6,10 +6,17 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableMap
 import io.loopstring.readme.fetch.FetchWorker
+import io.loopstring.readme.playback.PlaybackCommands
+import io.loopstring.readme.playback.PlaybackHub
+import io.loopstring.readme.playback.PlaybackService
+import io.loopstring.readme.playback.PlaybackSnapshot
+import io.loopstring.readme.playback.SentenceRow
 import io.loopstring.readme.spec.NativeReadMeSpeechSpec
 import io.loopstring.readme.store.ItemEvents
 import io.loopstring.readme.store.ItemRow
 import io.loopstring.readme.store.ParagraphRow
+import io.loopstring.readme.store.Rate
+import io.loopstring.readme.store.Settings
 import io.loopstring.readme.store.Store
 
 /**
@@ -20,16 +27,22 @@ import io.loopstring.readme.store.Store
 class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(ctx) {
   private val store get() = Store.get(reactApplicationContext)
   private val onChange: () -> Unit = { reactApplicationContext.emitDeviceEvent(EVENT_CHANGED) }
+  private val settings get() = Settings(reactApplicationContext)
+  private val onPlayback: (PlaybackSnapshot) -> Unit = {
+    reactApplicationContext.emitDeviceEvent(EVENT_PLAYBACK, it.toMap())
+  }
 
   override fun getName(): String = NAME
 
   override fun initialize() {
     super.initialize()
     ItemEvents.add(onChange)
+    PlaybackHub.addListener(onPlayback)
   }
 
   override fun invalidate() {
     ItemEvents.remove(onChange)
+    PlaybackHub.removeListener(onPlayback)
     super.invalidate()
   }
 
@@ -83,7 +96,12 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     started
   }
 
-  override fun deleteItem(id: Double, promise: Promise) = settle(promise) { store.delete(id.toLong()); null }
+  // Review Focus 2: stop first, so no onDone saves into a row that is going away.
+  override fun deleteItem(id: Double, promise: Promise) = settle(promise) {
+    PlaybackHub.stopItem(id.toLong())
+    store.delete(id.toLong())
+    null
+  }
 
   override fun markOpened(id: Double, promise: Promise) =
     settle(promise) { store.markOpened(id.toLong(), System.currentTimeMillis()); null }
@@ -95,6 +113,61 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     settle(promise) { store.archive(id.toLong(), System.currentTimeMillis()); null }
 
   override fun restoreItem(id: Double, promise: Promise) = settle(promise) { store.restore(id.toLong()); null }
+
+  override fun play(itemId: Double, title: String, sentences: ReadableArray, startIndex: Double, promise: Promise) =
+    settle(promise) {
+      val rows = (0 until sentences.size()).map { i ->
+        val s = sentences.getMap(i)!!
+        SentenceRow(s.getInt("paragraphIndex"), s.getInt("start"), s.getInt("end"), s.getString("text")!!)
+      }
+      val start = startIndex.toInt()
+      if (start !in rows.indices) return@settle false
+      PlaybackService.start(reactApplicationContext, PlaybackHub.Request(itemId.toLong(), title, rows, start))
+      true
+    }
+
+  override fun pause(promise: Promise) = settle(promise) { PlaybackHub.control(PlaybackCommands.ACTION_PAUSE) }
+
+  override fun resume(promise: Promise) = settle(promise) { PlaybackHub.control(PlaybackCommands.ACTION_PLAY) }
+
+  override fun next(promise: Promise) = settle(promise) { PlaybackHub.control(PlaybackCommands.ACTION_NEXT) }
+
+  override fun previous(promise: Promise) = settle(promise) { PlaybackHub.control(PlaybackCommands.ACTION_PREVIOUS) }
+
+  override fun backParagraph(promise: Promise) =
+    settle(promise) { PlaybackHub.control(PlaybackCommands.ACTION_BACK_PARAGRAPH) }
+
+  override fun setRate(rate: Double, promise: Promise) = settle(promise) {
+    val r = Rate.clamp(rate.toFloat())
+    settings.rate = r
+    PlaybackHub.queue?.setRate(r)
+    Math.round(r * 10) / 10.0
+  }
+
+  override fun getRate(promise: Promise) = settle(promise) { Math.round(settings.rate * 10) / 10.0 }
+
+  override fun getPlayback(promise: Promise) = settle(promise) { PlaybackHub.last.toMap() }
+
+  override fun getPosition(itemId: Double, promise: Promise) = settle(promise) {
+    store.position(itemId.toLong())?.let { p ->
+      Arguments.createMap().apply {
+        putInt("paragraphIndex", p.paragraphIndex)
+        putInt("charOffset", p.charOffset)
+      }
+    }
+  }
+
+  // Offsets and ids only; the sentence text stays native (JS already has it).
+  private fun PlaybackSnapshot.toMap(): WritableMap = Arguments.createMap().apply {
+    val id = itemId
+    if (id == null) putNull("itemId") else putDouble("itemId", id.toDouble())
+    putBoolean("playing", playing)
+    putInt("paragraphIndex", sentence?.paragraphIndex ?: -1)
+    putInt("start", sentence?.start ?: 0)
+    putInt("end", sentence?.end ?: 0)
+    putDouble("rate", Math.round(rate * 10) / 10.0)
+    putString("engine", PlaybackHub.engine)
+  }
 
   // NativeEventEmitter's contract; the events go out through emitDeviceEvent.
   override fun addListener(eventName: String) {}
@@ -126,5 +199,6 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   companion object {
     const val NAME = "ReadMeSpeech"
     const val EVENT_CHANGED = "ReadMeItemsChanged"
+    const val EVENT_PLAYBACK = "ReadMePlayback"
   }
 }
