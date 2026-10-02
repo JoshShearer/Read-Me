@@ -84,6 +84,13 @@ class FetcherTest {
     assertEquals(FetchResult.Failed("timeout"), Fetcher(timeoutMs = 700).fetch(url("/a")))
   }
 
+  @Test fun aSlowServerInsideTheDeadlineIsNotCutShort() {
+    // R-M03's limit is the 20 s call deadline. OkHttp's 10 s per-read default failed a server
+    // that answered at 11 s (seen on the phone as timeout at 10046 ms, 2026-10-02).
+    server.enqueue(MockResponse().setBody("slow").setHeadersDelay(11, TimeUnit.SECONDS))
+    assertEquals(FetchResult.Ok("slow"), Fetcher().fetch(url("/a")))
+  }
+
   @Test fun anUnreachableHostIsOffline() {
     val dead = MockWebServer()
     dead.start()

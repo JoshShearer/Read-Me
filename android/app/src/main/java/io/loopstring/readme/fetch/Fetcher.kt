@@ -36,6 +36,11 @@ class Fetcher(
     .cache(null)
     .followRedirects(false)
     .followSslRedirects(false)
+    // The per-call deadline below is the only time limit; OkHttp's 10 s connect and read
+    // defaults would fail a server R-M03 allows 20 s.
+    .connectTimeout(0, TimeUnit.MILLISECONDS)
+    .readTimeout(0, TimeUnit.MILLISECONDS)
+    .writeTimeout(0, TimeUnit.MILLISECONDS)
     .build()
 
   val usesCache: Boolean get() = client.cache != null || client.cookieJar != CookieJar.NO_COOKIES

@@ -29,7 +29,8 @@ share "$TEXT_MARK, with a second sentence.
 Paragraph two."
 share "dead $DEAD"
 # R-M03 allows http: a plain-http page must fetch, not fail as "network" under a cleartext ban.
-share "http://neverssl.com/"
+# example.com, not neverssl.com: neverssl took 1 to 20 s to connect (2026-10-02).
+share "http://example.com/"
 echo "shared four items with the app closed; waiting for the requests"
 sleep 25
 
