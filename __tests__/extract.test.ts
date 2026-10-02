@@ -156,6 +156,16 @@ describe('pages with no article never throw (Review Focus 4)', () => {
     expect(extractArticle(html).poor).toBe(true);
   }, 60000);
 
+  test('a page predicted to stall Readability skips it: a long comment thread', () => {
+    // On the device a 2000-comment thread (divs around a link, a span and a paragraph) took
+    // 3967 ms of Readability; containers cost about 0.46 ms each. 4000 comments predicts ~8 s.
+    let thread = '';
+    for (let i = 0; i < 4000; i++)
+      thread += `<div class="comment"><div class="meta"><a href="/u/${i}">user${i}</a> <span>${i}h</span></div><div class="body"><p>Comment number ${i} says the river rose again.</p></div></div>`;
+    const html = `<html><head><title>T</title></head><body><main>${thread}</main></body></html>`;
+    expect(extractArticle(html).poor).toBe(true);
+  }, 60000);
+
   test('long text nested moderately deep still goes through Readability', () => {
     // 120,000 characters at depth 60 predicts under 1 s: slow pages run, only stalls skip.
     const long = `<p>${PROSE}</p>`.repeat(800);

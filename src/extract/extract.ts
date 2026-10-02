@@ -20,14 +20,30 @@ export type ExtractTimings = Partial<
 export const POOR_MIN_PARAGRAPHS = 3;
 export const POOR_MIN_CHARS = 500;
 // Readability's time on Hermes, predicted before it runs (ADR 0006). It re-reads the text
-// under every wrapper element, so each character costs its nesting depth, and it does fixed
-// work per element. Least-squares fit to eight devcheck fixtures on the reference device
-// (82f15bc, afec9ff): 0.107 ms per thousand depth-weighted units (a character or an element,
-// each weighted by its depth) plus 0.11 ms per element; within 22% on the real pages and the
-// 5 MB page. Slow pages still run (F17's 1.5 s is a target, owner decision 2026-10-02); only a
-// page predicted past the stall ceiling skips Readability and is read as poor.
-export const MS_PER_KILO_UNIT = 0.107;
-export const MS_PER_ELEMENT = 0.11;
+// under every wrapper element, so each character (and element) costs its nesting depth; it
+// does fixed work per element; and each container (div, section, list, table...) gets the
+// extra conversion and cleaning passes. Least-squares fit to eleven devcheck fixtures on the
+// reference device, one run (54a216a, thermal status 0): 0.089 ms per thousand
+// depth-weighted units, 0.090 ms per element, 0.455 ms more per container; within 21% on every
+// fixture over 0.5 s. Slow pages still run (F17's 1.5 s is a target, owner decision
+// 2026-10-02); only a page predicted past the stall ceiling skips Readability and is poor.
+export const MS_PER_KILO_UNIT = 0.089;
+export const MS_PER_ELEMENT = 0.09;
+export const MS_PER_CONTAINER = 0.455;
+const CONTAINERS = new Set([
+  'DIV',
+  'SECTION',
+  'ARTICLE',
+  'MAIN',
+  'UL',
+  'OL',
+  'TABLE',
+  'FORM',
+  'ASIDE',
+  'HEADER',
+  'FOOTER',
+  'NAV',
+]);
 // A bare wrapper chain costs Readability more than linearly (Node: 0.8 s at 300 levels, 63 s
 // at 2000), which the fit never saw, so depth has its own ceiling. Real pages measured 7-23
 // levels (devcheck fixtures).
@@ -186,7 +202,10 @@ function predictedOver(root: DomNode, ceilingMs: number): boolean {
     if (node.nodeType === TEXT_NODE)
       ms += ((node.textContent ?? '').length * depth * MS_PER_KILO_UNIT) / 1000;
     else if (node.nodeType === ELEMENT_NODE)
-      ms += (depth * MS_PER_KILO_UNIT) / 1000 + MS_PER_ELEMENT;
+      ms +=
+        (depth * MS_PER_KILO_UNIT) / 1000 +
+        MS_PER_ELEMENT +
+        (CONTAINERS.has(node.nodeName.toUpperCase()) ? MS_PER_CONTAINER : 0);
     if (ms > ceilingMs || depth > MAX_READABILITY_DEPTH) return true;
     const child: DomNode | null =
       node.nodeType === ELEMENT_NODE &&
