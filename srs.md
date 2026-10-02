@@ -233,7 +233,10 @@ When the user enables it in Settings, the app MUST serve a loopback HTTP bridge 
   until the user regenerates it. It MUST NOT be logged.
 - Header bytes capped at 16 KiB (431), body capped at 64 KiB (413), Content-Length
   validated (400), token checked **before** the body is read (401), every connection's
-  failure caught at `Throwable` so no request can kill the service.
+  failure caught at `Throwable` so no request can kill the service. A response sent before
+  the body is read (401, 413, 503) is followed by shutting down the output and draining the
+  unread body, at most 64 KiB within the read timeout, before the socket closes, so the
+  client reads the status instead of a TCP reset (ADR 0004).
 - Every accepted socket has a read timeout (10 s). Connections are handled on a worker
   pool; synthesis itself is serialized. A silent client MUST NOT block `/health` or other
   requests.
@@ -551,7 +554,9 @@ Each spike answers one question on the reference device and records the answer h
   Central) or requires them built from source; a hermesc built from source producing the same
   bundle. The caches in `~/.gradle` and `~/.npm` were warm, so this was a clean checkout, not a
   clean machine.
-  Consequence: R-M13 holds for dependencies and licences. The Phase 6 F-Droid recipe needs a
+  Consequence: R-M13 holds for npm licences and for the absence of known non-free Gradle
+  dependencies (gms, firebase, crashlytics, play-services); no gate checks the licences of Maven
+  artifacts yet. The Phase 6 F-Droid recipe needs a
   `prebuild` that builds `hermesc` from the Hermes source and sets `react.hermesCommand`, and
   `scandelete` for the dotslash, iOS and Windows binaries; `scripts/fdroid-scan.sh` should then
   scan the tree after `npm ci` with the same deletions, since a git export misses everything in
@@ -569,8 +574,10 @@ Each spike answers one question on the reference device and records the answer h
   10 min, 127 utterances, 0 errors, gap p50 4 ms, p95 11 ms, max 22 ms, 0 stalls, `reason`
   `done`, `usPerCharP50` 34923. `single` (one instance, baseline): 10 min, 128 utterances, 0
   errors, gap p50 2 ms, p95 8 ms, max 16 ms, 0 stalls, `reason` `done`, `usPerCharP50` 34923.
-  No wake lock was needed: neither run hung or stalled with only the foreground service holding
-  the process. A direct `adb shell am start-foreground-service` of the unexported service was
+  Neither run hung or stalled without a wake lock, but on USB power with
+  `stay_on_while_plugged_in=7` the CPU may never have been allowed to sleep, so this does not
+  show that playback needs no wake lock on battery. The screen was off during both runs
+  (`mWakefulness=Dozing`, read over adb mid-run). A direct `adb shell am start-foreground-service` of the unexported service was
   refused with `Error: Requires permission not exported from uid 10346`, so spike runs start it
   through the exported activity.
   Not established: a second instance that is synthesizing rather than idle (SPIKE-06); other
@@ -578,8 +585,8 @@ Each spike answers one question on the reference device and records the answer h
   2.0x; targetSdk 37; playback with a MediaSession and audio focus; battery power and Doze (the
   phone was on USB power, `USB powered: true`, `stay_on_while_plugged_in=7`).
   Consequence: R-M07 unchanged. PlaybackService can queue with `QUEUE_ADD` three utterances
-  ahead under a `mediaPlayback` foreground service; a wake lock is not required by this
-  evidence, but Doze on battery is still open.
+  ahead under a `mediaPlayback` foreground service. Whether it needs a partial wake lock on
+  battery and under Doze is open; Phase 3 measures it.
 - **SPIKE-06 - Two engine instances.** Do two `TextToSpeech` instances in one process,
   bound to the same engine, run `speak()` and `synthesizeToFile()` concurrently without one
   cancelling or serializing behind the other? If not, R-M07/R-M12 need a contention policy

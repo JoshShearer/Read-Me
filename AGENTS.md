@@ -137,7 +137,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   - SPIKE-03: no `Intl.Segmenter` on Hermes; R-M08's regex fallback is the device path.
   - SPIKE-04: no proprietary dependencies, but the release build runs a prebuilt `hermesc` and
     `node_modules` holds binaries the Phase 6 F-Droid recipe must remove or rebuild.
-  - SPIKE-05: gap p95 11 ms, max 22 ms at 2x with two instances alive, no wake lock; R-M07 stands.
+  - SPIKE-05: gap p95 11 ms, max 22 ms at 2x with two instances alive, on USB power without a
+    wake lock (battery and Doze untested; Phase 3 measures); R-M07 stands.
   - SPIKE-06: two instances serialize (playback stalls up to 3.5 s while the other synthesizes);
     the bridge answers 503 while Read Me is playing (ADR 0004).
 - **Measured facts this spec rests on** live in the plugin repo's `AGENTS.md`, section "Android

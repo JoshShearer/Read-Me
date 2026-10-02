@@ -24,8 +24,13 @@ playback, 8.3 times slower.
 Playback has priority. While Read Me's playback is speaking, the bridge does not synthesize:
 
 - `POST /synthesize` answers `503` with `{"error":"busy","reason":"playback"}`. The token is
-  checked first (401 stays 401), and the 503 is sent before the body is read; the connection is
-  closed. Like every response, it carries the R-M12 CORS headers.
+  checked first (401 stays 401), and the 503 is sent before the body is read. The server then
+  shuts down its output and drains the unread body, at most 64 KiB within the 10 s read
+  timeout, before closing: closing a socket with unread data in its receive buffer sends a TCP
+  reset on Linux, and a WebView `fetch` would then see a network error instead of the 503. The
+  same applies to 401 and 413 (R-M12). Like every response, it carries the R-M12 CORS headers.
+  Not yet measured: Phase 5 sends a 64 KiB unauthenticated POST and a 64 KiB POST during
+  playback from Obsidian's WebView and checks that both statuses are readable.
 - "Speaking" is PlaybackService's playing state. Paused and stopped count as idle, so the bridge
   serves whenever the user is not listening in Read Me.
 - If playback starts while a bridge synthesis is in flight, the bridge stops its own instance
