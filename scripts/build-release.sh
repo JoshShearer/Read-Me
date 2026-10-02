@@ -13,6 +13,19 @@ rm -f "$STAMP"
 # devcheck bundle, so look for its marker in the bundle that was actually packaged.
 # grep -c reads the whole stream: grep -q would exit early, unzip would die of SIGPIPE, and
 # under pipefail the check would read as no match (the Phase 0 F1 trap).
+# A TurboModule needs the app's codegen compiled into libappmodules.so. A CMake cache
+# (android/app/.cxx) configured before package.json had codegenConfig silently leaves it out,
+# and the app then dies at TurboModuleRegistry.getEnforcing (reproduced 2026-10-02, 964fef0).
+SPEC=$(node -e "console.log((require('./package.json').codegenConfig||{}).name||'')")
+if [ -n "$SPEC" ]; then
+  hits=$(unzip -p "$APK" lib/arm64-v8a/libappmodules.so | grep -ac "$SPEC" || true)
+  if [ "${hits:-0}" = 0 ]; then
+    rm -f "$APK"
+    echo "refused: libappmodules.so lacks the app codegen ($SPEC); the native build cache is" >&2
+    echo "stale. Run: rm -rf android/app/.cxx android/app/build/intermediates/cxx, then rebuild" >&2
+    exit 1
+  fi
+fi
 if ! unzip -l "$APK" assets/index.android.bundle >/dev/null 2>&1; then
   rm -f "$APK"
   echo "refused: no assets/index.android.bundle in the APK, so its entry cannot be checked" >&2

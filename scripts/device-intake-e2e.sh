@@ -43,7 +43,9 @@ for _ in $(seq 30); do
   sleep 2
 done
 adb shell rm -f /sdcard/readme-ui.xml
-readies=$(grep -o 'text="ready"' <<<"$screen" | wc -l)
+# grep -c, not grep | wc: with no match grep exits 1 and pipefail would end the script with
+# no verdict (seen at 964fef0 when the app crashed on launch).
+readies=$(grep -c 'text="ready"' <<<"${screen//\/>/$'\n'}" || true)
 [ "$readies" -ge 2 ] || { echo "FAIL: expected 2 ready items (link, text), saw $readies"; fail=1; }
 device_has "$screen" 'fetch-failed: offline' || { echo "FAIL: dead link not fetch-failed: offline"; fail=1; }
 device_has "$screen" 'text="fetching"' && { echo "FAIL: an item still fetching"; fail=1; }
