@@ -66,4 +66,4 @@ for run in $(seq "$RUNS"); do
   [ -n "$done_" ] || { echo "run $run: no DEVCHECK_DONE within 300 s (process seen: ${seen:-no})" >&2; exit 1; }
   grep -oE 'DEVCHECK(_ENV)? \{.*\}' <<<"$logs" | sed "s/^/run=$run /" >> "$DEVICE_OUT"
 done
-node scripts/devcheck-report.mjs "$EXPECTED" "$DEVICE_OUT"
+node scripts/devcheck-report.mjs "$EXPECTED" "$DEVICE_OUT" "$RUNS"

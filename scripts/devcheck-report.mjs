@@ -1,17 +1,24 @@
 // Compares the devcheck's device fingerprints with Node's and applies SPIKE-02's F17 line
 // (median extract time: 10 s for the 5 MB page, 1.5 s for every page under 1 MB).
+// Fails closed: every one of the RUNS runs must report Hermes and a result for every fixture.
+// Usage: devcheck-report.mjs expected.json device.txt RUNS
 import { readFileSync } from 'node:fs';
 
-const [expectedPath, devicePath] = process.argv.slice(2);
+const [expectedPath, devicePath, runsArg] = process.argv.slice(2);
+const RUNS = Number(runsArg);
+if (!Number.isInteger(RUNS) || RUNS < 1) {
+  console.log('devcheck: FAIL (RUNS argument missing or not a positive integer)');
+  process.exit(1);
+}
 const expected = JSON.parse(readFileSync(expectedPath, 'utf8'));
 const runs = new Map();
-let env = null;
+const envs = new Map();
 for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
   const m = /^run=(\d+) DEVCHECK(_ENV)? (\{.*\})$/.exec(line);
   if (!m) continue;
   const d = JSON.parse(m[3]);
   if (m[2]) {
-    env = d;
+    envs.set(m[1], d);
     continue;
   }
   if (!runs.has(d.name)) runs.set(d.name, []);
@@ -23,11 +30,15 @@ const median = xs => {
   return s.length ? s[Math.floor(s.length / 2)] : null;
 };
 
-let ok = env !== null;
-console.log('env', JSON.stringify(env));
+let ok = true;
+for (let r = 1; r <= RUNS; r++) {
+  if (envs.get(String(r))?.hermes !== true) ok = false;
+}
+const distinct = [...new Set([...envs.values()].map(e => JSON.stringify(e)))];
+console.log('env', distinct.join(' '), `(${envs.size} of ${RUNS} runs)`);
 for (const e of expected) {
   const rs = runs.get(e.name) ?? [];
-  const parity = rs.length > 0 && rs.every(r => r.hash === e.hash);
+  const parity = rs.length === RUNS && rs.every(r => r.hash === e.hash);
   const extract = rs.map(r => r.extractMs);
   const med = median(extract);
   const limit =
