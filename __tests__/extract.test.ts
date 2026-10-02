@@ -99,6 +99,22 @@ describe('pages with no article never throw (Review Focus 4)', () => {
     expect(ex.paragraphs.map(p => p.text).join(' ')).toContain('first line');
   });
 
+  test('deeply nested markup gives its text, quickly, as poor, and never throws', () => {
+    // Readability's time grows steeply with depth (Node: 0.7 s at 500 levels, 63 s at 2000),
+    // and a recursive walk overflowed the stack near 6000. Hermes is slower with a smaller
+    // stack. The text inside must still come out, without a stall.
+    for (const tag of ['div', 'span']) {
+      const n = 6000;
+      const html = `<html><body>${`<${tag}>`.repeat(n)}${PROSE}${`</${tag}>`.repeat(n)}</body></html>`;
+      let ex: ReturnType<typeof extractArticle> | undefined;
+      expect(() => {
+        ex = extractArticle(html);
+      }).not.toThrow();
+      expect(ex?.poor).toBe(true);
+      expect(ex?.paragraphs.some(p => p.text.includes('stone wall'))).toBe(true);
+    }
+  }, 20000);
+
   test('malformed HTML and an empty string do not throw', () => {
     expect(() =>
       extractArticle('<p>Unclosed <b>bold <i>both</p><div>'),

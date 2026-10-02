@@ -14,6 +14,10 @@ export type Extracted = {
 
 export const POOR_MIN_PARAGRAPHS = 3;
 export const POOR_MIN_CHARS = 500;
+// Readability's time grows steeply with nesting depth (Node: 0.2 s at 100 levels, 0.8 s at 300,
+// 63 s at 2000), so a deeper page skips it and is read as poor. The saved real pages are 7-15
+// levels deep.
+export const MAX_READABILITY_DEPTH = 128;
 
 // The TS lib here has no DOM types; this is the part of linkedom's node shape we use.
 type DomNode = {
@@ -89,35 +93,69 @@ function kindFor(tag: string): ParagraphKind {
   return tag === 'LI' ? 'li' : 'p';
 }
 
-/** Emits one paragraph per run of inline text, each block element starting a new run. */
+type Step =
+  | { node: DomNode; kind: ParagraphKind }
+  | { node: null; kind: ParagraphKind };
+
+/**
+ * Emits one paragraph per run of inline text, each block element starting a new run. Walks
+ * with an explicit stack: page depth is untrusted input and must not reach the call stack.
+ */
 function collect(root: DomNode, kind: ParagraphKind, out: Paragraph[]): void {
   let buf = '';
-  const flush = () => {
+  const flush = (k: ParagraphKind) => {
     const text = buf.replace(/\s+/g, ' ').trim();
-    if (text) out.push({ kind, text });
+    if (text) out.push({ kind: k, text });
     buf = '';
   };
-  const visit = (node: DomNode): void => {
+  const pushChildren = (node: DomNode, k: ParagraphKind, stack: Step[]) => {
+    const children = Array.from(node.childNodes);
+    for (let i = children.length - 1; i >= 0; i--)
+      stack.push({ node: children[i], kind: k });
+  };
+  // A step with node null is the end of a block: flush its run with the block's kind.
+  const stack: Step[] = [{ node: null, kind }];
+  pushChildren(root, kind, stack);
+  while (stack.length > 0) {
+    const step = stack.pop() as Step;
+    const node = step.node;
+    if (node === null) {
+      flush(step.kind);
+      continue;
+    }
     if (node.nodeType === TEXT_NODE) {
       buf += node.textContent ?? '';
-      return;
+      continue;
     }
-    if (node.nodeType !== ELEMENT_NODE) return;
+    if (node.nodeType !== ELEMENT_NODE) continue;
     const tag = node.nodeName.toUpperCase();
-    if (DROP.has(tag)) return;
+    if (DROP.has(tag)) continue;
     if (tag === 'BR') {
       buf += ' ';
-      return;
+      continue;
     }
     if (BLOCK.has(tag)) {
-      flush();
-      collect(node, kindFor(tag), out);
-      return;
+      flush(step.kind);
+      const inner = kindFor(tag);
+      stack.push({ node: null, kind: inner });
+      pushChildren(node, inner, stack);
+      continue;
     }
-    Array.from(node.childNodes).forEach(visit);
-  };
-  Array.from(root.childNodes).forEach(visit);
-  flush();
+    pushChildren(node, step.kind, stack);
+  }
+}
+
+/** True when element nesting under `root` exceeds `limit`; iterative, stops early. */
+function deeperThan(root: DomNode, limit: number): boolean {
+  const stack: Array<[DomNode, number]> = [[root, 0]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop() as [DomNode, number];
+    if (depth > limit) return true;
+    const children = Array.from(node.childNodes);
+    for (const c of children)
+      if (c.nodeType === ELEMENT_NODE) stack.push([c, depth + 1]);
+  }
+  return false;
 }
 
 const clean = (s: string | null | undefined) =>
@@ -147,11 +185,17 @@ function parseDocument(html: string) {
 export function extractArticle(html: string, url?: string): Extracted {
   const document = parseDocument(html);
   const pageTitle = clean(document.title);
+  const tooDeep = deeperThan(
+    document.documentElement as unknown as DomNode,
+    MAX_READABILITY_DEPTH,
+  );
   let article: Article = null;
-  try {
-    article = new Readability(document as unknown as ReadabilityDoc).parse();
-  } catch {
-    article = null;
+  if (!tooDeep) {
+    try {
+      article = new Readability(document as unknown as ReadabilityDoc).parse();
+    } catch {
+      article = null;
+    }
   }
 
   const paragraphs: Paragraph[] = [];
@@ -172,6 +216,9 @@ export function extractArticle(html: string, url?: string): Extracted {
     site: clean(article?.siteName) || hostOf(url),
     byline: clean(article?.byline) || undefined,
     paragraphs,
-    poor: paragraphs.length < POOR_MIN_PARAGRAPHS || chars < POOR_MIN_CHARS,
+    poor:
+      tooDeep ||
+      paragraphs.length < POOR_MIN_PARAGRAPHS ||
+      chars < POOR_MIN_CHARS,
   };
 }
