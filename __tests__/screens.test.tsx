@@ -33,6 +33,8 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
 
 import { ListScreen } from '../src/ui/ListScreen';
 import { TrimScreen } from '../src/ui/TrimScreen';
+import { ReaderScreen } from '../src/ui/ReaderScreen';
+import { SettingsScreen } from '../src/ui/SettingsScreen';
 
 type Node = ReactTestRenderer.ReactTestRendererNode | ReactTestRenderer.ReactTestRendererNode[] | null;
 
@@ -99,4 +101,55 @@ test('Trim shows kept and cut paragraphs', async () => {
 test('Trim of a deleted item says so', async () => {
   const out = await render(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
   expect(out).toContain('This item was deleted.');
+});
+
+const text = (paragraphs: string[], cuts: number[] = []) => ({
+  item: { ...base, kind: 'text', openedAt: 1 },
+  paragraphs: paragraphs.map(t => ({ kind: 'p', text: t })),
+  cuts,
+});
+
+test('Reader shows a deleted item as gone (Review Focus 2)', async () => {
+  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(out).toContain('This item was deleted.');
+});
+
+test('Reader with every paragraph cut offers Trim (Review Focus 3)', async () => {
+  mockState.detail = text(['Only.'], [0]);
+  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(out).toContain('Everything in this item is cut.');
+  expect(out).not.toContain('"play"');
+});
+
+test('Reader blocks when the engine has no offline voice (Review Focus 4)', async () => {
+  mockState.detail = text(['One.']);
+  mockState.engine = { status: 'no-voice', voices: [], selected: null };
+  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(out).toContain('no offline text-to-speech voice');
+  expect(out).toContain('Open text-to-speech settings');
+  expect(out).not.toContain('"play"');
+});
+
+test('Reader shows kept paragraphs and the transport', async () => {
+  mockState.detail = text(['Kept one.', 'Cut one.', 'Kept two.'], [1]);
+  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(out).toContain('Kept one.');
+  expect(out).toContain('Kept two.');
+  expect(out).not.toContain('Cut one.');
+  expect(out).toContain('"play"');
+  expect(out).toContain('2.0x');
+});
+
+test('Settings lists offline voices, the default rate and storage', async () => {
+  mockState.engine = {
+    status: 'ready',
+    voices: [{ name: 'en-us-x-a-local', language: 'en', quality: 400 }],
+    selected: 'en-us-x-a-local',
+  };
+  mockState.items = [base, { ...base, id: 2, archivedAt: 3 }];
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('en-us-x-a-local');
+  expect(out).toContain('2.0x');
+  expect(out).toContain('2 items, 1 archived');
+  expect(out).toContain('Licenses');
 });

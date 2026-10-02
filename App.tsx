@@ -5,6 +5,8 @@ import { BackHandler, StatusBar, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markOpened, type Item } from './src/library/library';
 import { ListScreen } from './src/ui/ListScreen';
+import { ReaderScreen } from './src/ui/ReaderScreen';
+import { SettingsScreen } from './src/ui/SettingsScreen';
 import { TrimScreen } from './src/ui/TrimScreen';
 import { back, openRoute, push, trimDone, type Route } from './src/ui/model';
 import { ui } from './src/ui/ui';
@@ -43,6 +45,12 @@ function Main() {
       screen = (
         <TrimScreen id={top.id} onDone={() => setStack(s => trimDone(s, top.id))} onGone={toList} />
       );
+      break;
+    case 'reader':
+      screen = <ReaderScreen id={top.id} onTrim={() => go({ name: 'trim', id: top.id })} onGone={toList} />;
+      break;
+    case 'settings':
+      screen = <SettingsScreen onLicenses={() => go({ name: 'licenses' })} />;
       break;
     default:
       screen = <Text style={ui.empty}>Coming in this phase</Text>;
