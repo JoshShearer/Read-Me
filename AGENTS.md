@@ -40,7 +40,8 @@ npm run device:smoke                        # takes the slot, installs, launches
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
 npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text (clears app data)
-npm run device:gap        # R-M07 gap target: 10 min at 2x on battery (simulated), forced Doze, screen off (about 12 min; clears app data)
+npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
+GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
 ```
 
 ### Device work: the one-phone slot
@@ -148,7 +149,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   per sentence, archive at the end. Media keys reach it only because `MediaButtonClaim`
   plays 200 ms of silence at each start (TTS audio belongs to the engine's uid). Verified
   2026-10-02 on the reference device: `npm run device:playback` (build ec5bce1),
-  `npm run device:gap` (build 59324f5: n=92 p50=7 p95=17 max=31 ms, stalls 0, errors 0,
+  `GAP_MINUTES=10 npm run device:gap` (build 59324f5: n=92 p50=7 p95=17 max=31 ms, stalls 0, errors 0,
   10 min at 2x, battery, forced Doze, screen off), `npm run device:intake` (build da81794);
   app code identical across the three. A cold engine took 8 s to first audio once (the
   engine's own `time-to-first-audio: 8056` log, build 446b630, device:playback run).

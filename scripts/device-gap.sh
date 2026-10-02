@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# npm run device:gap - R-M07's gap target on the reference device: 10 minutes at 2.0x on
-# (simulated) battery in forced Doze with the screen off. Reads the service's own
-# "playback gaps" line (onDone(n) to onStart(n+1), measured in PlaybackService). Shares a long
-# public-domain text (Pride and Prejudice, the gutenberg-1342 fixture). Resets battery and
-# Doze state on exit. Takes about 12 minutes.
+# npm run device:gap - R-M07's gap target on the reference device: 2.0x on (simulated)
+# battery in forced Doze with the screen off. Reads the service's own "playback gaps" line
+# (onDone(n) to onStart(n+1), measured in PlaybackService). Shares a long public-domain text
+# (Pride and Prejudice, the gutenberg-1342 fixture). Resets battery and Doze state on exit.
+# Plays 2 minutes by default (about 4 in total), a quick check. R-M07 defines the target over
+# 10 minutes, so only `GAP_MINUTES=10 npm run device:gap` (about 12) is the spec measurement.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 device_take gap
 device_require_unlocked
 device_install_release
-MINUTES=${GAP_MINUTES:-10}
+MINUTES=${GAP_MINUTES:-2}
 
 TXT=$(mktemp)
 node -e '

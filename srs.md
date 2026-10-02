@@ -189,7 +189,7 @@ amendment here.
 **Measured (Phase 3, 2026-10-02, reference device, build 59324f5):** n=92 gaps, p50 7 ms,
 p95 17 ms, max 31 ms, no stall, no engine error, over 10 minutes at 2.0x on battery
 (`dumpsys battery unplug`) in forced deep Doze with the screen off and a partial wake lock
-held while speaking (`npm run device:gap`). The target stands.
+held while speaking (`GAP_MINUTES=10 npm run device:gap`). The target stands.
 
 ### R-M08 - Sentence segmentation
 
