@@ -101,6 +101,19 @@ export function stepRate(rate: number, dir: 1 | -1): number {
   return Math.min(4, Math.max(0.5, next));
 }
 
+/**
+ * R-M07 "kept in view": the y of the laid-out line holding character `offset`, from a Text's
+ * onTextLayout lines (each line's text is its slice of the paragraph). 0 when unknown.
+ */
+export function lineTop(lines: readonly { text: string; y: number }[], offset: number): number {
+  let end = 0;
+  for (const l of lines) {
+    end += l.text.length;
+    if (offset < end) return l.y;
+  }
+  return lines.length ? lines[lines.length - 1].y : 0;
+}
+
 export const formatRate = (rate: number): string => `${rate.toFixed(1)}x`;
 
 export type Notice = { name: string; version: string; license: string; url?: string; text?: string };

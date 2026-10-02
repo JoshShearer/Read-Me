@@ -163,6 +163,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   (2026-10-02, build c870f28). No bridge yet (Settings has no bridge row until Phase 5).
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
+  R-M13 is partial: Licenses lists npm packages (with their license text where the package
+  ships one) and Maven artifacts (license name and URL only); native components compiled
+  into `libreactnative.so` (folly, glog, double-conversion, fast_float) and the NDK's
+  `libc++_shared.so` are not listed yet. Phase 6 completes it.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

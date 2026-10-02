@@ -8,6 +8,7 @@ import {
   openRoute,
   parseNotices,
   push,
+  lineTop,
   readerParagraphs,
   stepRate,
   subtitle,
@@ -119,4 +120,18 @@ test('notices parse from the asset and sort by name', () => {
   });
   expect(parseNotices(json).map(n => n.name)).toEqual(['androidx.core:core', 'zeta']);
   expect(parseNotices('not json')).toEqual([]);
+});
+
+test('lineTop finds the laid-out line holding a character offset', () => {
+  // /critique run A F1: the Reader scrolls to the highlight's line inside a long paragraph.
+  const lines = [
+    { text: 'one two ', y: 0 },
+    { text: 'three four ', y: 30 },
+    { text: 'five', y: 60 },
+  ];
+  expect(lineTop(lines, 0)).toBe(0);
+  expect(lineTop(lines, 8)).toBe(30);
+  expect(lineTop(lines, 19)).toBe(60);
+  expect(lineTop(lines, 999)).toBe(60);
+  expect(lineTop([], 5)).toBe(0);
 });

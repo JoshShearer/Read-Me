@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
-import { applyCuts, getPlayback, onPlayback, type Playback } from '../library/playback';
+import { applyCuts } from '../library/playback';
 import { cutAfter, startHere, toggleCut } from '../trim/cuts';
 import { ui } from './ui';
 
@@ -18,7 +18,6 @@ export function TrimScreen({
 }) {
   // undefined: loading; null: the item is gone (Review Focus 2).
   const [detail, setDetail] = useState<ItemDetail | null | undefined>(undefined);
-  const [playback, setPlayback] = useState<Playback | null>(null);
   // The cut set this screen last wrote. Taps build on it, not on `detail`, which only catches
   // up after the store's change event and a reload: two quick taps would otherwise each start
   // from the old set and the second write would undo the first (final review Important 2).
@@ -33,11 +32,6 @@ export function TrimScreen({
     load();
     return onItemsChanged(load);
   }, [load]);
-
-  useEffect(() => {
-    getPlayback().then(setPlayback, () => undefined);
-    return onPlayback(setPlayback);
-  }, []);
 
   // Nothing, not an empty View, while loading: an empty layout-only View followed by the
   // full screen inside App's keyed screen view made Fabric add children to a view it had not
@@ -61,7 +55,7 @@ export function TrimScreen({
   const apply = (next: Set<number>) => {
     latest.current = next;
     setLocalCuts(next);
-    applyCuts(id, next, playback).catch(() => undefined);
+    applyCuts(id, next).catch(() => undefined);
   };
   const menu = (i: number) =>
     Alert.alert('Trim', undefined, [

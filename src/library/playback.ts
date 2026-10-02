@@ -9,7 +9,8 @@ import { remapPosition } from '../trim/cuts';
 import type { Paragraph, Position, Sentence } from '../types';
 import { getItem, setCuts, type Item } from './library';
 
-export type Plan = { sentences: Sentence[]; startIndex: number };
+// pastEnd: there was a saved position and nothing kept is left after it.
+export type Plan = { sentences: Sentence[]; startIndex: number; pastEnd: boolean };
 
 export type Playback = {
   itemId: number | null;
@@ -22,7 +23,7 @@ export type Playback = {
 /**
  * R-M11: resume at the start of the sentence that contains the saved offset under today's
  * segmentation. A position in a paragraph cut since moves to the next kept one; a position
- * past the end starts over. Null when nothing is kept.
+ * past the end starts over (pastEnd says so). Null when nothing is kept.
  */
 export function plan(
   paragraphs: readonly Paragraph[],
@@ -34,15 +35,20 @@ export function plan(
   if (sentences.length === 0) return null;
   const moved = saved && remapPosition(saved, cutSet, paragraphs.length);
   const i = moved ? sentenceIndexAt(sentences, moved) : 0;
-  return { sentences, startIndex: i < 0 ? 0 : i };
+  return { sentences, startIndex: i < 0 ? 0 : i, pastEnd: saved !== null && (!moved || i < 0) };
+}
+
+async function planFor(id: number): Promise<{ title: string; plan: Plan } | null> {
+  const detail = await getItem(id);
+  if (detail === null) return null;
+  const p = plan(detail.paragraphs, detail.cuts, await Native.getPosition(id));
+  return p === null ? null : { title: detail.item.title, plan: p };
 }
 
 export async function playItem(id: number): Promise<boolean> {
-  const detail = await getItem(id);
-  if (detail === null) return false;
-  const p = plan(detail.paragraphs, detail.cuts, await Native.getPosition(id));
+  const p = await planFor(id);
   if (p === null) return false;
-  return Native.play(id, detail.item.title, p.sentences, p.startIndex);
+  return Native.play(id, p.title, p.plan.sentences, p.plan.startIndex);
 }
 
 /** A row tap: pause what plays, resume what is paused, otherwise play this item. */
@@ -101,20 +107,23 @@ export const stop = () => Native.stop();
 
 /**
  * R-M05 + srs "Playback": store the new cut set; if the service holds this item, it must not
- * go on reading paragraphs that are now cut. Playing: hand it the new list (the position is
- * remapped by plan()). Paused: stop, so the next play plans afresh from the saved position.
+ * go on reading paragraphs that are now cut. Playing: hand it the new list from the saved
+ * position (remapped by plan()). Paused, everything cut, or nothing kept after the position:
+ * stop, so nothing cut is read and a finished stretch does not restart from the top. The
+ * service's state is read here: a screen's copy can be stale or not loaded yet.
  */
-export async function applyCuts(
-  id: number,
-  cuts: ReadonlySet<number>,
-  current: Playback | null,
-): Promise<void> {
+export async function applyCuts(id: number, cuts: ReadonlySet<number>): Promise<void> {
   await setCuts(id, [...cuts].sort((a, b) => a - b));
+  const current = await getPlayback().catch(() => null);
   if (current?.itemId !== id) return;
   if (current.playing) {
-    // Everything left is cut: there is no list to hand over, so the old queue must stop.
-    if (!(await playItem(id))) await Native.stop();
-  } else await Native.stop();
+    const p = await planFor(id);
+    if (p !== null && !p.plan.pastEnd) {
+      await Native.play(id, p.title, p.plan.sentences, p.plan.startIndex);
+      return;
+    }
+  }
+  await Native.stop();
 }
 
 export type Engine = NativeEngine;

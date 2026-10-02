@@ -9,8 +9,9 @@ import java.util.Locale
 /**
  * R-M06 / R-M10: answers "is there an engine and an offline voice?" at launch and for Settings,
  * before any play attempt. A short-lived instance that binds, reads the voice list and shuts
- * down; it never speaks, so it does not contend with playback's instance (SPIKE-06 measured
- * contention only while synthesizing). Start on any thread; `done` runs once, on the main thread.
+ * down; it never speaks. Assumed not to disturb playback's instance: SPIKE-06 measured
+ * contention while a second instance synthesized, never a bind-and-read like this, so it is
+ * unmeasured. Start on any thread; `done` runs once, on the main thread.
  */
 class EngineProbe private constructor(
   context: Context,

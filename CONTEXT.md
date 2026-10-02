@@ -89,7 +89,7 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
-  lifecycle per ADR 0007; Settings: the rate), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
+  lifecycle per ADR 0007; Settings: the rate and voice), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
   wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and

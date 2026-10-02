@@ -11,6 +11,9 @@ cd "$(dirname "$0")/.."
 device_take interactive
 device_require_unlocked
 device_install_release
+# The screen dump lives on shared storage; remove it however the script ends.
+cleanup_dump() { adb shell rm -f /sdcard/readme-ui.xml >/dev/null 2>&1 || true; }
+DEVICE_ON_EXIT=cleanup_dump
 
 # Ten four-word sentences in each kept paragraph: playback must outlast the screen checks
 # (two sentences each finished in 8 s, before the first uiautomator dump; 2026-10-02).
@@ -104,7 +107,7 @@ adb shell input tap $play_at
 for _ in $(seq 20); do device_has "$(logs)" 'playback start item=1 ' && break; sleep 1; done
 device_has "$(logs)" 'playback start item=1 sentences=20 ' || { echo "FAIL: expected 20 kept sentences"; logs | grep 'playback start' | sed 's/^/  /'; fail=1; }
 sleep 2
-px=$(highlight_px)
+px=$(highlight_px || echo 0)
 [ "${px:-0}" -gt 1000 ] || { echo "FAIL: no highlighted sentence on screen ($px px)"; fail=1; }
 # Let it read on (a cold engine can take seconds to start), then pause where Play was (the
 # same button, relabelled).
@@ -114,12 +117,13 @@ for _ in $(seq 10); do device_has "$(logs)" 'playback paused item=1 ' && break; 
 device_has "$(logs)" 'playback paused item=1 ' || { echo "FAIL: the Reader's pause did not pause"; fail=1; }
 on_screen 'content-desc="play"' || fail=1
 device_has "$(logs)" 'playback paused item=1 paragraph=0 offset=0$' && { echo "FAIL: paused before reading anything"; fail=1; }
-px=$(highlight_px)
+px=$(highlight_px || echo 0)
 [ "${px:-0}" -gt 1000 ] || { echo "FAIL: the paused sentence is not highlighted ($px px)"; fail=1; }
 
-# Back to the list: progress shows (R-M01)
+# Back to the list: progress and the paused marker show (R-M01)
 adb shell input keyevent KEYCODE_BACK
 on_screen '% read' || fail=1
+on_screen 'text="paused"' || fail=1
 
 # Delete the dead link (R-M10)
 tap_node content-desc 'delete 127.0.0.1'
@@ -138,8 +142,34 @@ adb shell input keyevent KEYCODE_BACK
 adb shell input keyevent KEYCODE_BACK
 on_screen 'text="Read Me"' || fail=1
 
+# R-M07 "kept in view" inside one long paragraph: a text with no blank lines is one paragraph.
+# Jump 50 sentences in with Next (deep enough to be below the first screen), then the
+# highlight must still be on screen.
+long=""
+for i in $(seq 80); do long+="Delta sentence $i keeps going with a few more words so that the line fills up. "; done
+share "${long% }"
+adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+tap_node text 'Delta sentence 1 keeps going[^"]*'
+tap_node content-desc 'trim done'
+on_screen 'content-desc="play"' || fail=1
+long_play=$(centre_of play)
+adb shell input tap $long_play
+# Counted, not matched by id: the deleted dead link's id may be reused.
+for _ in $(seq 20); do [ "$(logs | grep -c 'playback start item=' || true)" -ge 2 ] && break; sleep 1; done
+sleep 2
+adb shell input tap $long_play
+for _ in $(seq 10); do [ "$(logs | grep -c 'playback paused item=' || true)" -ge 2 ] && break; sleep 1; done
+next_at=$(centre_of 'next sentence')
+[ -n "$next_at" ] || { echo "FAIL: no next sentence button for the loaded item"; fail=1; }
+if [ -n "$next_at" ]; then
+  for _ in $(seq 50); do adb shell input tap $next_at; sleep 0.2; done
+  sleep 2
+  px=$(highlight_px || echo 0)
+  [ "${px:-0}" -gt 1000 ] || { echo "FAIL: deep in a long paragraph the highlight is off screen ($px px)"; fail=1; }
+fi
+
 all=$(adb logcat -d)
-if device_has "$all" 'Alpha one|Beta two|Gamma one|nothing-here'; then
+if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|nothing-here'; then
   echo "FAIL: a log line carries shared text or a URL path"; fail=1
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)

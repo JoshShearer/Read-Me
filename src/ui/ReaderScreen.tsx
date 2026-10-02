@@ -18,8 +18,11 @@ import {
   type Playback,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { formatRate, readerParagraphs, stepRate, type ReaderParagraph } from './model';
+import { formatRate, lineTop, readerParagraphs, stepRate, type ReaderParagraph } from './model';
 import { ui } from './ui';
+
+/** Space kept above the highlighted line when scrolling to it, in dp. */
+const KEEP_ABOVE = 120;
 
 export function ReaderScreen({
   id,
@@ -36,6 +39,9 @@ export function ReaderScreen({
   // The saved rate: the service reports it while it holds an item; otherwise getRate.
   const [rate, setRateState] = useState(2);
   const list = useRef<FlatList<ReaderParagraph>>(null);
+  // The current paragraph's laid-out lines, so a long paragraph scrolls to the sentence, not
+  // only to its first line (R-M07 "kept in view"; /critique run A F1).
+  const [lines, setLines] = useState<{ index: number; lines: { text: string; y: number }[] } | null>(null);
 
   const load = useCallback(() => {
     getItem(id).then(setDetail, () => setDetail(null));
@@ -61,9 +67,16 @@ export function ReaderScreen({
   const paragraphs = detail ? readerParagraphs(detail.paragraphs, detail.cuts, mine?.sentence ?? null) : [];
   const currentAt = paragraphs.findIndex(p => p.current !== null);
 
+  const current = currentAt >= 0 ? paragraphs[currentAt] : null;
+  const sentenceStart = current?.current?.start ?? -1;
+  const lineY = current && lines?.index === current.index ? lineTop(lines.lines, sentenceStart) : 0;
+
   useEffect(() => {
-    if (currentAt >= 0) list.current?.scrollToIndex({ index: currentAt, viewPosition: 0.3, animated: true });
-  }, [currentAt]);
+    if (currentAt < 0) return;
+    // viewOffset moves the target down by the line's depth in the paragraph, leaving
+    // KEEP_ABOVE of context above the highlighted line.
+    list.current?.scrollToIndex({ index: currentAt, viewPosition: 0, viewOffset: KEEP_ABOVE - lineY, animated: true });
+  }, [currentAt, sentenceStart, lineY]);
 
   // Nothing, not an empty View, while loading: an empty layout-only View followed by the
   // full screen inside App's keyed screen view made Fabric add children to a view it had not
@@ -142,13 +155,21 @@ export function ReaderScreen({
         ref={list}
         data={paragraphs}
         keyExtractor={p => String(p.index)}
-        onScrollToIndexFailed={info =>
-          list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true })
-        }
+        onScrollToIndexFailed={info => {
+          // Not measured yet: jump near it, then retry once the cells around it have rendered.
+          list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+          setTimeout(() => {
+            list.current?.scrollToIndex({ index: info.index, viewPosition: 0, viewOffset: KEEP_ABOVE, animated: true });
+          }, 100);
+        }}
         renderItem={({ item: p }) =>
           p.current ? (
             <View collapsable={false} accessibilityLabel="current paragraph">
-              <Text style={ui.paragraph}>
+              <Text
+                style={ui.paragraph}
+                onTextLayout={e =>
+                  setLines({ index: p.index, lines: e.nativeEvent.lines.map(l => ({ text: l.text, y: l.y })) })
+                }>
                 {p.text.slice(0, p.current.start)}
                 <Text style={ui.highlight}>{p.text.slice(p.current.start, p.current.end)}</Text>
                 {p.text.slice(p.current.end)}
@@ -160,10 +181,11 @@ export function ReaderScreen({
         }
       />
       <View collapsable={false} style={ui.transport}>
-        {button('¶◀', 'back paragraph', control(backParagraph))}
-        {button('◀', 'previous sentence', control(previous))}
+        {/* Sentence controls act on whatever the service holds, so they appear only for this item. */}
+        {mine ? button('¶◀', 'back paragraph', control(backParagraph)) : null}
+        {mine ? button('◀', 'previous sentence', control(previous)) : null}
         {button(mine?.playing ? 'Pause' : 'Play', mine?.playing ? 'pause' : 'play', control(() => toggle(id, playback)))}
-        {button('▶', 'next sentence', control(next))}
+        {mine ? button('▶', 'next sentence', control(next)) : null}
         {button('−', 'slower', () => changeRate(-1))}
         <Text>{formatRate(rate)}</Text>
         {button('+', 'faster', () => changeRate(1))}

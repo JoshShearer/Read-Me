@@ -172,6 +172,16 @@ test('Reader shows kept paragraphs and the transport', async () => {
   expect(out).toContain('2.0x');
 });
 
+test('Reader offers only Play until its item is the one the service holds', async () => {
+  // /critique run A F2: next/previous/back paragraph act on whatever the service holds.
+  mockState.detail = text(['One.']);
+  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(out).toContain('"play"');
+  expect(out).not.toContain('"next sentence"');
+  expect(out).not.toContain('"previous sentence"');
+  expect(out).not.toContain('"back paragraph"');
+});
+
 test('Settings lists offline voices, the default rate and storage', async () => {
   mockState.engine = {
     status: 'ready',
