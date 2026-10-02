@@ -25,4 +25,13 @@ class SettingsTest {
     Settings(ctx).rate = 12f
     assertEquals(4.0f, Settings(ctx).rate)
   }
+
+  @Test fun theVoiceIsUnsetUntilChosenAndCanBeCleared() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    assertEquals(null, Settings(ctx).voice)
+    Settings(ctx).voice = "en-us-x-abc-local"
+    assertEquals("en-us-x-abc-local", Settings(ctx).voice)
+    Settings(ctx).voice = null
+    assertEquals(null, Settings(ctx).voice)
+  }
 }

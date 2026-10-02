@@ -14,16 +14,25 @@ data class VoiceInfo(
 /**
  * R-M06, AGENTS.md 5: the engine's default voice if it is offline and installed, else the best
  * offline voice in the default's language, else the best offline voice at all, else null (the
- * blocking "no offline voice" state). A network voice is never returned.
+ * blocking "no offline voice" state). A network voice is never returned. A saved voice wins when it is still offline and installed.
  */
 object VoicePicker {
-  fun pick(default: VoiceInfo?, voices: List<VoiceInfo>, language: String): VoiceInfo? {
-    fun usable(v: VoiceInfo) = !v.networkRequired && !v.notInstalled
+  fun usable(v: VoiceInfo) = !v.networkRequired && !v.notInstalled
+
+  fun pick(default: VoiceInfo?, voices: List<VoiceInfo>, language: String, preferred: String? = null): VoiceInfo? {
+    if (preferred != null) voices.firstOrNull { it.name == preferred && usable(it) }?.let { return it }
     if (default != null && usable(default)) return default
     val offline = voices.filter(::usable)
     return offline.filter { it.language == language }.maxByOrNull { it.quality }
       ?: offline.maxByOrNull { it.quality }
   }
+}
+
+/** Settings' voice list: offline, installed voices; the default's language first, then quality. */
+object VoiceList {
+  fun usable(voices: List<VoiceInfo>, language: String): List<VoiceInfo> =
+    voices.filter(VoicePicker::usable)
+      .sortedWith(compareBy<VoiceInfo>({ it.language != language }, { -it.quality }, { it.name }))
 }
 
 enum class FocusAction { PAUSE, PAUSE_TRANSIENT, RESUME, NONE }

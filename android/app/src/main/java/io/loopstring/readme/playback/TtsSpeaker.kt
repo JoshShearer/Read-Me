@@ -15,7 +15,7 @@ import java.util.Locale
  * (AGENTS.md 5). Construct on the main thread; callbacks other than onReady arrive on the
  * engine's binder thread.
  */
-class TtsSpeaker(context: Context, private val callbacks: Callbacks) : Speaker {
+class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val preferredVoice: String? = null) : Speaker {
   interface Callbacks {
     fun onReady(status: EngineStatus)
     fun onStart(id: String)
@@ -55,19 +55,11 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks) : Speaker {
     val voices = runCatching { tts.voices }.getOrNull().orEmpty().toList()
     val default = runCatching { tts.defaultVoice }.getOrNull()
     val language = (default?.locale ?: Locale.getDefault()).language
-    val pick = VoicePicker.pick(default?.let(::info), voices.map(::info), language)
+    val pick = VoicePicker.pick(default?.let { info(it) }, voices.map { info(it) }, language, preferredVoice)
       ?: return EngineStatus.NO_VOICE
     val voice = (voices + listOfNotNull(default)).first { it.name == pick.name }
     return if (tts.setVoice(voice) == TextToSpeech.SUCCESS) EngineStatus.READY else EngineStatus.NO_VOICE
   }
-
-  private fun info(v: Voice) = VoiceInfo(
-    name = v.name,
-    language = v.locale.language,
-    networkRequired = v.isNetworkConnectionRequired,
-    notInstalled = v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true,
-    quality = v.quality,
-  )
 
   override fun speak(id: String, text: String) {
     tts.speak(text, TextToSpeech.QUEUE_ADD, null, id)
@@ -87,6 +79,14 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks) : Speaker {
   }
 
   companion object {
+    fun info(v: Voice) = VoiceInfo(
+      name = v.name,
+      language = v.locale.language,
+      networkRequired = v.isNetworkConnectionRequired,
+      notInstalled = v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true,
+      quality = v.quality,
+    )
+
     val ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_MEDIA)
       .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

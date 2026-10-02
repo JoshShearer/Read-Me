@@ -27,6 +27,22 @@ class VoicePickerTest {
     // R-M06 / AGENTS.md 5: never a network voice, not even as a fallback.
     assertNull(VoicePicker.pick(v("a", net = true), listOf(v("a", net = true), v("b", missing = true)), "en"))
   }
+
+  @Test fun aSavedOfflineVoiceWinsOverTheDefault() {
+    val voices = listOf(v("d"), v("mine", q = 100))
+    assertEquals("mine", VoicePicker.pick(v("d"), voices, "en", preferred = "mine")?.name)
+  }
+
+  @Test fun aSavedVoiceThatIsGoneOrNetworkOnlyIsIgnored() {
+    val voices = listOf(v("d"), v("net", net = true))
+    assertEquals("d", VoicePicker.pick(v("d"), voices, "en", preferred = "net")?.name)
+    assertEquals("d", VoicePicker.pick(v("d"), voices, "en", preferred = "gone")?.name)
+  }
+
+  @Test fun theUsableListIsOfflineInstalledLanguageFirstThenQuality() {
+    val voices = listOf(v("fr", "fr", q = 500), v("net", net = true), v("lo", q = 100), v("x", missing = true), v("hi", q = 400))
+    assertEquals(listOf("hi", "lo", "fr"), VoiceList.usable(voices, "en").map { it.name })
+  }
 }
 
 class FocusPolicyTest {
