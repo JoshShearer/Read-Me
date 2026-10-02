@@ -7,8 +7,9 @@ export type ShareClass =
 
 // A URL also stops at typographic quotes and full-width punctuation: phone keyboards type
 // smart quotes by default, and CJK prose puts 。 or ， straight after a URL with no space.
+// Zero-width and direction marks (inserted by messaging apps) are not \s and also end it.
 const URL_PATTERN =
-  /\bhttps?:\/\/[^\s<>"'`\u201c\u201d\u2018\u2019\u00ab\u00bb\u2039\u203a\u300c\u300d\u300e\u300f\u3001\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u2026]+/gi;
+  /\bhttps?:\/\/[^\s<>"'`\u200b-\u200f\u2060\ufeff\u201c\u201d\u2018\u2019\u00ab\u00bb\u2039\u203a\u300c\u300d\u300e\u300f\u3001\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u2026]+/gi;
 const TRAILING = '.,;:!?\'"';
 const PAIRS: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
 

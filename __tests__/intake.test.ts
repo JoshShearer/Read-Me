@@ -49,6 +49,16 @@ describe('classifyShare (R-M02)', () => {
     }
   });
 
+  test('an invisible format character ends the URL', () => {
+    // Messaging apps insert zero-width and direction marks; none can be part of a URL.
+    for (const mark of ['\u200b', '\u200e', '\u200f', '\u2060', '\ufeff']) {
+      expect(classifyShare(`Article https://x.com/a${mark} more`)).toEqual({
+        kind: 'link',
+        url: 'https://x.com/a',
+      });
+    }
+  });
+
   test('a balanced closing parenthesis stays (Wikipedia style)', () => {
     expect(classifyShare('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual({
       kind: 'link',
