@@ -130,8 +130,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 
 - **Text pipeline (Phase 1, REA-15):** `intake`, `extract`, `segment`, `trim` in TS, pure
   functions with no native, storage or UI; verified on Hermes by `npm run device:devcheck`
-  (2026-10-01, build a4336b9: parity on all fixtures, 5 MB median 8640 ms). No native module,
-  storage, playback or screens yet.
+  (2026-10-01, build c1419eb: parity on all fixtures, 5 MB median 8781 ms with one of three runs
+  at 11009 ms, 852 KB page median 1318 ms of its 1500 ms line). Pages nested deeper than 128
+  levels skip Readability and are poor. No native module, storage, playback or screens yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
