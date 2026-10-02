@@ -92,6 +92,18 @@ describe('extractArticle structure (R-M04)', () => {
   });
 });
 
+describe('stage timings (devcheck diagnostics)', () => {
+  test('fills each stage in milliseconds when asked, and changes nothing else', () => {
+    const timings: Partial<Record<string, number>> = {};
+    const timed = extractArticle(STRUCTURED, undefined, timings);
+    expect(timed).toEqual(extractArticle(STRUCTURED));
+    for (const stage of ['parse', 'depth', 'readability', 'contentParse', 'walk']) {
+      expect(typeof timings[stage]).toBe('number');
+      expect(timings[stage]).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
 describe('pages with no article never throw (Review Focus 4)', () => {
   test('a JavaScript-rendered shell is poor', () => {
     const ex = extractArticle(

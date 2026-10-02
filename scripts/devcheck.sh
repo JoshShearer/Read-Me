@@ -42,6 +42,9 @@ echo "installed DEVCHECK build $HEAD7 on the phone (replaces whatever build was 
 
 for run in $(seq "$RUNS"); do
   adb shell am force-stop "$PKG"
+  # Heat throttles the CPU; record it so a slow run can be told apart from a slow page.
+  thermal=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
+  echo "run $run: $(grep -m1 -i 'Thermal Status' <<<"$thermal" || echo 'thermal status unknown')"
   adb logcat -c
   # -W waits for the launch; without it the first pidof can run before the process exists and
   # a healthy run is reported as a death.

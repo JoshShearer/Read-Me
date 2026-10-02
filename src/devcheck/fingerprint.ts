@@ -1,7 +1,7 @@
 // A deterministic summary of one pipeline run, computed the same way on Hermes (the devcheck
 // bundle) and in Node (Jest), so a hash mismatch means the runtimes disagree (roadmap F19).
 // Fixture text only; never used on items.
-import { extractArticle } from '../extract/extract';
+import { extractArticle, type ExtractTimings } from '../extract/extract';
 import { splitSharedText } from '../intake/paragraphs';
 import { segment, type SegmenterMode } from '../segment/segment';
 import type { Paragraph, Sentence } from '../types';
@@ -10,6 +10,7 @@ export type Fingerprint = {
   name: string;
   bytes?: number;
   extractMs: number;
+  stages?: ExtractTimings;
   segmentMs: number;
   paragraphs: number;
   chars: number;
@@ -55,8 +56,9 @@ export function fingerprintPage(
   bytes: number,
   mode: SegmenterMode,
 ): Fingerprint {
+  const stages: ExtractTimings = {};
   const t0 = Date.now();
-  const ex = extractArticle(html);
+  const ex = extractArticle(html, undefined, stages);
   const t1 = Date.now();
   const sentences = segment(ex.paragraphs, new Set(), { mode });
   const t2 = Date.now();
@@ -64,6 +66,7 @@ export function fingerprintPage(
     ...summarize(name, ex.title, ex.paragraphs, sentences),
     bytes,
     extractMs: t1 - t0,
+    stages,
     segmentMs: t2 - t1,
     poor: ex.poor,
   };

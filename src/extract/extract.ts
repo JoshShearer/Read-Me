@@ -12,6 +12,11 @@ export type Extracted = {
   poor: boolean;
 };
 
+/** Per-stage wall time in ms, filled only when a caller (the devcheck) passes an object. */
+export type ExtractTimings = Partial<
+  Record<'parse' | 'depth' | 'readability' | 'contentParse' | 'walk', number>
+>;
+
 export const POOR_MIN_PARAGRAPHS = 3;
 export const POOR_MIN_CHARS = 500;
 // Readability's time grows steeply with nesting depth (Node: 0.2 s at 100 levels, 0.8 s at 300,
@@ -201,13 +206,25 @@ function parseDocument(html: string) {
   ).document;
 }
 
-export function extractArticle(html: string, url?: string): Extracted {
+export function extractArticle(
+  html: string,
+  url?: string,
+  timings?: ExtractTimings,
+): Extracted {
+  let mark = Date.now();
+  const lap = (stage: keyof ExtractTimings) => {
+    const now = Date.now();
+    if (timings) timings[stage] = (timings[stage] ?? 0) + (now - mark);
+    mark = now;
+  };
   const document = parseDocument(html);
   const pageTitle = clean(document.title);
+  lap('parse');
   const tooDeep = deeperThan(
     document.documentElement as unknown as DomNode,
     MAX_READABILITY_DEPTH,
   );
+  lap('depth');
   let article: Article = null;
   if (!tooDeep) {
     try {
@@ -216,20 +233,24 @@ export function extractArticle(html: string, url?: string): Extracted {
       article = null;
     }
   }
+  lap('readability');
 
   const paragraphs: Paragraph[] = [];
   if (article?.content) {
     const { document: content } = parseHTML(
       `<!doctype html><html><body>${article.content}</body></html>`,
     );
+    lap('contentParse');
     collect(content.body as unknown as DomNode, 'p', DROP, paragraphs);
   } else {
     // Readability mutates the document it reads, so the fallback reads a fresh parse unless
     // Readability never ran.
     const fresh = tooDeep ? document : parseDocument(html);
+    lap('contentParse');
     if (fresh.body)
       collect(fresh.body as unknown as DomNode, 'p', DROP_FALLBACK, paragraphs);
   }
+  lap('walk');
 
   const chars = paragraphs.reduce((n, p) => n + p.text.length, 0);
   return {

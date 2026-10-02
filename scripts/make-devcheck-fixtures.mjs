@@ -78,13 +78,29 @@ if (existsSync(localDir)) {
   }
 }
 
+// DEVCHECK_ONLY=name,name runs just those fixtures, each in a fresh process with nothing
+// heavy before it, to separate a page's own cost from heap and run-order effects.
+const only = (process.env.DEVCHECK_ONLY ?? '').split(',').filter(Boolean);
+const keep = n => only.length === 0 || only.includes(n);
+for (const n of only) {
+  if (
+    ![
+      ...pages.map(p => p.name),
+      ...readdirSync(textsDir).map(f => f.replace(/\.txt$/, '')),
+    ].includes(n)
+  )
+    throw new Error(`DEVCHECK_ONLY names an unknown fixture: ${n}`);
+}
+pages.splice(0, pages.length, ...pages.filter(p => keep(p.name)));
+
 const texts = readdirSync(textsDir)
   .filter(f => f.endsWith('.txt'))
   .sort()
   .map(f => ({
     name: f.replace(/\.txt$/, ''),
     text: readFileSync(join(textsDir, f), 'utf8'),
-  }));
+  }))
+  .filter(t => keep(t.name));
 
 const withBytes = pages.map(p => ({
   name: p.name,

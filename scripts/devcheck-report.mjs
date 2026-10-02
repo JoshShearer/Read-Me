@@ -31,6 +31,15 @@ const median = xs => {
   return s.length ? s[Math.floor(s.length / 2)] : null;
 };
 
+const stageMedians = rs => {
+  const out = {};
+  for (const k of ['parse', 'depth', 'readability', 'contentParse', 'walk']) {
+    const xs = rs.map(r => r.stages?.[k]).filter(x => typeof x === 'number');
+    if (xs.length) out[k] = median(xs);
+  }
+  return out;
+};
+
 let ok = expected.length > 0;
 for (let r = 1; r <= RUNS; r++) {
   if (envs.get(String(r))?.hermes !== true) ok = false;
@@ -60,6 +69,7 @@ for (const e of expected) {
       limitMs: limit,
       f17,
       segmentMs: rs.map(r => r.segmentMs),
+      stagesMedianMs: stageMedians(rs),
     }),
   );
 }
