@@ -120,6 +120,9 @@ on-device.
 - If extraction yields fewer than 3 paragraphs or under 500 characters, the item MUST enter
   an `extract-poor` state that still shows what was found and offers "Share the text
   instead". Pages built by JavaScript or behind paywalls are expected to land here.
+- A page whose text and elements, weighted by nesting depth, exceed the Readability budget
+  skips Readability and is `extract-poor` with the page's own text (ADR 0006). The budget
+  keeps extraction inside SPIKE-02's F17 line on pages nested deep.
 - Text items skip fetching and extraction: shared text is split into paragraphs on blank
   lines (single newlines are joined).
 

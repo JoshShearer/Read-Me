@@ -130,15 +130,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 
 - **Text pipeline (Phase 1, REA-15):** `intake`, `extract`, `segment`, `trim` in TS, pure
   functions with no native, storage or UI; verified on Hermes by `npm run device:devcheck`
-  (2026-10-01, build c1419eb: parity on all fixtures, 5 MB median 8781 ms with one of three runs
-  at 11009 ms, 852 KB page median 1318 ms of its 1500 ms line). Pages nested deeper than 128
-  levels skip Readability and are poor. No native module, storage, playback or screens yet.
+  (2026-10-01, build afec9ff, each fixture in a fresh process at thermal status 0: parity on
+  all fixtures; F17 medians Wikipedia 705 KB 1387 ms of 1500, Gutenberg 852 KB 1174 ms, 5 MB
+  7516 ms of 10000). Pages over the depth-weighted Readability budget are `extract-poor`
+  (ADR 0006). No native module, storage, playback or screens yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
     `mediaPlayback` foreground service hosts playback and the bridge (ADR 0005).
   - SPIKE-02: Readability over linkedom passes F17 on Hermes (5 MB page median 8.2 s; Wikipedia
-    at 90% of its 1.5 s line, so Phase 1 re-measures).
+    at 90% of its 1.5 s line). Phase 1 re-measured with the production extract (Known state
+    above): Wikipedia at 92%. It is CC BY-SA, so devcheck reads it from the gitignored
+    `.claude/scratch/devcheck/local-pages/` (copy it from the spike branch).
   - SPIKE-03: no `Intl.Segmenter` on Hermes; R-M08's regex fallback is the device path.
   - SPIKE-04: no proprietary dependencies, but the release build runs a prebuilt `hermesc` and
     `node_modules` holds binaries the Phase 6 F-Droid recipe must remove or rebuild.
