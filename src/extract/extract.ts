@@ -190,7 +190,7 @@ function hostOf(url: string | undefined): string | undefined {
   return m ? m[1].toLowerCase().replace(/^www\./, '') : undefined;
 }
 
-type Article = ReturnType<Readability['parse']>;
+type Article = ReturnType<Readability<DomNode>['parse']>;
 
 /**
  * linkedom gives an empty string no root element, and a fragment ("<p>...") the fragment's
@@ -228,7 +228,14 @@ export function extractArticle(
   let article: Article = null;
   if (!tooDeep) {
     try {
-      article = new Readability(document as unknown as ReadabilityDoc).parse();
+      // The serializer hands back Readability's own content node. The default serializes it
+      // to HTML, which then had to be parsed again (1.5 s of a 5 MB page on the device).
+      article = new Readability<DomNode>(
+        document as unknown as ReadabilityDoc,
+        {
+          serializer: node => node as unknown as DomNode,
+        },
+      ).parse();
     } catch {
       article = null;
     }
@@ -237,11 +244,8 @@ export function extractArticle(
 
   const paragraphs: Paragraph[] = [];
   if (article?.content) {
-    const { document: content } = parseHTML(
-      `<!doctype html><html><body>${article.content}</body></html>`,
-    );
     lap('contentParse');
-    collect(content.body as unknown as DomNode, 'p', DROP, paragraphs);
+    collect(article.content, 'p', DROP, paragraphs);
   } else {
     // Readability mutates the document it reads, so the fallback reads a fresh parse unless
     // Readability never ran.
