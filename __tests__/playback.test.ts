@@ -30,6 +30,8 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
       return true;
     }),
     pause: jest.fn(async () => true),
+    setCuts: jest.fn(async () => undefined),
+    stop: jest.fn(async () => true),
     resume: jest.fn(async () => mockState.resume),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
@@ -37,7 +39,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
 }));
 
 import Native from '../src/native/NativeReadMeSpeech';
-import { engineProblem, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
+import { applyCuts, engineBlocked, engineProblem, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
 import type { Item } from '../src/library/library';
 
 const paragraphs = [
@@ -138,3 +140,33 @@ test('markers and the engine problem', () => {
 
 // Keeps the NativePlayback import used: the facade's event shape is the spec's.
 export type _Shape = NativePlayback;
+
+describe('applyCuts', () => {
+  const at = (itemId: number | null, playing: boolean): Playback => ({
+    itemId, playing, sentence: null, rate: 2, engine: 'ready',
+  });
+
+  test('a cut change while playing re-plays; while paused stops', async () => {
+    // Review Focus 1: the service must never go on reading paragraphs that are now cut.
+    await applyCuts(1, new Set([1, 0]), at(1, true));
+    expect(Native.setCuts).toHaveBeenCalledWith(1, [0, 1]);
+    expect(mockPlays).toHaveLength(1);
+    await applyCuts(1, new Set([0]), at(1, false));
+    expect(Native.stop).toHaveBeenCalledTimes(1);
+    expect(mockPlays).toHaveLength(1);
+  });
+
+  test('a cut change on another item leaves playback alone', async () => {
+    await applyCuts(2, new Set([0]), at(1, true));
+    expect(Native.stop).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+});
+
+test('the engine blocks only when there is no engine or no offline voice', () => {
+  expect(engineBlocked('no-voice')).toBe(true);
+  expect(engineBlocked('no-engine')).toBe(true);
+  expect(engineBlocked('ready')).toBe(false);
+  expect(engineBlocked('unknown')).toBe(false);
+  expect(engineBlocked(undefined)).toBe(false);
+});

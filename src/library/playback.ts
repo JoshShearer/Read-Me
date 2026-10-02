@@ -2,12 +2,12 @@
 // play and hands over the sentence list and a start; the service then owns the queue,
 // position saves and the archive. Nothing here advances playback on an event. Never logs.
 import { NativeEventEmitter } from 'react-native';
-import Native, { type NativePlayback } from '../native/NativeReadMeSpeech';
+import Native, { type NativeEngine, type NativePlayback } from '../native/NativeReadMeSpeech';
 import { sentenceIndexAt } from '../segment/locate';
 import { segment } from '../segment/segment';
 import { remapPosition } from '../trim/cuts';
 import type { Paragraph, Position, Sentence } from '../types';
-import { getItem, type Item } from './library';
+import { getItem, setCuts, type Item } from './library';
 
 export type Plan = { sentences: Sentence[]; startIndex: number };
 
@@ -94,5 +94,34 @@ export function marker(item: Item, p: Playback | null): string {
 
 /** R-M06: no engine bound, or no offline voice. */
 export function engineProblem(p: Playback | null): boolean {
-  return p?.engine === 'no-engine' || p?.engine === 'no-voice';
+  return engineBlocked(p?.engine);
+}
+
+export const stop = () => Native.stop();
+
+/**
+ * R-M05 + srs "Playback": store the new cut set; if the service holds this item, it must not
+ * go on reading paragraphs that are now cut. Playing: hand it the new list (the position is
+ * remapped by plan()). Paused: stop, so the next play plans afresh from the saved position.
+ */
+export async function applyCuts(
+  id: number,
+  cuts: ReadonlySet<number>,
+  current: Playback | null,
+): Promise<void> {
+  await setCuts(id, [...cuts].sort((a, b) => a - b));
+  if (current?.itemId !== id) return;
+  if (current.playing) await playItem(id);
+  else await Native.stop();
+}
+
+export type Engine = NativeEngine;
+
+export const getEngine = (): Promise<Engine> => Native.getEngine();
+export const setVoice = (name: string | null) => Native.setVoice(name);
+export const getNotices = () => Native.getNotices();
+
+/** R-M06 / R-M10: no engine bound, or no offline voice. */
+export function engineBlocked(status: string | undefined): boolean {
+  return status === 'no-engine' || status === 'no-voice';
 }
