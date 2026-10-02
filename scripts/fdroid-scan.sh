@@ -14,8 +14,10 @@ SRC=$(mktemp -d); DEPS=$(mktemp)
 trap 'rm -rf "$SRC" "$DEPS"' EXIT
 
 echo "== 1. source scan of clean HEAD export"
-git archive HEAD | tar -x -C "$SRC"
-"$VENV/bin/python" - "$SRC" <<'PY' || fail=1
+# An export that fails leaves $SRC empty, and an empty tree scans as "0 problems": fail closed.
+if ! git archive HEAD | tar -x -C "$SRC" || [ ! -f "$SRC/package.json" ]; then
+  echo "export of HEAD failed; source scan not run"; fail=1
+else "$VENV/bin/python" - "$SRC" <<'PY' || fail=1
 import sys, logging
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 from fdroidserver import common, scanner
@@ -24,6 +26,7 @@ n = scanner.scan_source(sys.argv[1])
 print("source problems:", n)
 sys.exit(1 if n else 0)
 PY
+fi
 
 echo "== 2. APK binary scan"
 APK=android/app/build/outputs/apk/release/app-release.apk
