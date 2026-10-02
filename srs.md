@@ -435,9 +435,10 @@ engine instance.
 ## Foreground service
 
 Android 14+ requires a declared foreground-service type. Playback uses `mediaPlayback`.
-Whether the bridge, which serves audio to another app and plays none itself, may run under
-`mediaPlayback` or needs `specialUse` is SPIKE-01's question; F-Droid distribution places no
-store review on `specialUse`.
+The bridge, which serves audio to another app and plays none itself, runs in the same service
+under the same `mediaPlayback` type, including bridge-only sessions (SPIKE-01, ADR 0005).
+`specialUse` also passed SPIKE-01 and is the fallback if a later Android enforces
+`mediaPlayback`'s semantics.
 
 ---
 
@@ -448,6 +449,33 @@ Each spike answers one question on the reference device and records the answer h
 - **SPIKE-01 - Service type and background bridge.** Can the bridge synthesize while Read Me
   is backgrounded and Obsidian is foreground, under which foreground-service type, on
   Android 14+ and Android 17?
+  **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
+  build 2ed01ac on spike/rea-0-background-bridge; `scripts/spike-bridge.sh media` and
+  `scripts/spike-bridge.sh special`; engine `app.grapheneos.speechservices`):** yes, under
+  either type. The bridge kept synthesizing for 5 minutes with Read Me backgrounded behind
+  Obsidian under `mediaPlayback` and under `specialUse`. One service with `mediaPlayback` hosts
+  both playback and the bridge (ADR 0005).
+  Observed, identical for both types: the service started in the foreground
+  (`types=0x00000002` for `media`, `types=0x40000000` for `special`). From inside Obsidian's
+  WebView (origin `http://localhost`), before and after the 5 minutes: `fetch` `/health` 200;
+  `CapacitorHttp` `/synthesize` 200 with `X-Rate` `1.0`; `fetch` `/synthesize` 200 (so the
+  OPTIONS preflight works) with `X-Rate` `1.0` and `X-Synth-Ms` 304 to 600; a `fetch` with no
+  token got a readable 401, not a CORS error. 20 of 20 `adb forward` calls over 5 minutes
+  returned 200. The bridge's per-request log showed importance 125 (foreground service) on
+  every request: 24 `/synthesize` 200, 2 `/health` 200, 2 OPTIONS 204, 2 `/synthesize` 401.
+  The token appeared 0 times in logcat. A first run at build 8a222f2 found it once, in adbd's
+  own log of the `adb shell am start ... --es token` command line the script used to deliver
+  it (Read Me never logged it); the script now sends that command on stdin, which adbd logs as
+  `raw:`. With port 8787 held by the prototype bridge, the spike bridge reported
+  `{"bridge":"bind-failed","error":"BindException"}` and the process stayed up; the service's
+  cache sweep ran at start (`{"deleted":0}`) (both at build 8a222f2).
+  Not established: Android 14-16 (only the Android 17 reference device was available),
+  targetSdk 37, screen-off bridge use while Obsidian itself is backgrounded, the real plugin's
+  request pattern.
+  Consequence: Phase 5's bridge lives in PlaybackService's foreground service under
+  `mediaPlayback` (ADR 0005); delivering a secret to the app over `adb shell` argv leaks it
+  into logcat, so device scripts never do. SPIKE-01 found nothing that sets `minSdk` or
+  `targetSdk` (R-M13): the scaffold's 24 and 36 stand until an owner decision.
 - **SPIKE-02 - Extraction on Hermes.** Does Readability run on Hermes with a pure-JS DOM
   (e.g. linkedom), at acceptable speed for a 5 MB page? If not, extract in a hidden WebView.
   Pass line (owner, 2026-10-01): on the reference device in a release build, a 5 MB page
@@ -596,6 +624,7 @@ named one.
 | 2026-10-01 | Kotlin owns the database; JS goes through ReadMeSpeech (ADR 0001). |
 | 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
 | 2026-10-01 | TTS contention (SPIKE-06): the bridge answers 503 while Read Me is playing (ADR 0004). |
+| 2026-10-01 | One foreground service, type `mediaPlayback`, hosts playback and the bridge (SPIKE-01, ADR 0005). |
 
 # Critique resolutions (2026-10-01)
 
