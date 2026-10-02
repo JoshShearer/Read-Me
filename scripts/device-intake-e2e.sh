@@ -28,7 +28,9 @@ share "$TEXT_MARK, with a second sentence.
 
 Paragraph two."
 share "dead $DEAD"
-echo "shared three items with the app closed; waiting for the requests"
+# R-M03 allows http: a plain-http page must fetch, not fail as "network" under a cleartext ban.
+share "http://neverssl.com/"
+echo "shared four items with the app closed; waiting for the requests"
 sleep 25
 
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
@@ -45,8 +47,9 @@ done
 adb shell rm -f /sdcard/readme-ui.xml
 # grep -c, not grep | wc: with no match grep exits 1 and pipefail would end the script with
 # no verdict (seen at 964fef0 when the app crashed on launch).
-readies=$(grep -c 'text="ready"' <<<"${screen//\/>/$'\n'}" || true)
-[ "$readies" -ge 2 ] || { echo "FAIL: expected 2 ready items (link, text), saw $readies"; fail=1; }
+readies=$(grep -cE 'text="(ready|extract-poor)"' <<<"${screen//\/>/$'\n'}" || true)
+[ "$readies" -ge 3 ] || { echo "FAIL: expected 3 readable items (link, text, http link), saw $readies"; fail=1; }
+device_has "$screen" 'fetch-failed: network' && { echo "FAIL: a link failed as network (cleartext http blocked?)"; fail=1; }
 device_has "$screen" 'fetch-failed: offline' || { echo "FAIL: dead link not fetch-failed: offline"; fail=1; }
 device_has "$screen" 'text="fetching"' && { echo "FAIL: an item still fetching"; fail=1; }
 
