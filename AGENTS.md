@@ -159,8 +159,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 - **UI (Phase 4, REA-19):** List (unread / Archive, words, progress, R-M10 states and
   actions), Trim (first open; tap, "Cut everything after this", "Start here"), Reader
   (highlight kept in view, transport, engine card probed on open), Settings (offline voices,
-  default rate, storage, Licenses from a generated asset). Verified by `npm run device:ui`
-  (2026-10-02, build c870f28). No bridge yet (Settings has no bridge row until Phase 5).
+  default rate, storage, Licenses from a generated asset). Verified 2026-10-02 on the
+  reference device, build 3b86e03: `npm run device:ui` (including the highlight kept in view
+  deep in an 80-sentence paragraph) and `npm run device:playback` (through Trim and the
+  Reader); `npm run device:intake` on c870f28. No bridge yet (Settings has no bridge row until Phase 5).
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
   R-M13 is partial: Licenses lists npm packages (with their license text where the package
