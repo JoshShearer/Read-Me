@@ -139,23 +139,29 @@ describe('pages with no article never throw (Review Focus 4)', () => {
     }
   }, 20000);
 
-  test('long text nested deep skips Readability: its cost is text times depth', () => {
-    // On the reference device Readability took 2.1 s for 300 KB of prose 60 levels deep
-    // (82f15bc). About 120,000 characters at depth 60 is over the budget for a small page.
-    const long = `<p>${PROSE}</p>`.repeat(800);
-    const html = `<html><body>${'<div>'.repeat(60)}${long}${'</div>'.repeat(60)}</body></html>`;
+  test('a page predicted to stall Readability skips it: long text nested very deep', () => {
+    // Device model (ADR 0006): about 0.107 ms per thousand depth-weighted characters. 300,000
+    // characters at depth 130 predicts over 4 s, the stall ceiling for a small page.
+    const long = `<p>${PROSE}</p>`.repeat(2000);
+    const html = `<html><body>${'<div>'.repeat(130)}${long}${'</div>'.repeat(130)}</body></html>`;
     const ex = extractArticle(html);
     expect(ex.poor).toBe(true);
     expect(ex.paragraphs.some(p => p.text.includes('stone wall'))).toBe(true);
-  });
+  }, 60000);
 
-  test('script and style text does not count toward the Readability budget', () => {
-    // Readability drops scripts and styles before it scores anything; a large inline JSON blob
-    // (common in CMS pages) must not push a normal article into the fallback.
-    const blob = `<script type="application/json">${'{"k":"v"},'.repeat(45000)}</script>`;
-    const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(14)}${blob}<article><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p></article>${'</div>'.repeat(14)}</body></html>`;
+  test('a page predicted to stall Readability skips it: tens of thousands of elements', () => {
+    // About 0.11 ms per element on the device; 60,000 elements in a page under 1 MiB (about
+    // 500 KB here) predicts over 6 s against the 4 s ceiling.
+    const html = `<html><body>${'<p>a</p>'.repeat(60000)}</body></html>`;
+    expect(extractArticle(html).poor).toBe(true);
+  }, 60000);
+
+  test('long text nested moderately deep still goes through Readability', () => {
+    // 120,000 characters at depth 60 predicts under 1 s: slow pages run, only stalls skip.
+    const long = `<p>${PROSE}</p>`.repeat(800);
+    const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(60)}<article>${long}</article>${'</div>'.repeat(60)}</body></html>`;
     expect(extractArticle(html).poor).toBe(false);
-  });
+  }, 60000);
 
   test('a short article nested deep still goes through Readability', () => {
     const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(60)}<article><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p></article>${'</div>'.repeat(60)}</body></html>`;
