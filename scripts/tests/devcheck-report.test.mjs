@@ -90,3 +90,10 @@ test('a small page over its 5 s ceiling fails', () => {
   const r = report([1, 2, 3].flatMap(n => [thermal(n, 0), env(n, true), slow(n, 5200)]), 3);
   assert.equal(r.status, 1, r.stdout);
 });
+
+test('a launch the script recorded as not cool fails, even at aggregate status 0', () => {
+  const warm = n => `run=${n} DEVCHECK_THERMAL {"name":"page","status":0,"skin":38.8,"cool":false}`;
+  const r = report([1, 2, 3].flatMap(n => [warm(n), env(n, true), row(n)]), 3);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /throttled|not cool/);
+});

@@ -25,8 +25,10 @@ for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
     // temperature, not the code (fdaafaa: parse 2.4x slower at status 1).
     const th = JSON.parse(t[2]);
     thermalSeen.set(t[1], (thermalSeen.get(t[1]) ?? 0) + 1);
-    if (th.status !== 0)
-      throttled.push(`run ${t[1]} ${th.name} status ${th.status}`);
+    if (th.status !== 0 || th.cool === false)
+      throttled.push(
+        `run ${t[1]} ${th.name} status ${th.status}${th.skin === undefined ? '' : ` skin ${th.skin} C`} (not cool)`,
+      );
     continue;
   }
   const m = /^run=(\d+) DEVCHECK(_ENV)? (\{.*\})$/.exec(line);

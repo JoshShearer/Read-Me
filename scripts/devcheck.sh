@@ -45,35 +45,37 @@ echo "installed DEVCHECK build $HEAD7 on the phone (replaces whatever build was 
 # 1344 ms alone (a544319, reference device).
 NAMES=$(node -e "for (const e of require(process.argv[1])) console.log(e.name)" "$EXPECTED")
 [ -n "$NAMES" ] || { echo "no fixtures in $EXPECTED" >&2; exit 1; }
-# Heat throttles the CPU: at thermal status 1 parsing ran 2.4x slower (fdaafaa). Wait up to
-# 15 min for status 0 before each launch, and log the status the launch started at; the report
-# rejects the timings of any launch that started above 0.
-thermal_status() {
-  local t
+# Heat throttles the CPU before the aggregate thermal status moves: f4bcce4 ran 1.7x slower at
+# status 0 with the skin at 38.8 C and the wired-charging skin sensor at status 2. A launch
+# waits (up to 15 min) until the aggregate status is 0, every sensor's own status is 0, and
+# VIRTUAL-SKIN is under 36 C, and logs what it started at; the report rejects the timings of
+# any launch that started warm.
+SKIN_MAX=36
+thermal_read() {
+  local t agg skin hot cool
   t=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
-  sed -n 's/^Thermal Status: *\([0-9]*\).*/\1/p' <<<"$t" | head -1
+  agg=$(sed -n 's/^Thermal Status: *\([0-9]*\).*/\1/p' <<<"$t" | head -1)
+  # Only the "Current temperatures from HAL" block: one line per sensor, as of now.
+  t=$(sed -n '/Current temperatures from HAL/,/Current cooling devices/p' <<<"$t")
+  skin=$(sed -n 's/.*mValue=\([0-9.]*\), mType=3, mName=VIRTUAL-SKIN,.*/\1/p' <<<"$t" | head -1)
+  hot=$(grep -c 'mStatus=[1-9]' <<<"$t" || true)
+  cool=false
+  if [ "${agg:-x}" = 0 ] && [ "${hot:-1}" = 0 ] && [ -n "$skin" ] \
+     && awk -v s="$skin" -v m="$SKIN_MAX" 'BEGIN { exit !(s < m) }'; then cool=true; fi
+  printf '%s %s %s %s\n' "${agg:-99}" "${skin:-0}" "${hot:-0}" "$cool"
 }
-# The first launch after an install did not get its launch data (63bfc02, reproduced: it ran
-# every fixture; the next launches ran one each). Warm up once and discard what it logs.
-adb shell am force-stop "$PKG"
-adb shell am start -W -a android.intent.action.VIEW -n "$PKG/.MainActivity" \
-  -d "devcheck://fixture/$(head -1 <<<"$NAMES")" >/dev/null
-for _ in $(seq 300); do
-  device_has "$(adb logcat -d -s ReactNativeJS:I)" 'DEVCHECK_DONE' && break
-  sleep 1
-done
-
 for run in $(seq "$RUNS"); do
   for name in $NAMES; do
     adb shell am force-stop "$PKG"
-    status=$(thermal_status)
+    read -r status skin hot cool <<<"$(thermal_read)"
     for _ in $(seq 60); do
-      [ "${status:-x}" = 0 ] && break
-      echo "run $run $name: thermal status ${status:-unknown}, waiting to cool"
+      [ "$cool" = true ] && break
+      echo "run $run $name: status $status, skin $skin C, $hot sensor(s) flagged; waiting to cool"
       sleep 15
-      status=$(thermal_status)
+      read -r status skin hot cool <<<"$(thermal_read)"
     done
-    printf 'run=%s DEVCHECK_THERMAL {"name":"%s","status":%s}\n' "$run" "$name" "${status:-99}" >> "$DEVICE_OUT"
+    printf 'run=%s DEVCHECK_THERMAL {"name":"%s","status":%s,"skin":%s,"sensorsFlagged":%s,"cool":%s}\n' \
+      "$run" "$name" "$status" "$skin" "$hot" "$cool" >> "$DEVICE_OUT"
     adb logcat -c
     # -W waits for the launch; without it the first pidof can run before the process exists
     # and a healthy run is reported as a death.
