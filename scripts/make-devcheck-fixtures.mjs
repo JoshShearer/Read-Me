@@ -1,7 +1,7 @@
 // Writes src/devcheck/fixtures.generated.ts (gitignored) from the committed fixtures, plus a
 // synthetic page of real prose at R-M03's 5 MB cap (the Gutenberg body repeated inside one
 // <article>, cut on a tag boundary), the size SPIKE-02's F17 line names, and a deeply nested page.
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CAP_BYTES = 5 * 1024 * 1024;
@@ -47,6 +47,36 @@ pages.push({
     '</div>'.repeat(DEEP) +
     '</body></html>',
 });
+
+// Critique run A: Readability's time grows with depth times content, so the depth cut-off is
+// set from real prose (300 KB of the Gutenberg body) at moderate depths, measured on Hermes.
+const slice = inner.slice(0, inner.indexOf('<', 300 * 1024));
+for (const depth of [60, 120]) {
+  pages.push({
+    name: `synthetic-300k-depth-${depth}`,
+    html:
+      '<!doctype html><html><head><title>Synthetic depth</title></head><body>' +
+      '<div>'.repeat(depth) +
+      slice +
+      '</div>'.repeat(depth) +
+      '</body></html>',
+  });
+}
+
+// Pages that may not be committed (Wikipedia and MDN are CC BY-SA) can still be measured:
+// put them in the gitignored .claude/scratch/devcheck/local-pages/. They run as local-<name>
+// and never leave this machine.
+const localDir = '.claude/scratch/devcheck/local-pages';
+if (existsSync(localDir)) {
+  for (const f of readdirSync(localDir)
+    .filter(x => x.endsWith('.html'))
+    .sort()) {
+    pages.push({
+      name: `local-${f.replace(/\.html$/, '')}`,
+      html: readFileSync(join(localDir, f), 'utf8'),
+    });
+  }
+}
 
 const texts = readdirSync(textsDir)
   .filter(f => f.endsWith('.txt'))
