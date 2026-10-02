@@ -45,7 +45,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
 
   return (
     <ScrollView style={ui.screen}>
-      <View style={ui.header}>
+      <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Settings</Text>
       </View>
 
@@ -53,7 +53,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       {engine === null ? (
         <Text style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
       ) : engineBlocked(engine.status) ? (
-        <View style={ui.card}>
+        <View collapsable={false} style={ui.card}>
           <Text>No offline text-to-speech voice is available.</Text>
           <Pressable
             style={ui.button}
@@ -81,7 +81,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       <Text style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
 
       <Text style={[ui.row, ui.title]}>Default rate</Text>
-      <View style={[ui.actions, ui.row]}>
+      <View collapsable={false} style={[ui.actions, ui.row]}>
         <Pressable style={ui.button} accessibilityLabel="default slower" onPress={() => changeRate(-1)}>
           <Text style={ui.buttonText}>−</Text>
         </Pressable>

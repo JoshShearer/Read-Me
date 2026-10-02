@@ -71,8 +71,8 @@ export function ListScreen({
 
   const shown = visibleItems(items, archive);
   return (
-    <View style={ui.screen}>
-      <View style={ui.header}>
+    <View collapsable={false} style={ui.screen}>
+      <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>{archive ? 'Archive' : 'Read Me'}</Text>
         <Pressable
           style={ui.button}
@@ -108,7 +108,7 @@ export function ListScreen({
               <Text style={ui.small}>{badge(item)}</Text>
               {mark && mark !== 'archived' ? <Text style={ui.small}>{mark}</Text> : null}
               {help ? <Text style={ui.small}>{help}</Text> : null}
-              <View style={ui.actions}>
+              <View collapsable={false} style={ui.actions}>
                 {acts
                   .filter(a => a !== 'open' || item.state === 'extract-poor' || archive)
                   .map(a => (

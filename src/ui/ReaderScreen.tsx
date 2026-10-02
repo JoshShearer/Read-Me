@@ -72,7 +72,7 @@ export function ReaderScreen({
   if (detail === undefined) return null;
   if (detail === null) {
     return (
-      <View style={ui.screen}>
+      <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
         <Pressable style={ui.button} onPress={onGone}>
           <Text style={ui.buttonText}>Back to the list</Text>
@@ -82,7 +82,7 @@ export function ReaderScreen({
   }
 
   const header = (
-    <View style={ui.header}>
+    <View collapsable={false} style={ui.header}>
       <Text style={ui.headerTitle} numberOfLines={1}>
         {detail.item.title}
       </Text>
@@ -94,9 +94,9 @@ export function ReaderScreen({
 
   if (engineBlocked(engine)) {
     return (
-      <View style={ui.screen}>
+      <View collapsable={false} style={ui.screen}>
         {header}
-        <View style={ui.card}>
+        <View collapsable={false} style={ui.card}>
           <Text>
             This phone has no offline text-to-speech voice Read Me can use, so it cannot read aloud.
             Install or enable an offline voice in Android's text-to-speech settings.
@@ -116,7 +116,7 @@ export function ReaderScreen({
 
   if (paragraphs.length === 0) {
     return (
-      <View style={ui.screen}>
+      <View collapsable={false} style={ui.screen}>
         {header}
         <Text style={ui.empty}>Everything in this item is cut. Open Trim to keep some of it.</Text>
       </View>
@@ -136,7 +136,7 @@ export function ReaderScreen({
   );
 
   return (
-    <View style={ui.screen}>
+    <View collapsable={false} style={ui.screen}>
       {header}
       <FlatList
         ref={list}
@@ -147,7 +147,7 @@ export function ReaderScreen({
         }
         renderItem={({ item: p }) =>
           p.current ? (
-            <View accessibilityLabel="current paragraph">
+            <View collapsable={false} accessibilityLabel="current paragraph">
               <Text style={ui.paragraph}>
                 {p.text.slice(0, p.current.start)}
                 <Text style={ui.highlight}>{p.text.slice(p.current.start, p.current.end)}</Text>
@@ -159,7 +159,7 @@ export function ReaderScreen({
           )
         }
       />
-      <View style={ui.transport}>
+      <View collapsable={false} style={ui.transport}>
         {button('¶◀', 'back paragraph', control(backParagraph))}
         {button('◀', 'previous sentence', control(previous))}
         {button(mine?.playing ? 'Pause' : 'Play', mine?.playing ? 'pause' : 'play', control(() => toggle(id, playback)))}

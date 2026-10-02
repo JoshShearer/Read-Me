@@ -1,6 +1,13 @@
 import { StyleSheet } from 'react-native';
 
 // One small style sheet for every screen: R-M01 asks for a light interface, not a theme.
+//
+// Every View in the screens is collapsable={false}. Fabric flattens layout-only Views and
+// unflattens them when their props change; under a screen switch that churn drops a view's
+// Create mutation (react/react-native#58265, closed unfixed; #58175 is the related merge
+// bug), which crashed List to Trim with "addViewAt: failed to insert view" or left it blank
+// on about half of taps (device:ui and a repro loop, 2026-10-02). With no flattenable wrapper
+// the same loop opened 10 of 10 under its worst timing.
 export const ui = StyleSheet.create({
   screen: { flex: 1 },
   header: {

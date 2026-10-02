@@ -41,7 +41,7 @@ export function TrimScreen({
   if (detail === undefined) return null;
   if (detail === null) {
     return (
-      <View style={ui.screen}>
+      <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
         <Pressable style={ui.button} onPress={onGone}>
           <Text style={ui.buttonText}>Back to the list</Text>
@@ -63,8 +63,8 @@ export function TrimScreen({
     ]);
 
   return (
-    <View style={ui.screen}>
-      <View style={ui.header}>
+    <View collapsable={false} style={ui.screen}>
+      <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Trim</Text>
         <Pressable style={ui.button} accessibilityLabel="trim done" onPress={onDone}>
           <Text style={ui.buttonText}>Done</Text>

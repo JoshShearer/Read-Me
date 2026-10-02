@@ -14,8 +14,8 @@ export function LicensesScreen() {
   }, []);
 
   return (
-    <View style={ui.screen}>
-      <View style={ui.header}>
+    <View collapsable={false} style={ui.screen}>
+      <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Licenses</Text>
       </View>
       <FlatList
