@@ -1,6 +1,6 @@
 // Writes src/devcheck/fixtures.generated.ts (gitignored) from the committed fixtures, plus a
 // synthetic page of real prose at R-M03's 5 MB cap (the Gutenberg body repeated inside one
-// <article>, cut on a tag boundary), the size SPIKE-02's F17 line names.
+// <article>, cut on a tag boundary), the size SPIKE-02's F17 line names, and a deeply nested page.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -35,6 +35,18 @@ while (Buffer.byteLength(big) < room) big += inner;
 big = Buffer.from(big).subarray(0, room).toString('utf8');
 big = big.slice(0, big.lastIndexOf('<'));
 pages.push({ name: 'synthetic-5mb', html: head + big + tail });
+// Final review: deep nesting overflowed a recursive walk and stalls Readability. 6000 levels of
+// <div> around real prose checks, on Hermes's smaller stack, that it extracts fast and as poor.
+const DEEP = 6000;
+pages.push({
+  name: 'synthetic-deep-6000',
+  html:
+    '<!doctype html><html><head><title>Synthetic deep</title></head><body>' +
+    '<div>'.repeat(DEEP) +
+    inner.slice(0, inner.indexOf('<', 20000)) +
+    '</div>'.repeat(DEEP) +
+    '</body></html>',
+});
 
 const texts = readdirSync(textsDir)
   .filter(f => f.endsWith('.txt'))
