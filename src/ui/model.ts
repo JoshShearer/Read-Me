@@ -126,3 +126,25 @@ export function parseNotices(json: string): Notice[] {
     return [];
   }
 }
+
+// R-M12: the bridge port is configurable within the unprivileged range.
+export const BRIDGE_PORT_MIN = 1024;
+export const BRIDGE_PORT_MAX = 65535;
+
+export function parsePort(s: string): number | null {
+  const t = s.trim();
+  if (!/^\d{1,5}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= BRIDGE_PORT_MIN && n <= BRIDGE_PORT_MAX ? n : null;
+}
+
+export function bridgeStatus(b: { enabled: boolean; state: string; port: number; error: string | null }): string {
+  if (!b.enabled) return 'Off';
+  if (b.state === 'on') return `On at 127.0.0.1:${b.port}`;
+  if (b.state === 'failed') {
+    return b.error === 'BindException'
+      ? `Port ${b.port} is in use by another app. Choose another port.`
+      : `The bridge could not start (${b.error ?? 'unknown'}).`;
+  }
+  return 'Starting...';
+}

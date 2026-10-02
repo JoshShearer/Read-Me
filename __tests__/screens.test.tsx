@@ -6,6 +6,7 @@ const mockState = {
   items: [] as NativeItem[],
   detail: null as unknown,
   engine: { status: 'ready', voices: [] as unknown[], selected: null as string | null },
+  bridge: { enabled: false, state: 'off', port: 8787, token: null as string | null, error: null as string | null },
 };
 const base: NativeItem = {
   id: 1, kind: 'link', url: 'https://example.com/a', title: 'An article', site: null, byline: null,
@@ -26,6 +27,14 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     getRate: jest.fn(async () => 2),
     getPosition: jest.fn(async () => null),
     setCuts: jest.fn(async () => undefined),
+    getBridge: jest.fn(async () => mockState.bridge),
+    setBridgeEnabled: jest.fn(async (on: boolean) => {
+      mockState.bridge = { ...mockState.bridge, enabled: on, state: on ? 'on' : 'off', token: on ? '0123456789abcdef0123456789abcdef' : null };
+      return mockState.bridge;
+    }),
+    setBridgePort: jest.fn(async () => mockState.bridge),
+    regenerateBridgeToken: jest.fn(async () => mockState.bridge),
+    copyBridgeToken: jest.fn(async () => undefined),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   },
@@ -75,6 +84,7 @@ beforeEach(() => {
   mockState.items = [];
   mockState.detail = null;
   mockState.engine = { status: 'ready', voices: [], selected: null };
+  mockState.bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
 });
 
 test('a failed link shows its reason, Retry, Delete and the share-text guidance (R-M10)', async () => {
@@ -201,4 +211,35 @@ test('Settings lists offline voices, the default rate and storage', async () => 
   expect(out).toContain('2.0x');
   expect(out).toContain('2 items, 1 archived');
   expect(out).toContain('Licenses');
+});
+
+test('Settings shows the bridge off, with no token (R-M12)', async () => {
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('Obsidian bridge');
+  expect(out).toContain('Off');
+  expect(out).toContain('"bridge on"');
+  expect(out).not.toContain('pairing token');
+});
+
+test('Settings shows the token with Copy and New token while the bridge is on', async () => {
+  mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('On at 127.0.0.1:8787');
+  expect(out).toContain('0123456789abcdef0123456789abcdef');
+  expect(out).toContain('"copy token"');
+  expect(out).toContain('"new token"');
+  expect(out).toContain('"bridge off"');
+});
+
+test('turning the bridge on goes through the module', async () => {
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<SettingsScreen onLicenses={() => {}} />);
+  });
+  mounted.push(r);
+  await ReactTestRenderer.act(async () => {
+    r.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+  });
+  expect(Native.setBridgeEnabled).toHaveBeenCalledWith(true);
+  expect(strings(r.toJSON()).join('\n')).toContain('0123456789abcdef0123456789abcdef');
 });

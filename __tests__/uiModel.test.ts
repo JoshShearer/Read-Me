@@ -15,6 +15,8 @@ import {
   trimDone,
   visibleItems,
   type Route,
+  bridgeStatus,
+  parsePort,
 } from '../src/ui/model';
 
 const item = (over: Partial<Item> = {}): Item => ({
@@ -134,4 +136,26 @@ test('lineTop finds the laid-out line holding a character offset', () => {
   expect(lineTop(lines, 19)).toBe(60);
   expect(lineTop(lines, 999)).toBe(60);
   expect(lineTop([], 5)).toBe(0);
+});
+
+test('parsePort accepts 1024 to 65535 only', () => {
+  expect(parsePort('8787')).toBe(8787);
+  expect(parsePort(' 1024 ')).toBe(1024);
+  expect(parsePort('65535')).toBe(65535);
+  for (const bad of ['', '80', '1023', '65536', '87.87', '-1', 'abc', '8787a', '0x2253']) {
+    expect(parsePort(bad)).toBeNull();
+  }
+});
+
+test('bridgeStatus explains a taken port', () => {
+  const b = { enabled: true, state: 'on', port: 8787, token: 'x', error: null };
+  expect(bridgeStatus({ ...b, enabled: false, state: 'off' })).toBe('Off');
+  expect(bridgeStatus({ ...b, state: 'starting' })).toBe('Starting...');
+  expect(bridgeStatus(b)).toBe('On at 127.0.0.1:8787');
+  expect(bridgeStatus({ ...b, state: 'failed', error: 'BindException' })).toBe(
+    'Port 8787 is in use by another app. Choose another port.',
+  );
+  expect(bridgeStatus({ ...b, state: 'failed', error: 'SecurityException' })).toBe(
+    'The bridge could not start (SecurityException).',
+  );
 });
