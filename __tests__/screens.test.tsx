@@ -45,6 +45,7 @@ import { ListScreen } from '../src/ui/ListScreen';
 import { TrimScreen } from '../src/ui/TrimScreen';
 import { ReaderScreen } from '../src/ui/ReaderScreen';
 import { SettingsScreen } from '../src/ui/SettingsScreen';
+import * as bridgeLib from '../src/library/bridge';
 
 type Node = ReactTestRenderer.ReactTestRendererNode | ReactTestRenderer.ReactTestRendererNode[] | null;
 
@@ -242,4 +243,20 @@ test('turning the bridge on goes through the module', async () => {
   });
   expect(Native.setBridgeEnabled).toHaveBeenCalledWith(true);
   expect(strings(r.toJSON()).join('\n')).toContain('0123456789abcdef0123456789abcdef');
+});
+
+test('turning the bridge on with notifications refused says the notification is hidden', async () => {
+  const spy = jest.spyOn(bridgeLib, 'ensureNotifications').mockResolvedValue(false);
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<SettingsScreen onLicenses={() => {}} />);
+  });
+  mounted.push(r);
+  await ReactTestRenderer.act(async () => {
+    r.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+  });
+  expect(spy).toHaveBeenCalled();
+  expect(Native.setBridgeEnabled).toHaveBeenCalledWith(true);
+  expect(strings(r.toJSON()).join('\n')).toContain('Notifications are off for Read Me');
+  spy.mockRestore();
 });

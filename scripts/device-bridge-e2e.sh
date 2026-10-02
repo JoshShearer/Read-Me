@@ -24,6 +24,8 @@ device_require_unlocked
 device_install_release
 
 adb shell pm clear "$PKG" >/dev/null
+# Settings asks for this when the bridge is turned on (Android 13+); granted here so no dialog.
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 adb logcat -c
 fail=0
 check() { if eval "$2"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
@@ -101,7 +103,7 @@ exec 3<&- 3>&-
 
 echo "== contention (ADR 0004)"
 adb shell input keyevent KEYCODE_BACK
-tap_desc 'open [^"]*'
+tap_desc 'Bridge test one[^"]*'
 tap_desc 'trim done'
 tap_desc play
 wait_log 'playback start item=1 ' 20 || { echo "FAIL: playback did not start"; fail=1; }

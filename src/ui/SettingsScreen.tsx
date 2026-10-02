@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   copyBridgeToken,
+  ensureNotifications,
   getBridge,
   onBridge,
   regenerateBridgeToken,
@@ -25,6 +26,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const [portText, setPortText] = useState('');
   const [portError, setPortError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [notifyOff, setNotifyOff] = useState(false);
 
   useEffect(() => {
     getBridge().then(b => {
@@ -141,7 +143,14 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             style={ui.button}
             accessibilityLabel={bridge.enabled ? 'bridge off' : 'bridge on'}
             onPress={() => {
-              setBridgeEnabled(!bridge.enabled).then(setBridge, () => undefined);
+              const on = !bridge.enabled;
+              const ask = on ? ensureNotifications() : Promise.resolve(true);
+              ask
+                .then(granted => {
+                  setNotifyOff(!granted);
+                  return setBridgeEnabled(on);
+                })
+                .then(setBridge, () => undefined);
             }}>
             <Text style={ui.buttonText}>{bridge.enabled ? 'Turn off' : 'Turn on'}</Text>
           </Pressable>
@@ -156,6 +165,12 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               onSubmitEditing={applyPort}
             />
           </View>
+          {notifyOff && bridge.enabled ? (
+            <Text style={ui.small}>
+              Notifications are off for Read Me, so Android hides the bridge's notification. The bridge
+              still runs; turn notifications on in Android settings to see it.
+            </Text>
+          ) : null}
           {portError ? <Text style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
           {bridge.enabled && bridge.token !== null ? (
             <View collapsable={false}>
