@@ -34,8 +34,8 @@ type ReadabilityDoc = ConstructorParameters<typeof Readability>[0];
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
-// R-M04 drops tables, figures, code blocks, captions and embedded media; the rest is page
-// chrome that should never be read aloud when Readability finds no article.
+// R-M04 drops tables, figures, code blocks, captions and embedded media; scripts, styles and
+// form controls hold nothing to read.
 const DROP = new Set([
   'TABLE',
   'FIGURE',
@@ -60,11 +60,10 @@ const DROP = new Set([
   'SELECT',
   'TEXTAREA',
   'INPUT',
-  'NAV',
-  'ASIDE',
-  'HEADER',
-  'FOOTER',
 ]);
+// Page chrome, dropped only when Readability found no article. Inside an article a <header>
+// holds the lead heading and standfirst, which are content.
+const DROP_FALLBACK = new Set([...DROP, 'NAV', 'ASIDE', 'HEADER', 'FOOTER']);
 const BLOCK = new Set([
   'P',
   'DIV',
@@ -104,7 +103,12 @@ type Step =
  * Emits one paragraph per run of inline text, each block element starting a new run. Walks
  * with an explicit stack: page depth is untrusted input and must not reach the call stack.
  */
-function collect(root: DomNode, kind: ParagraphKind, out: Paragraph[]): void {
+function collect(
+  root: DomNode,
+  kind: ParagraphKind,
+  drop: Set<string>,
+  out: Paragraph[],
+): void {
   let buf = '';
   const flush = (k: ParagraphKind) => {
     const text = buf.replace(/\s+/g, ' ').trim();
@@ -132,7 +136,7 @@ function collect(root: DomNode, kind: ParagraphKind, out: Paragraph[]): void {
     }
     if (node.nodeType !== ELEMENT_NODE) continue;
     const tag = node.nodeName.toUpperCase();
-    if (DROP.has(tag)) continue;
+    if (drop.has(tag)) continue;
     if (tag === 'BR') {
       buf += ' ';
       continue;
@@ -218,12 +222,13 @@ export function extractArticle(html: string, url?: string): Extracted {
     const { document: content } = parseHTML(
       `<!doctype html><html><body>${article.content}</body></html>`,
     );
-    collect(content.body as unknown as DomNode, 'p', paragraphs);
+    collect(content.body as unknown as DomNode, 'p', DROP, paragraphs);
   } else {
     // Readability mutates the document it reads, so the fallback reads a fresh parse unless
     // Readability never ran.
     const fresh = tooDeep ? document : parseDocument(html);
-    if (fresh.body) collect(fresh.body as unknown as DomNode, 'p', paragraphs);
+    if (fresh.body)
+      collect(fresh.body as unknown as DomNode, 'p', DROP_FALLBACK, paragraphs);
   }
 
   const chars = paragraphs.reduce((n, p) => n + p.text.length, 0);

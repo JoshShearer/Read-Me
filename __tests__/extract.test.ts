@@ -68,6 +68,18 @@ describe('extractArticle structure (R-M04)', () => {
     }
   });
 
+  test("an article's own header (lead heading, standfirst) is kept", () => {
+    // R-M04 drops only tables, figures, code blocks, captions and embedded media from the
+    // article. Readability keeps an <article>'s <header>; it is content, not page chrome.
+    const html = `<!doctype html><html><head><title>River Notes</title></head><body>
+<article><header><h2>Lead Heading</h2><p>A standfirst that sums the piece up.</p></header>
+<p>${PROSE}</p><h2>Second heading</h2><p>${PROSE}</p><p>${PROSE}</p></article>
+</body></html>`;
+    const kept = extractArticle(html).paragraphs.map(p => p.text);
+    expect(kept).toContain('Lead Heading');
+    expect(kept).toContain('A standfirst that sums the piece up.');
+  });
+
   test('paragraph text is whitespace-collapsed and never empty', () => {
     for (const t of texts) {
       expect(t).toBe(t.replace(/\s+/g, ' ').trim());
