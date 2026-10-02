@@ -4,6 +4,8 @@
 # (AGENTS.md 17). .claude/ is excluded: tools write untracked files there.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# R-M13: the Licenses screen's asset must match this tree's dependencies.
+node scripts/make-notices.mjs --check || { echo "refused: run npm run notices and commit the asset" >&2; exit 1; }
 APK=android/app/build/outputs/apk/release/app-release.apk
 STAMP=$APK.stamp
 rm -f "$STAMP"

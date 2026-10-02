@@ -1,9 +1,10 @@
 // R-M01: four screens, opening on the list. A route stack plus the hardware back button;
 // four routes do not need a navigation library (AGENTS.md 14 keeps dependencies minimal).
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, StatusBar, Text, View } from 'react-native';
+import { BackHandler, StatusBar, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markOpened, type Item } from './src/library/library';
+import { LicensesScreen } from './src/ui/LicensesScreen';
 import { ListScreen } from './src/ui/ListScreen';
 import { ReaderScreen } from './src/ui/ReaderScreen';
 import { SettingsScreen } from './src/ui/SettingsScreen';
@@ -52,8 +53,11 @@ function Main() {
     case 'settings':
       screen = <SettingsScreen onLicenses={() => go({ name: 'licenses' })} />;
       break;
+    case 'licenses':
+      screen = <LicensesScreen />;
+      break;
     default:
-      screen = <Text style={ui.empty}>Coming in this phase</Text>;
+      screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
   }
   return <View style={[ui.screen, { paddingTop: insets.top }]}>{screen}</View>;
 }
