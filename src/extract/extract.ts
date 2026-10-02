@@ -169,6 +169,9 @@ function collect(
  * Walks sibling pointers, not child arrays (it visits every node of a 5 MB page), and stops as
  * soon as the budget is spent, so a 6000-level page costs almost nothing here.
  */
+// Readability removes these before it scores anything, so their text costs it nothing.
+const BUDGET_SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+
 function overBudget(root: DomNode, budget: number): boolean {
   let cost = 0;
   let depth = 0;
@@ -179,7 +182,10 @@ function overBudget(root: DomNode, budget: number): boolean {
     else if (node.nodeType === ELEMENT_NODE) cost += depth;
     if (cost > budget) return true;
     const child: DomNode | null =
-      node.nodeType === ELEMENT_NODE ? node.firstChild : null;
+      node.nodeType === ELEMENT_NODE &&
+      !BUDGET_SKIP.has(node.nodeName.toUpperCase())
+        ? node.firstChild
+        : null;
     if (child) {
       node = child;
       depth++;

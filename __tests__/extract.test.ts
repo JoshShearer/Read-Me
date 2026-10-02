@@ -149,6 +149,14 @@ describe('pages with no article never throw (Review Focus 4)', () => {
     expect(ex.paragraphs.some(p => p.text.includes('stone wall'))).toBe(true);
   });
 
+  test('script and style text does not count toward the Readability budget', () => {
+    // Readability drops scripts and styles before it scores anything; a large inline JSON blob
+    // (common in CMS pages) must not push a normal article into the fallback.
+    const blob = `<script type="application/json">${'{"k":"v"},'.repeat(45000)}</script>`;
+    const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(14)}${blob}<article><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p></article>${'</div>'.repeat(14)}</body></html>`;
+    expect(extractArticle(html).poor).toBe(false);
+  });
+
   test('a short article nested deep still goes through Readability', () => {
     const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(60)}<article><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p></article>${'</div>'.repeat(60)}</body></html>`;
     expect(extractArticle(html).poor).toBe(false);
