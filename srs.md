@@ -452,6 +452,24 @@ Each spike answers one question on the reference device and records the answer h
   extracts in 10 s or less with no crash, and every page under 1 MB in 1.5 s or less (median
   of 3 runs).
 - **SPIKE-03 - `Intl.Segmenter` on Hermes.** Present? If not, R-M08's fallback is the path.
+  **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
+  build 5e74cc0 on spike/rea-0-hermes-segmenter; `scripts/spike-js.sh segmenter 120 3`):**
+  absent. `Intl.Segmenter` is not a function on Hermes in the RN 0.87.1 release build, so
+  R-M08's regex fallback is the only path on the device.
+  Observed: three runs each printed `{"spike":"segmenter","present":false,"hermes":true}`;
+  `scripts/spike-js.sh ping` printed `{"spike":"ping","ok":true,"hermes":true}` (confirming the
+  probe ran on Hermes and release `console.log` reaches logcat). Abbreviation splits (`Dr.`,
+  `p.m.`, `U.S.`) and the ~150k-character timing could not be measured, since there is no
+  segmenter to measure. The first `ping` after installing the build timed out (no
+  `SPIKE_RESULT` within 120 s); the next four `ping` runs and every later probe run succeeded.
+  Not established: whether a later Hermes adds `Intl.Segmenter`; segmentation of non-English
+  text and CJK; behaviour on Hermes versions other than the one in RN 0.87.1; the cause of the
+  one first-launch timeout.
+  Consequence: Phase 1 `segment` ships the regex fallback as the device path and owns
+  abbreviation, decimal and quote handling itself. Per F19 its tests run the fallback forced
+  (Node has `Intl.Segmenter`, so Jest would otherwise test a path the phone never takes), and
+  an on-device Hermes check covers it. The `Intl.Segmenter` branch stays, per R-M08's text, for
+  runtimes that provide it. No ADR: R-M08 already names this fallback.
 - **SPIKE-04 - F-Droid-clean bare React Native.** A hello-world release build with the
   chosen SQLite library passes an F-Droid-style scan (no proprietary dependencies) from a
   clean checkout.
