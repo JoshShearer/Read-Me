@@ -24,7 +24,10 @@ The central product promise:
 
 All figures below were measured on 2026-09-30 / 2026-10-01 on a Pixel 9 Pro XL (GrapheneOS,
 Android 17) and are recorded in `Note-Reader-Local/AGENTS.md`, section "Android playback
-throughput, and the native-TTS bridge". They are cited, not re-measured here.
+throughput, and the native-TTS bridge". They are cited, not re-measured here. The reference
+device has two TTS engines installed (checked over adb 2026-10-02): the default
+`app.grapheneos.speechservices`, and `com.google.android.tts`, which also offers network
+voices and is therefore the engine R-M06's network-voice filter is tested against.
 
 - Kokoro (neural TTS) inside Obsidian's Android WebView misses 2x playback by 8.2x. The
   WebView is not cross-origin isolated, so ONNX Runtime is capped at one WASM thread, and
@@ -652,6 +655,7 @@ named one.
 | 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
 | 2026-10-01 | TTS contention (SPIKE-06): the bridge answers 503 while Read Me is playing (ADR 0004). |
 | 2026-10-01 | One foreground service, type `mediaPlayback`, hosts playback and the bridge (SPIKE-01, ADR 0005). |
+| 2026-10-02 | Reference device lists both TTS engines; the R-M06 network-voice test uses `com.google.android.tts` (roadmap F18). |
 | 2026-10-02 | REA-14 (delegated to Claude by the owner): F12 `fetched` state and F15 `openedAt`/`archivedAt` (ADR 0007); F13 Retry is the same request; F14 failure actions unified; F16 runtime JS guard and Kotlin outbound-only rule; F21 unauthenticated `/health` accepted; minSdk 24, targetSdk 36; ADR 0004's in-flight rule kept. |
 | 2026-10-02 | Readability runs on every real page; F17's 1.5 s becomes a target, 5 s the hard line; only a predicted stall skips Readability (ADR 0006). |
 

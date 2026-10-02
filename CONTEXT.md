@@ -105,5 +105,5 @@ JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS
   `extract` is Readability over linkedom on the JS thread, so a heavy page freezes the screen
   for seconds (ADR 0006). Not covered by any
   spike: Android 14-16, targetSdk 37, battery power and Doze, the Google TTS engine.
-- Roadmap finding F18 (`docs/superpowers/plans/2026-10-01-roadmap.md`) still proposes an SRS
-  amendment not yet applied; F12-F16 and F21 are applied (ADR 0007, REA-14).
+- Roadmap findings F11-F21 are applied (`docs/superpowers/plans/2026-10-01-roadmap.md`;
+  ADR 0007, REA-14).
