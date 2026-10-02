@@ -238,7 +238,9 @@ When the user enables it in Settings, the app MUST serve a loopback HTTP bridge 
   pool; synthesis itself is serialized. A silent client MUST NOT block `/health` or other
   requests.
 - The bridge MUST use its own `TextToSpeech` instance, separate from in-app playback
-  (R-M07), so both can run at once.
+  (R-M07). The two do not run concurrently on the reference engine (SPIKE-06), so while
+  playback is speaking the bridge answers `POST /synthesize` with 503, and a synthesis in
+  flight when playback starts is stopped and answered 503 (ADR 0004).
 - Text arrives in the POST body, never the URL.
 - Synthesized files live in the app cache and MUST be deleted on every exit path,
   including failure and timeout; stale files are swept at service start.
@@ -412,8 +414,8 @@ engine instance.
 
 | Route | Method | Auth | Response |
 |---|---|---|---|
-| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port}` |
-| `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate` |
+| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy}` |
+| `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate`. `503` `{"error":"busy","reason":"playback"}` while Read Me is playing (ADR 0004) |
 
 - Body: UTF-8 text, at most 64 KiB.
 - `rate` defaults to 1.0. Whatever rate is requested is applied by the engine, so the
@@ -554,6 +556,26 @@ Each spike answers one question on the reference device and records the answer h
   bound to the same engine, run `speak()` and `synthesizeToFile()` concurrently without one
   cancelling or serializing behind the other? If not, R-M07/R-M12 need a contention policy
   instead (for example, the bridge answers 503 while Read Me is playing).
+  **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
+  build 46a4f8e on spike/rea-0-tts-instances; `scripts/spike-gap.sh concurrent 10` and
+  `scripts/spike-gap.sh synthonly 3`; engine `app.grapheneos.speechservices`, offline, screen
+  off, app backgrounded, `mediaPlayback` foreground service, no wake lock):** no. The two
+  instances neither cancel each other nor leak rate, but they serialize: playback stalls while
+  the other instance synthesizes, and synthesis slows behind playback. The owner chose the
+  contention policy: the bridge answers 503 while Read Me is playing (ADR 0004).
+  Observed: both runs valid (`load.initStatus` 0, `load.rejected` 0; 47 and 92 synths).
+  `concurrent` against the decision rule: cancellations `stopsBeforeFinish` 0, `errors` 0,
+  `load.errors` 0 (pass); gap p95 2751 ms against `idle2`'s 11 ms (fail; p50 4 ms, max 3549 ms,
+  16 stalls in 119 utterances); `load.synthP50` 13852 ms against `synthonly`'s 1676 ms (fail,
+  8.3 times); `load.bytesPerCharP50` 3207 against 2988 (pass, +7.3%, so no rate leak into the
+  1.0 instance); `usPerCharP50` 35397 µs against `idle2`'s 34923 (pass, +1.4%, so no rate leak
+  into playback). The one `stops` in `synthonly` is the end-of-run `stop()`.
+  Not established: two different engines (`com.google.android.tts` might not serialize); the
+  bridge's real request pattern (plugin chunk sizes and pauses); targetSdk 37; battery power and
+  Doze (USB power).
+  Consequence: R-M12 and the bridge contract amended (503 while playing, `busy` on `/health`).
+  Non-negotiable 13 stands: two instances, with mutual exclusion on top. Phase 5's bridge and
+  Phase 3's PlaybackService share a playing flag; the plugin handles 503 (NRL-130).
 
 # Reference device
 
@@ -573,6 +595,7 @@ named one.
 | 2026-10-01 | SPIKE-02 pass line set (5 MB in 10 s or less; under 1 MB in 1.5 s or less). |
 | 2026-10-01 | Kotlin owns the database; JS goes through ReadMeSpeech (ADR 0001). |
 | 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
+| 2026-10-01 | TTS contention (SPIKE-06): the bridge answers 503 while Read Me is playing (ADR 0004). |
 
 # Critique resolutions (2026-10-01)
 
