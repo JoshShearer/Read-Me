@@ -30,6 +30,25 @@ describe('classifyShare (R-M02)', () => {
     });
   });
 
+  test('non-ASCII wrapping punctuation is not part of the URL', () => {
+    // Phone keyboards type smart quotes by default; CJK prose ends with a full-width stop.
+    for (const shared of [
+      '\u201chttps://x.com/a\u201d',
+      '\u00abhttps://x.com/a\u00bb',
+      '\u2018https://x.com/a\u2019',
+      '\u300chttps://x.com/a\u300d',
+      'Title https://x.com/a\u3002',
+      'see https://x.com/a\u2026',
+      'https://x.com/a\uff0cnext',
+      'https://x.com/a\u3001next',
+    ]) {
+      expect(classifyShare(shared)).toEqual({
+        kind: 'link',
+        url: 'https://x.com/a',
+      });
+    }
+  });
+
   test('a balanced closing parenthesis stays (Wikipedia style)', () => {
     expect(classifyShare('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual({
       kind: 'link',
