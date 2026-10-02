@@ -42,11 +42,20 @@ adb logcat -c
 echo "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT \"\$(cat /data/local/tmp/readme-gap.txt)\"" \
   | adb shell >/dev/null
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
-sleep 3
-adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
-b=$(adb shell cat /sdcard/readme-ui.xml | grep -oE 'text="ready"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
-  | head -1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
-[ -n "$b" ] || { echo "FAIL: the shared text is not on screen as ready"; exit 1; }
+b=""
+# A 60 KB share takes a few seconds to land in the list; poll rather than look once.
+for _ in $(seq 30); do
+  adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
+  b=$(adb shell cat /sdcard/readme-ui.xml | grep -oE 'text="ready"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+    | head -1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+  [ -n "$b" ] && break
+  sleep 1
+done
+if [ -z "$b" ]; then
+  echo "FAIL: the shared text is not on screen as ready; states seen:"
+  adb shell cat /sdcard/readme-ui.xml | grep -oE 'text="(ready|fetching|fetched|fetch-failed[^"]*|extract-poor|Share a link or text to Read Me.)"' | sort | uniq -c
+  exit 1
+fi
 set -- $b
 adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 rlog() { adb logcat -d -s ReadMe:I; }
