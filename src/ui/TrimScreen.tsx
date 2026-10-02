@@ -1,6 +1,6 @@
 // R-M05 Trim: tap cuts or restores a paragraph; a long press offers "Cut everything after
 // this" and "Start here". Cuts are a separate set; text is never changed (AGENTS.md 12).
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import { applyCuts, getPlayback, onPlayback, type Playback } from '../library/playback';
@@ -19,6 +19,11 @@ export function TrimScreen({
   // undefined: loading; null: the item is gone (Review Focus 2).
   const [detail, setDetail] = useState<ItemDetail | null | undefined>(undefined);
   const [playback, setPlayback] = useState<Playback | null>(null);
+  // The cut set this screen last wrote. Taps build on it, not on `detail`, which only catches
+  // up after the store's change event and a reload: two quick taps would otherwise each start
+  // from the old set and the second write would undo the first (final review Important 2).
+  const latest = useRef<Set<number> | null>(null);
+  const [cuts, setLocalCuts] = useState<Set<number> | null>(null);
 
   const load = useCallback(() => {
     getItem(id).then(setDetail, () => setDetail(null));
@@ -51,15 +56,18 @@ export function TrimScreen({
   }
 
   const count = detail.paragraphs.length;
-  const cuts = new Set(detail.cuts);
+  const shown = cuts ?? new Set(detail.cuts);
+  const current = () => latest.current ?? new Set(detail.cuts);
   const apply = (next: Set<number>) => {
+    latest.current = next;
+    setLocalCuts(next);
     applyCuts(id, next, playback).catch(() => undefined);
   };
   const menu = (i: number) =>
     Alert.alert('Trim', undefined, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Start here', onPress: () => apply(startHere(cuts, i, count)) },
-      { text: 'Cut everything after this', onPress: () => apply(cutAfter(cuts, i, count)) },
+      { text: 'Start here', onPress: () => apply(startHere(current(), i, count)) },
+      { text: 'Cut everything after this', onPress: () => apply(cutAfter(current(), i, count)) },
     ]);
 
   return (
@@ -71,17 +79,17 @@ export function TrimScreen({
         </Pressable>
       </View>
       <Text style={[ui.small, ui.row]}>
-        {`${count - cuts.size} of ${count} paragraphs kept. Tap to cut or restore; hold for more.`}
+        {`${count - shown.size} of ${count} paragraphs kept. Tap to cut or restore; hold for more.`}
       </Text>
       <FlatList
         data={detail.paragraphs.map((p, index) => ({ ...p, index }))}
         keyExtractor={p => String(p.index)}
         renderItem={({ item: p }) => {
-          const isCut = cuts.has(p.index);
+          const isCut = shown.has(p.index);
           return (
             <Pressable
               accessibilityLabel={`paragraph ${p.index + 1}${isCut ? ' cut' : ''}`}
-              onPress={() => apply(toggleCut(cuts, p.index, count))}
+              onPress={() => apply(toggleCut(current(), p.index, count))}
               onLongPress={() => menu(p.index)}>
               <Text style={[ui.paragraph, isCut ? ui.cut : null]}>{p.text}</Text>
               {isCut ? <Text style={[ui.small, ui.row]}>cut</Text> : null}

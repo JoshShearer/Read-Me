@@ -177,7 +177,7 @@ class Store private constructor(context: Context) :
    * SQLite counts characters, JS offsets count UTF-16 units: an emoji-heavy text's progress is
    * off by a little, which an estimate tolerates.
    */
-  fun stats(): Map<Long, ItemStats> =
+  fun stats(only: Long? = null): Map<Long, ItemStats> =
     readableDatabase.rawQuery(
       """SELECT p.item_id,
            SUM(CASE WHEN length(trim(p.text)) = 0 THEN 0
@@ -190,9 +190,9 @@ class Store private constructor(context: Context) :
          FROM paragraphs p
          LEFT JOIN cuts c ON c.item_id = p.item_id AND c.paragraph_index = p.idx
          LEFT JOIN positions pos ON pos.item_id = p.item_id
-         WHERE c.item_id IS NULL
+         WHERE c.item_id IS NULL${if (only == null) "" else " AND p.item_id = ?"}
          GROUP BY p.item_id""",
-      null,
+      if (only == null) null else arrayOf(only.toString()),
     ).use {
       val out = HashMap<Long, ItemStats>(it.count)
       while (it.moveToNext()) out[it.getLong(0)] = ItemStats(it.getInt(1), it.getInt(2), it.getInt(3))

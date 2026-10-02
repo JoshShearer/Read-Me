@@ -111,8 +111,10 @@ export async function applyCuts(
 ): Promise<void> {
   await setCuts(id, [...cuts].sort((a, b) => a - b));
   if (current?.itemId !== id) return;
-  if (current.playing) await playItem(id);
-  else await Native.stop();
+  if (current.playing) {
+    // Everything left is cut: there is no list to hand over, so the old queue must stop.
+    if (!(await playItem(id))) await Native.stop();
+  } else await Native.stop();
 }
 
 export type Engine = NativeEngine;

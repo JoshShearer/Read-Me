@@ -4,7 +4,7 @@ import type {
 } from '../src/native/NativeReadMeSpeech';
 
 const mockPlays: { id: number; title: string; sentences: NativeSentence[]; start: number }[] = [];
-const mockState = { resume: true, position: null as null | { paragraphIndex: number; charOffset: number } };
+const mockState = { resume: true, cutAll: false, position: null as null | { paragraphIndex: number; charOffset: number } };
 
 jest.mock('../src/native/NativeReadMeSpeech', () => ({
   __esModule: true,
@@ -21,7 +21,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
               { kind: 'p', text: 'One here. Two here.' },
               { kind: 'p', text: 'Three here.' },
             ],
-            cuts: id === 2 ? [0, 1] : [],
+            cuts: id === 2 || mockState.cutAll ? [0, 1] : [],
           },
     ),
     getPosition: jest.fn(async () => mockState.position),
@@ -52,6 +52,7 @@ beforeEach(() => {
   mockPlays.length = 0;
   mockState.resume = true;
   mockState.position = null;
+  mockState.cutAll = false;
   jest.clearAllMocks();
 });
 
@@ -154,6 +155,14 @@ describe('applyCuts', () => {
     await applyCuts(1, new Set([0]), at(1, false));
     expect(Native.stop).toHaveBeenCalledTimes(1);
     expect(mockPlays).toHaveLength(1);
+  });
+
+  test('cutting everything left while playing stops the service', async () => {
+    // Final review Critical 1: plan() is null, so playItem cannot replace the old queue.
+    mockState.cutAll = true;
+    await applyCuts(1, new Set([0, 1]), at(1, true));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.stop).toHaveBeenCalledTimes(1);
   });
 
   test('a cut change on another item leaves playback alone', async () => {

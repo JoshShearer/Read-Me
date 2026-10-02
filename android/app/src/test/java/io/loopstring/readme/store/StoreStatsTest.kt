@@ -51,4 +51,13 @@ class StoreStatsTest {
     store.setCuts(id, emptyList())
     assertEquals(emptyList<Int>(), store.cuts(id))
   }
+
+  @Test fun statsForOneItemLeavesTheOthersOut() {
+    // Final review Important 3: the Reader and Trim need one item's stats, not the library's.
+    val a = store.insertText("t", listOf("aa bb"), 1000)
+    val b = store.insertText("t", listOf("cc"), 1000)
+    val one = store.stats(only = a)
+    assertEquals(store.stats()[a], one[a])
+    assertNull(one[b])
+  }
 }

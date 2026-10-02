@@ -56,7 +56,7 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   override fun getItem(id: Double, promise: Promise) = settle(promise) {
     val item = store.item(id.toLong()) ?: return@settle null
     Arguments.createMap().apply {
-      putMap("item", item.toMap(store.stats()[item.id]))
+      putMap("item", item.toMap(store.stats(only = item.id)[item.id]))
       putArray(
         "paragraphs",
         Arguments.createArray().apply {

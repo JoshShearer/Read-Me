@@ -31,6 +31,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
   },
 }));
 
+import Native from '../src/native/NativeReadMeSpeech';
 import { ListScreen } from '../src/ui/ListScreen';
 import { TrimScreen } from '../src/ui/TrimScreen';
 import { ReaderScreen } from '../src/ui/ReaderScreen';
@@ -106,6 +107,27 @@ test('Trim shows kept and cut paragraphs', async () => {
   expect(out).toContain('1 of 2 paragraphs kept');
   expect(out).toContain('First.');
   expect(out).toContain('cut');
+});
+
+test('quick Trim taps keep every cut (final review Important 2)', async () => {
+  mockState.detail = {
+    item: { ...base, kind: 'text' },
+    paragraphs: [{ kind: 'p', text: 'First.' }, { kind: 'p', text: 'Second.' }, { kind: 'p', text: 'Third.' }],
+    cuts: [],
+  };
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+  });
+  mounted.push(r);
+  const tap = (label: string) => r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function').props.onPress();
+  // Two taps before the store's change event brings back a fresh item.
+  await ReactTestRenderer.act(async () => {
+    tap('paragraph 1');
+    tap('paragraph 2');
+  });
+  const calls = (Native.setCuts as jest.Mock).mock.calls;
+  expect(calls[calls.length - 1]).toEqual([1, [0, 1]]);
 });
 
 test('Trim of a deleted item says so', async () => {
