@@ -40,3 +40,17 @@ test('a missing env line for a run fails', () => {
   const r = report([env(1, true), row(1), row(2), env(3, true), row(3)], 3);
   assert.equal(r.status, 1, r.stdout);
 });
+
+test('an empty expectation file fails', () => {
+  const empty = join(dir, 'empty.json');
+  writeFileSync(empty, '[]');
+  const devicePath = join(dir, 'device-empty.txt');
+  writeFileSync(devicePath, [1, 2, 3].map(n => env(n, true)).join('\n') + '\n');
+  const r = spawnSync('node', ['scripts/devcheck-report.mjs', empty, devicePath, '3'], {encoding: 'utf8'});
+  assert.equal(r.status, 1, r.stdout);
+});
+
+test('a duplicated line does not stand in for a missing run', () => {
+  const r = report([env(1, true), row(1), row(1), env(2, true), row(2), env(3, true)], 3);
+  assert.equal(r.status, 1, r.stdout);
+});

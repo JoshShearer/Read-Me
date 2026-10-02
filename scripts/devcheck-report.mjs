@@ -21,8 +21,9 @@ for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
     envs.set(m[1], d);
     continue;
   }
-  if (!runs.has(d.name)) runs.set(d.name, []);
-  runs.get(d.name).push(d);
+  // One result per run id: a line logcat duplicated must not stand in for a missing run.
+  if (!runs.has(d.name)) runs.set(d.name, new Map());
+  runs.get(d.name).set(m[1], d);
 }
 
 const median = xs => {
@@ -30,14 +31,14 @@ const median = xs => {
   return s.length ? s[Math.floor(s.length / 2)] : null;
 };
 
-let ok = true;
+let ok = expected.length > 0;
 for (let r = 1; r <= RUNS; r++) {
   if (envs.get(String(r))?.hermes !== true) ok = false;
 }
 const distinct = [...new Set([...envs.values()].map(e => JSON.stringify(e)))];
 console.log('env', distinct.join(' '), `(${envs.size} of ${RUNS} runs)`);
 for (const e of expected) {
-  const rs = runs.get(e.name) ?? [];
+  const rs = [...(runs.get(e.name) ?? new Map()).values()];
   const parity = rs.length === RUNS && rs.every(r => r.hash === e.hash);
   const extract = rs.map(r => r.extractMs);
   const med = median(extract);
