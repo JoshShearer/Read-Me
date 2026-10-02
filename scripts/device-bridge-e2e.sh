@@ -52,7 +52,7 @@ wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1;
 TEXT=""
 for w in one two three four five six seven eight nine ten; do TEXT+="Bridge test $w is spoken now. "; done
 printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$TEXT")" \
-  | adb shell >/dev/null
+  | timeout 30 adb shell >/dev/null || { echo "FAIL: the share did not return within 30 s"; exit 1; }
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 
 echo "== Settings: turn the bridge on"
