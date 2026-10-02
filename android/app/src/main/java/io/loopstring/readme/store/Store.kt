@@ -171,6 +171,122 @@ class Store private constructor(context: Context) :
       out
     }
 
+  /** R-M03 to ADR 0007: the body is on disk before the state says it is. */
+  fun fetchSucceeded(id: Long, html: String) {
+    bodies.mkdirs()
+    val tmp = File(bodies, "$id.html.tmp")
+    tmp.writeText(html, Charsets.UTF_8)
+    if (!tmp.renameTo(bodyFile(id))) throw IllegalStateException("body rename failed")
+    setStateIf(id, States.FETCHING, States.FETCHED, null)
+  }
+
+  fun fetchFailed(id: Long, reason: String) {
+    setStateIf(id, States.FETCHING, States.FETCH_FAILED, reason)
+  }
+
+  /** The user's Retry (R-M03 as amended): only a failed fetch goes back to fetching. */
+  fun beginRetry(id: Long): Boolean = setStateIf(id, States.FETCH_FAILED, States.FETCHING, null)
+
+  /**
+   * The HTML of a fetched item, for JS extraction. A fetched item whose body is missing cannot
+   * be extracted, so it becomes fetch-failed: interrupted instead of waiting forever.
+   */
+  fun bodyOrFail(id: Long): String? {
+    if (item(id)?.state != States.FETCHED) return null
+    val file = bodyFile(id)
+    if (!file.exists()) {
+      setStateIf(id, States.FETCHED, States.FETCH_FAILED, "interrupted")
+      return null
+    }
+    return file.readText(Charsets.UTF_8)
+  }
+
+  /** R-M04: stores the extracted structure and discards the raw HTML. Only from fetched. */
+  fun completeExtraction(
+    id: Long,
+    title: String,
+    site: String?,
+    byline: String?,
+    paragraphs: List<ParagraphRow>,
+    poor: Boolean,
+  ): Boolean {
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+      val updated = db.update(
+        "items",
+        ContentValues().apply {
+          put("title", title)
+          put("site", site)
+          put("byline", byline)
+          put("state", if (poor) States.EXTRACT_POOR else States.READY)
+          putNull("fail_reason")
+        },
+        "id = ? AND state = ?",
+        arrayOf(id.toString(), States.FETCHED),
+      )
+      if (updated == 0) return false
+      writeParagraphs(db, id, paragraphs)
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+    bodyFile(id).delete()
+    ItemEvents.changed()
+    return true
+  }
+
+  /** ADR 0007: Trim opens automatically while openedAt is unset (R-M05). */
+  fun markOpened(id: Long, now: Long) {
+    writableDatabase.execSQL(
+      "UPDATE items SET opened_at = ? WHERE id = ? AND opened_at IS NULL",
+      arrayOf<Any>(now, id),
+    )
+    ItemEvents.changed()
+  }
+
+  /** R-M05, AGENTS.md 12: a cut is a row; the paragraph text is never touched. */
+  fun setCut(id: Long, paragraphIndex: Int, cut: Boolean) {
+    if (cut) {
+      writableDatabase.execSQL(
+        "INSERT OR IGNORE INTO cuts (item_id, paragraph_index) VALUES (?, ?)",
+        arrayOf<Any>(id, paragraphIndex),
+      )
+    } else {
+      writableDatabase.delete(
+        "cuts",
+        "item_id = ? AND paragraph_index = ?",
+        arrayOf(id.toString(), paragraphIndex.toString()),
+      )
+    }
+    ItemEvents.changed()
+  }
+
+  /** R-M11 as amended (ADR 0007): archive is a timestamp; the state is kept. */
+  fun archive(id: Long, now: Long) {
+    writableDatabase.execSQL("UPDATE items SET archived_at = ? WHERE id = ?", arrayOf<Any>(now, id))
+    ItemEvents.changed()
+  }
+
+  fun restore(id: Long) {
+    writableDatabase.execSQL("UPDATE items SET archived_at = NULL WHERE id = ?", arrayOf<Any>(id))
+    ItemEvents.changed()
+  }
+
+  private fun setStateIf(id: Long, from: String, to: String, reason: String?): Boolean {
+    val n = writableDatabase.update(
+      "items",
+      ContentValues().apply {
+        put("state", to)
+        if (reason == null) putNull("fail_reason") else put("fail_reason", reason)
+      },
+      "id = ? AND state = ?",
+      arrayOf(id.toString(), from),
+    )
+    if (n > 0) ItemEvents.changed()
+    return n > 0
+  }
+
   /** Deletes the item, its paragraphs, cuts, position and any waiting body (R-M11, AGENTS.md 3). */
   fun delete(id: Long) {
     writableDatabase.delete("items", "id = ?", arrayOf(id.toString()))
