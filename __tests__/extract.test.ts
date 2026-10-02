@@ -139,6 +139,21 @@ describe('pages with no article never throw (Review Focus 4)', () => {
     }
   }, 20000);
 
+  test('long text nested deep skips Readability: its cost is text times depth', () => {
+    // On the reference device Readability took 2.1 s for 300 KB of prose 60 levels deep
+    // (82f15bc). About 120,000 characters at depth 60 is over the budget for a small page.
+    const long = `<p>${PROSE}</p>`.repeat(800);
+    const html = `<html><body>${'<div>'.repeat(60)}${long}${'</div>'.repeat(60)}</body></html>`;
+    const ex = extractArticle(html);
+    expect(ex.poor).toBe(true);
+    expect(ex.paragraphs.some(p => p.text.includes('stone wall'))).toBe(true);
+  });
+
+  test('a short article nested deep still goes through Readability', () => {
+    const html = `<html><head><title>T</title></head><body>${'<div>'.repeat(60)}<article><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p><p>${PROSE}</p></article>${'</div>'.repeat(60)}</body></html>`;
+    expect(extractArticle(html).poor).toBe(false);
+  });
+
   test('malformed HTML and an empty string do not throw', () => {
     expect(() =>
       extractArticle('<p>Unclosed <b>bold <i>both</p><div>'),

@@ -19,10 +19,17 @@ export type ExtractTimings = Partial<
 
 export const POOR_MIN_PARAGRAPHS = 3;
 export const POOR_MIN_CHARS = 500;
-// Readability's time grows steeply with nesting depth (Node: 0.2 s at 100 levels, 0.8 s at 300,
-// 63 s at 2000), so a deeper page skips it and is read as poor. The saved real pages are 7-15
-// levels deep.
-export const MAX_READABILITY_DEPTH = 128;
+// Readability re-reads the text under every wrapper element, so its time grows with the sum,
+// over text, of characters times nesting depth; and it walks each element's subtree, so a long
+// bare wrapper chain costs depth squared. Both count: a character and an element each add
+// their depth. On the reference device (82f15bc) it took
+// about 0.105 ms per thousand character-levels plus 0.35 s. A page over budget skips
+// Readability and is read as poor (ADR 0006). The budgets keep Readability near 1 s for a
+// page under 1 MiB (F17: 1.5 s in all) and near 4.5 s above it (F17: 10 s). The saved real
+// pages measure 0.2-2.4 M; Wikipedia 1.4 M.
+export const READABILITY_BUDGET_SMALL = 6_000_000;
+export const READABILITY_BUDGET_LARGE = 40_000_000;
+const LARGE_PAGE_CHARS = 1024 * 1024;
 
 // The TS lib here has no DOM types; this is the part of linkedom's node shape we use.
 type DomNode = {
@@ -30,9 +37,9 @@ type DomNode = {
   nodeName: string;
   textContent: string | null;
   childNodes: ArrayLike<DomNode>;
-  firstElementChild: DomNode | null;
-  nextElementSibling: DomNode | null;
-  parentElement: DomNode | null;
+  firstChild: DomNode | null;
+  nextSibling: DomNode | null;
+  parentNode: DomNode | null;
 };
 type ReadabilityDoc = ConstructorParameters<typeof Readability>[0];
 
@@ -158,26 +165,32 @@ function collect(
 }
 
 /**
- * True when element nesting under `root` exceeds `limit`. Walks element pointers, not child
- * arrays: it visits every element of a 5 MB page, and allocating per node showed in timings.
+ * True when the text and elements under `root`, each weighted by its depth, exceed `budget`.
+ * Walks sibling pointers, not child arrays (it visits every node of a 5 MB page), and stops as
+ * soon as the budget is spent, so a 6000-level page costs almost nothing here.
  */
-function deeperThan(root: DomNode, limit: number): boolean {
-  let node: DomNode | null = root;
+function overBudget(root: DomNode, budget: number): boolean {
+  let cost = 0;
   let depth = 0;
+  let node: DomNode | null = root;
   while (node) {
-    if (depth > limit) return true;
-    const child: DomNode | null = node.firstElementChild;
+    if (node.nodeType === TEXT_NODE)
+      cost += (node.textContent ?? '').length * depth;
+    else if (node.nodeType === ELEMENT_NODE) cost += depth;
+    if (cost > budget) return true;
+    const child: DomNode | null =
+      node.nodeType === ELEMENT_NODE ? node.firstChild : null;
     if (child) {
       node = child;
       depth++;
       continue;
     }
-    while (node && node !== root && !node.nextElementSibling) {
-      node = node.parentElement;
+    while (node && node !== root && !node.nextSibling) {
+      node = node.parentNode;
       depth--;
     }
     if (!node || node === root) return false;
-    node = node.nextElementSibling;
+    node = node.nextSibling;
   }
   return false;
 }
@@ -220,9 +233,11 @@ export function extractArticle(
   const document = parseDocument(html);
   const pageTitle = clean(document.title);
   lap('parse');
-  const tooDeep = deeperThan(
+  const tooDeep = overBudget(
     document.documentElement as unknown as DomNode,
-    MAX_READABILITY_DEPTH,
+    html.length < LARGE_PAGE_CHARS
+      ? READABILITY_BUDGET_SMALL
+      : READABILITY_BUDGET_LARGE,
   );
   lap('depth');
   let article: Article = null;
