@@ -16,7 +16,8 @@
     "postinstall": "node scripts/make-devcheck-fixtures.mjs",
     "pretest": "node scripts/make-devcheck-fixtures.mjs",
     "pretypecheck": "node scripts/make-devcheck-fixtures.mjs",
-    "device:devcheck": "scripts/devcheck.sh"
+    "device:devcheck": "scripts/devcheck.sh",
+    "device:intake": "bash scripts/device-intake-e2e.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
@@ -51,5 +52,13 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "ReadMeSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/native",
+    "android": {
+      "javaPackageName": "io.loopstring.readme.spec"
+    }
   }
 }

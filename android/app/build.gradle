@@ -80,6 +80,12 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "io.loopstring.readme"
+    testOptions {
+        unitTests {
+            // Robolectric reads the merged manifest and resources.
+            includeAndroidResources = true
+        }
+    }
     defaultConfig {
         applicationId "io.loopstring.readme"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -112,6 +118,13 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.test:core:1.7.0")
+    testImplementation("androidx.work:work-testing:2.12.0")
+    // Matches the OkHttp 4.9.2 React Native already puts on the classpath.
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.9.2")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

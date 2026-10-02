@@ -1,0 +1,37 @@
+{
+  "classify": [
+    { "in": "https://x.com/a", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "Title https://x.com/a?q=1", "out": { "kind": "link", "url": "https://x.com/a?q=1" } },
+    { "in": "Read this: https://x.com/a.", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "(see https://x.com/a)", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "\"https://x.com/a\"", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "\u201chttps://x.com/a\u201d", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "Title https://x.com/a\u3002", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "https://x.com/a\uff0cnext", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "Look\u2014https://x.com/a\u2014wow", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "Article https://x.com/a\u200b more", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "https://en.wikipedia.org/wiki/Foo_(bar)", "out": { "kind": "link", "url": "https://en.wikipedia.org/wiki/Foo_(bar)" } },
+    { "in": "HTTPS://X.com/a", "out": { "kind": "link", "url": "HTTPS://X.com/a" } },
+    { "in": "https://x.com/a https://x.com/a", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "caf\u00e9https://x.com/a", "out": { "kind": "link", "url": "https://x.com/a" } },
+    { "in": "https://x.com/a and https://y.com/b", "out": { "kind": "text" } },
+    { "in": "xhttps://x.com/a", "out": { "kind": "text" } },
+    { "in": "ftp://x.com/a", "out": { "kind": "text" } },
+    { "in": "www.x.com/a", "out": { "kind": "text" } },
+    { "in": "just some words", "out": { "kind": "text" } },
+    { "in": "", "out": { "kind": "empty" } },
+    { "in": "  \n\t ", "out": { "kind": "empty" } },
+    { "in": "\u00a0\u3000\ufeff", "out": { "kind": "empty" } }
+  ],
+  "split": [
+    { "in": "a\n\nb", "out": ["a", "b"] },
+    { "in": "a\nb", "out": ["a b"] },
+    { "in": "a\r\n\r\nb", "out": ["a", "b"] },
+    { "in": "a\n  \nb", "out": ["a", "b"] },
+    { "in": "a\n\u3000\nb", "out": ["a", "b"] },
+    { "in": "a\u2029b", "out": ["a", "b"] },
+    { "in": "\n\n a  b \n\n", "out": ["a b"] },
+    { "in": "x\u00a0\u00a0y", "out": ["x y"] },
+    { "in": "", "out": [] }
+  ]
+}

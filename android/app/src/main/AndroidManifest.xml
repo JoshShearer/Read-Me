@@ -12,6 +12,9 @@
         </intent>
     </queries>
 
+    <!-- usesCleartextTraffic is true in every build: R-M03 accepts http links, and Fetcher is
+         the only network call site (AGENTS.md 6). Release builds otherwise failed a public
+         http:// page as "network" (seen on the reference device, 2026-10-02, build 4426164). -->
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -20,7 +23,7 @@
       android:allowBackup="false"
       android:dataExtractionRules="@xml/data_extraction_rules"
       android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:usesCleartextTraffic="true"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
@@ -32,6 +35,19 @@
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity>
+      <!-- R-M02: share target. Translucent and finishes at once; no JS runtime is started. -->
+      <activity
+        android:name=".ShareActivity"
+        android:exported="true"
+        android:excludeFromRecents="true"
+        android:noHistory="true"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="text/plain" />
         </intent-filter>
       </activity>
     </application>

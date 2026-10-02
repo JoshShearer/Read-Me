@@ -67,7 +67,8 @@ Obsidian plugin -> POST /synthesize?rate=1.0 -> WAV -> plugin Player applies rat
 Real tree since the scaffold (2026-10-01):
 
 ```text
-App.tsx, index.js            React Native entry (template screen until the reader lands)
+App.tsx, index.js            React Native entry; App.tsx is a plain item list until the reader lands;
+                             index.js installs the release network stub first
 index.devcheck.js            devcheck bundle entry (never the product entry)
 src/types.ts                 Paragraph, ParagraphKind, Sentence, Position
 src/intake/                  R-M02: shared text to link, text or empty; R-M04: shared text to paragraphs
@@ -75,20 +76,28 @@ src/extract/                 R-M04: HTML to title, site, byline, paragraphs, poo
 src/segment/                 R-M08: paragraphs to sentences with offsets, Intl or regex fallback, 400 cap;
                              R-M11: which sentence a position resumes at
 src/trim/                    R-M05: cut operations and position remapping
+src/native/                  NativeReadMeSpeech.ts: the TurboModule spec (codegen)
+src/library/                 TS facade over ReadMeSpeech: items, actions, fetched drain, change events
+src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
                              (fixtures.generated.ts is gitignored, written by make-devcheck-fixtures.mjs)
 __tests__/                   Jest tests; fixtures/pages (real public-domain pages), fixtures/text
-android/app/src/main/java/io/loopstring/readme/   Kotlin (MainActivity, MainApplication; ReadMeSpeech planned)
+android/app/src/main/java/io/loopstring/readme/   Kotlin:
+  MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
+  ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
+  intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
+  lifecycle per ADR 0007), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
                              devcheck.sh + devcheck-report.mjs (pipeline on Hermes vs Node),
+                             device-intake-e2e.sh (share a link, a text and a dead link),
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
-Planned: `src/library/`, `src/reader/`, and the `ReadMeSpeech` Kotlin module.
+Planned: `src/reader/`, `PlaybackService`, `BridgeServer`.
 
 **Identifiers:** application id `io.loopstring.readme`; launcher `io.loopstring.readme/.MainActivity`;
 JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS` (JS console),
