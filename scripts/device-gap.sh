@@ -64,6 +64,23 @@ if [ -z "$b" ]; then
 fi
 set -- $b
 adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+# Phase 4: a first open goes to Trim; Done goes to the Reader, which has Play.
+tap_desc() {
+  local c=""
+  for _ in $(seq 10); do
+    adb shell rm -f /sdcard/readme-ui.xml
+    adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
+    c=$(adb shell cat /sdcard/readme-ui.xml 2>/dev/null | grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" \
+      | head -1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+    [ -n "$c" ] && break
+    sleep 1
+  done
+  [ -n "$c" ] || { echo "FAIL: nothing on screen has content-desc $1"; exit 1; }
+  set -- $c
+  adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+}
+tap_desc 'trim done'
+tap_desc play
 rlog() { adb logcat -d -s ReadMe:I; }
 for _ in $(seq 20); do device_has "$(rlog)" 'playback start item=1 ' && break; sleep 1; done
 device_has "$(rlog)" 'playback start item=1 ' || { echo "FAIL: playback did not start"; exit 1; }
