@@ -7,7 +7,10 @@
 spike_native() {
   adb logcat -c
   local out crash
-  out=$(adb shell am start -n "$PKG/.MainActivity" --ez nativeSpike true "$@" 2>&1)
+  # The command goes to adb shell on stdin, not argv: adbd logs every argv command line to logcat
+  # ("adbd service requested ... raw:<command>"), and the extras can carry the bridge token
+  # (AGENTS.md 4). Reproduced on the reference device 2026-10-01; stdin is logged as "raw:".
+  out=$(printf '%s\n' "am start -n $PKG/.MainActivity --ez nativeSpike true $(printf '%q ' "$@")" | adb shell 2>&1)
   if device_has "$out" '[Ee]rror|[Ee]xception'; then
     echo "am start failed: $(grep -iE 'error|exception' <<<"$out" | head -2)" >&2
     exit 4
