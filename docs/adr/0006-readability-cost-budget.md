@@ -1,47 +1,65 @@
-# ADR 0006: Skip Readability on pages whose depth-weighted size is over budget
+# ADR 0006: Readability runs on every real page; only a predicted stall skips it
 
 - Status: accepted
-- Date: 2026-10-01
-- Deciders: owner chose to diagnose the F17 miss and fix it in JS (option A, REA-15); budget
-  values set from device measurements
-- Amends: srs.md R-M04 (adds an `extract-poor` cause)
+- Date: 2026-10-02
+- Deciders: owner (2026-10-02: diagnose the F17 miss and fix in JS; then "run anyway, guard
+  stalls only"), model fitted to device measurements
+- Amends: srs.md SPIKE-02 pass line (F17) and R-M04 (adds an `extract-poor` cause)
 
 ## Context
 
-R-M04 runs Mozilla Readability on-device; SPIKE-02's F17 line is 1.5 s for a page under 1 MB
-and 10 s for a 5 MB page (median of 3, reference device, release build). The Phase 1 final
-review and critique found that Readability's time is not bounded by page size alone.
+R-M04 runs Mozilla Readability on-device, in JS on Hermes, on the JS thread: while it runs the
+screen does not respond. SPIKE-02's pass line (F17) was 1.5 s for every page under 1 MB and
+10 s for a 5 MB page (median of 3, reference device, release build).
 
-Measured with `npm run device:devcheck` on the reference device (each fixture in a fresh
-process, every launch at thermal status 0), build 82f15bc, 2026-10-01: Readability took
-2122 ms for 300 KB of prose 60 levels deep and 3810 ms at 120 levels, against 769 ms for the
-852 KB Gutenberg page at 7 levels. A 6000-level page stalled Readability for minutes in Node
+The Phase 1 reviews found Readability's time is not bounded by page size. Measured with
+`npm run device:devcheck` (each fixture in a fresh process, every launch at thermal status 0,
+reference device, build 54a216a, 2026-10-02), median Readability stage:
+
+| Fixture | Size | Readability | Whole extract |
+|---|---|---|---|
+| Wikipedia "Speech synthesis" (local only, CC BY-SA) | 705 KB | 802 ms | 1122 ms |
+| Gutenberg *Pride and Prejudice* | 852 KB | 733 ms | 1039 ms |
+| 300 KB prose, 60 levels deep | 312 KB | 1649 ms | 1779 ms |
+| 300 KB prose, 120 levels deep | 313 KB | 2933 ms | 3072 ms |
+| 2000-comment thread | 570 KB | 3967 ms | 4336 ms |
+| Link index | 972 KB | 1781 ms | 2357 ms |
+| 5 MB page | 5.2 MB | 4846 ms | 6711 ms |
+| 5 MB page, 4 levels deeper | 5.2 MB | 7062 ms | 8981 ms |
+
+A bare 6000-level wrapper chain stalled Readability for minutes in Node (63 s at 2000 levels)
 and overflowed a recursive walk.
 
-Readability reads the text under every wrapper element and walks each element's subtree, so
-its cost tracks the sum, over every character and every element, of its nesting depth. On the
-device that fit about 0.105 ms per thousand units plus 0.35 s, and Gutenberg (2.4 M units)
-lies on the same line. Node did not reproduce the shape, so the calibration is the device's.
+Holding real pages to 1.5 s would mean skipping Readability on heavy pages (large Wikipedia
+articles, forums) and reading them with page clutter. The owner chose extraction quality: slow
+real pages run.
 
 ## Decision
 
-`extractArticle` measures that sum with a pointer walk that stops once over budget, before
-Readability runs. Over budget, Readability is skipped: the page's own text is read by the
-fallback walk (page chrome dropped) and the item is `extract-poor`.
-
-- Budget for a page under 1 MiB (by string length): 6,000,000 units, keeping Readability near
-  1 s so the whole extraction fits 1.5 s.
-- Budget for larger pages: 40,000,000 units; the 5 MB page measures 19 M.
+1. F17's 1.5 s for a page under 1 MB is a target, measured and reported (MET or MISSED). The
+   hard line is a stall ceiling: a median of 5 s for a page under 1 MB and 10 s above (the
+   5 MB line is unchanged). `devcheck` fails on the ceiling, not the target.
+2. Before Readability, `extractArticle` predicts its time with a pointer walk that stops once
+   past the ceiling: 0.089 ms per thousand depth-weighted units (each character and element
+   weighted by its nesting depth), 0.090 ms per element, and 0.455 ms more per container
+   (div, section, article, main, ul, ol, table, form, aside, header, footer, nav). Script,
+   style, noscript and template contents are not counted (Readability removes them first).
+   The fit is least squares over the eleven fixtures above (plus MDN and two weather.gov
+   pages), within 21% on every fixture over 0.5 s; holding the comment thread out, it
+   over-predicts it.
+3. Readability is skipped, and the item is `extract-poor` with the page's own text, when the
+   prediction exceeds 4 s (page under 1 MiB of characters) or 8 s, or the page nests deeper
+   than 200 levels (a bare wrapper chain costs more than linearly, which the fit never saw;
+   real fixtures are 7-24 levels deep).
 
 ## Consequences
 
-- No page stalls the JS thread in Readability or overflows the stack. On build afec9ff the
-  depth-60 and depth-120 pages extract in 161 and 158 ms, the 6000-level page in 1038 ms.
-- Real fixtures are unchanged (byte-identical output): weather.gov 0.2 M, MDN 0.9 M,
-  Wikipedia 1.4 M, Gutenberg 2.4 M units.
-- Given up: a long article nested deep (for example 120,000 characters at depth 50) is read as
-  `extract-poor` with the fallback's text instead of Readability's article. The budget is
-  calibrated on synthetic pages; a real page whose cost is driven by something else (element
-  count, as Wikipedia's partly is) is not bounded by it.
-- Wikipedia "Speech synthesis" (705 KB) passes at 1387 ms, 92% of its line, so the under-1 MB
-  line has little headroom on complex real pages.
+- Every fixture above runs Readability and stays under its ceiling; real pages meet F17
+  (Wikipedia 1122 ms, Gutenberg 1039 ms). Synthetic stress pages miss it (1.8 to 4.3 s) and
+  the screen is frozen that long; Phase 4's reader must show a busy state during extraction.
+- A real heavy page may freeze the screen up to about 5 s before the guard skips Readability.
+  Critique run D projected Wikipedia "Linux" (906 KB) and "Python" (987 KB) at roughly 1.6 and
+  2.1 s from Node timings; not measured on the device.
+- The model is calibrated on one device, one build, mostly synthetic shapes. A page whose cost
+  comes from something else is not bounded by it. Moving extraction off the JS thread (Kotlin,
+  or a JS worker) is the structural fix if real pages prove slower; not chosen now.

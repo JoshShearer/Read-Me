@@ -82,7 +82,8 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
                              devcheck.sh + devcheck-report.mjs (pipeline on Hermes vs Node),
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
-docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages)
+docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
+                             contention, 0005 foreground service type, 0006 Readability stall guard)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
@@ -100,7 +101,8 @@ JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS
 - Spike answers that bind later phases (`srs.md`, "Spikes"): playback and bridge synthesis
   serialize on the reference engine, so the bridge answers 503 while playback speaks (ADR 0004);
   one `mediaPlayback` service hosts both (ADR 0005); `segment` has no `Intl.Segmenter` on Hermes;
-  `extract` is Readability over linkedom with little headroom under 1 MB. Not covered by any
+  `extract` is Readability over linkedom on the JS thread, so a heavy page freezes the screen
+  for seconds (ADR 0006). Not covered by any
   spike: Android 14-16, targetSdk 37, battery power and Doze, the Google TTS engine.
 - Roadmap findings F11-F21 (`docs/superpowers/plans/2026-10-01-roadmap.md`) propose SRS
   amendments not yet applied, including a `fetched` state between fetch and extraction (F12).

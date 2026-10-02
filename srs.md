@@ -120,9 +120,9 @@ on-device.
 - If extraction yields fewer than 3 paragraphs or under 500 characters, the item MUST enter
   an `extract-poor` state that still shows what was found and offers "Share the text
   instead". Pages built by JavaScript or behind paywalls are expected to land here.
-- A page whose text and elements, weighted by nesting depth, exceed the Readability budget
-  skips Readability and is `extract-poor` with the page's own text (ADR 0006). The budget
-  keeps extraction inside SPIKE-02's F17 line on pages nested deep.
+- A page on which Readability is predicted to stall (over 4 s under 1 MiB, over 8 s above, or
+  nested deeper than 200 levels) skips Readability and is `extract-poor` with the page's own
+  text (ADR 0006). Slower pages still run Readability.
 - Text items skip fetching and extraction: shared text is split into paragraphs on blank
   lines (single newlines are joined).
 
@@ -486,7 +486,8 @@ Each spike answers one question on the reference device and records the answer h
   (e.g. linkedom), at acceptable speed for a 5 MB page? If not, extract in a hidden WebView.
   Pass line (owner, 2026-10-01): on the reference device in a release build, a 5 MB page
   extracts in 10 s or less with no crash, and every page under 1 MB in 1.5 s or less (median
-  of 3 runs).
+  of 3 runs). Amended 2026-10-02 (ADR 0006): the 1.5 s is a target, reported; the hard line
+  for a page under 1 MB is 5 s.
   **Answer (2026-10-01; Pixel 9 Pro XL, GrapheneOS, Android 17 (API 37); app targetSdk 36;
   build 6139cf0 on spike/rea-0-readability-hermes; `scripts/spike-js.sh extract 300 3`):**
   passes. `@mozilla/readability` 0.6.0 over `linkedom` 0.18.13 runs on Hermes in the release
@@ -635,6 +636,7 @@ named one.
 | 2026-10-01 | CC-BY-4.0 data-only packages allowed by name (ADR 0002). Spike probe code stays on its spike branch; only answers merge. |
 | 2026-10-01 | TTS contention (SPIKE-06): the bridge answers 503 while Read Me is playing (ADR 0004). |
 | 2026-10-01 | One foreground service, type `mediaPlayback`, hosts playback and the bridge (SPIKE-01, ADR 0005). |
+| 2026-10-02 | Readability runs on every real page; F17's 1.5 s becomes a target, 5 s the hard line; only a predicted stall skips Readability (ADR 0006). |
 
 # Critique resolutions (2026-10-01)
 
