@@ -53,6 +53,16 @@ thermal_status() {
   t=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
   sed -n 's/^Thermal Status: *\([0-9]*\).*/\1/p' <<<"$t" | head -1
 }
+# The first launch after an install did not get its launch data (63bfc02, reproduced: it ran
+# every fixture; the next launches ran one each). Warm up once and discard what it logs.
+adb shell am force-stop "$PKG"
+adb shell am start -W -a android.intent.action.VIEW -n "$PKG/.MainActivity" \
+  -d "devcheck://fixture/$(head -1 <<<"$NAMES")" >/dev/null
+for _ in $(seq 300); do
+  device_has "$(adb logcat -d -s ReactNativeJS:I)" 'DEVCHECK_DONE' && break
+  sleep 1
+done
+
 for run in $(seq "$RUNS"); do
   for name in $NAMES; do
     adb shell am force-stop "$PKG"
