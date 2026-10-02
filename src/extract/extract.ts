@@ -25,6 +25,9 @@ type DomNode = {
   nodeName: string;
   textContent: string | null;
   childNodes: ArrayLike<DomNode>;
+  firstElementChild: DomNode | null;
+  nextElementSibling: DomNode | null;
+  parentElement: DomNode | null;
 };
 type ReadabilityDoc = ConstructorParameters<typeof Readability>[0];
 
@@ -145,15 +148,27 @@ function collect(root: DomNode, kind: ParagraphKind, out: Paragraph[]): void {
   }
 }
 
-/** True when element nesting under `root` exceeds `limit`; iterative, stops early. */
+/**
+ * True when element nesting under `root` exceeds `limit`. Walks element pointers, not child
+ * arrays: it visits every element of a 5 MB page, and allocating per node showed in timings.
+ */
 function deeperThan(root: DomNode, limit: number): boolean {
-  const stack: Array<[DomNode, number]> = [[root, 0]];
-  while (stack.length > 0) {
-    const [node, depth] = stack.pop() as [DomNode, number];
+  let node: DomNode | null = root;
+  let depth = 0;
+  while (node) {
     if (depth > limit) return true;
-    const children = Array.from(node.childNodes);
-    for (const c of children)
-      if (c.nodeType === ELEMENT_NODE) stack.push([c, depth + 1]);
+    const child: DomNode | null = node.firstElementChild;
+    if (child) {
+      node = child;
+      depth++;
+      continue;
+    }
+    while (node && node !== root && !node.nextElementSibling) {
+      node = node.parentElement;
+      depth--;
+    }
+    if (!node || node === root) return false;
+    node = node.nextElementSibling;
   }
   return false;
 }
@@ -205,8 +220,9 @@ export function extractArticle(html: string, url?: string): Extracted {
     );
     collect(content.body as unknown as DomNode, 'p', paragraphs);
   } else {
-    // Readability mutates the document it reads, so the fallback reads a fresh parse.
-    const fresh = parseDocument(html);
+    // Readability mutates the document it reads, so the fallback reads a fresh parse unless
+    // Readability never ran.
+    const fresh = tooDeep ? document : parseDocument(html);
     if (fresh.body) collect(fresh.body as unknown as DomNode, 'p', paragraphs);
   }
 
