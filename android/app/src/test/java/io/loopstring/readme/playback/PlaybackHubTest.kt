@@ -39,3 +39,16 @@ class PlaybackHubTest {
     assertTrue(PlaybackHub.control(PlaybackCommands.ACTION_PAUSE))
   }
 }
+
+class PlaybackHubStopItemTest {
+  @After fun tearDown() = PlaybackHub.resetForTest()
+
+  @Test fun stoppingAnItemDropsItsPendingRequestOnly() {
+    // Review: a delete during the engine's cold start must not be read aloud later.
+    PlaybackHub.offer(PlaybackHub.Request(1, "t", listOf(SentenceRow(0, 0, 1, "a")), 0))
+    PlaybackHub.stopItem(2)
+    assertTrue(PlaybackHub.hasPending())
+    PlaybackHub.stopItem(1)
+    assertFalse(PlaybackHub.hasPending())
+  }
+}

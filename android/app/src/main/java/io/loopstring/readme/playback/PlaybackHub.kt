@@ -29,6 +29,12 @@ object PlaybackHub {
   fun take(): Request? = pending.getAndSet(null)
   fun hasPending() = pending.get() != null
 
+  /** The item is being deleted: drop a request for it the service has not taken yet. */
+  fun stopItem(itemId: Long) {
+    pending.getAndUpdate { if (it?.itemId == itemId) null else it }
+    queue?.stopItem(itemId)
+  }
+
   fun publish(s: PlaybackSnapshot) {
     last = s
     speaking = s.playing

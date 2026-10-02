@@ -98,7 +98,7 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
 
   // Review Focus 2: stop first, so no onDone saves into a row that is going away.
   override fun deleteItem(id: Double, promise: Promise) = settle(promise) {
-    PlaybackHub.queue?.stopItem(id.toLong())
+    PlaybackHub.stopItem(id.toLong())
     store.delete(id.toLong())
     null
   }

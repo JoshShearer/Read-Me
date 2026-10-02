@@ -98,6 +98,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackHub.queue = null
     PlaybackHub.publish(queue.snapshot().copy(playing = false))
     claim.release()
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     session.release()
     speaker.shutdown()
     super.onDestroy()
@@ -114,6 +116,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   private fun load(r: PlaybackHub.Request) {
+    // Deleted while the engine was starting (the request waited in `waiting`).
+    if (store.item(r.itemId) == null) {
+      end()
+      return
+    }
     title = r.title
     val rate = Settings(this).rate
     if (queue.load(r.itemId, r.sentences, r.startIndex, rate)) {
@@ -126,8 +133,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   /** Every control path (JS, notification, media session, noisy, focus) comes through here. */
   private fun handle(action: String): Boolean = when (action) {
     PlaybackCommands.ACTION_PAUSE -> {
+      val heldForFocus = pausedForFocus
       pausedForFocus = false
-      queue.pause()
+      // Already paused by a focus loss: no snapshot follows, so release what that held here.
+      queue.pause() || heldForFocus.also { if (it) main.post { if (!destroyed) releaseHeld() } }
     }
     PlaybackCommands.ACTION_PLAY -> queue.resume()
     PlaybackCommands.ACTION_TOGGLE ->
@@ -193,7 +202,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     } else if (!s.playing && before?.playing == true) {
       Log.i(TAG, "playback paused item=${s.itemId} paragraph=${s.sentence?.paragraphIndex} offset=${s.sentence?.start}")
       logStats()
-      releasePlayingResources(abandon = !pausedForFocus)
+      val hold = PausePolicy.hold(pausedForFocus)
+      releasePlayingResources(abandon = !hold.focus, keepNoisy = hold.noisy)
     }
     updateSession(s)
     syncForeground(s)
@@ -223,10 +233,15 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     return true
   }
 
-  private fun releasePlayingResources(abandon: Boolean) {
+  private fun releaseHeld() {
+    releasePlayingResources(abandon = true)
+    syncForeground(queue.snapshot())
+  }
+
+  private fun releasePlayingResources(abandon: Boolean, keepNoisy: Boolean = false) {
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
-    if (noisyRegistered) {
+    if (noisyRegistered && !keepNoisy) {
       unregisterReceiver(noisy)
       noisyRegistered = false
     }
@@ -235,7 +250,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
 
   private fun syncForeground(s: PlaybackSnapshot) {
     if (s.itemId == null) return
-    if (s.playing) {
+    if (s.playing || PausePolicy.hold(pausedForFocus).foreground) {
       goForeground(s)
     } else {
       // Paused: the notification stays (with Play) but can be swiped away, and the system may
@@ -389,7 +404,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   companion object {
     private const val TAG = "ReadMe"
     private const val CHANNEL = "playback"
-    private const val NOTIFICATION_ID = 3001
+    const val NOTIFICATION_ID = 3001
     private const val WAKE_LOCK_MS = 4 * 60 * 60 * 1000L
 
     /** Called from ReadMeSpeech while the app is in the foreground (the user tapped play). */
