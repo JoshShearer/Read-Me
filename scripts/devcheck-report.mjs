@@ -18,7 +18,9 @@ for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
   if (!m) continue;
   const d = JSON.parse(m[3]);
   if (m[2]) {
-    envs.set(m[1], d);
+    // devcheck.sh launches once per fixture, so a run has one env line per launch.
+    if (!envs.has(m[1])) envs.set(m[1], []);
+    envs.get(m[1]).push(d);
     continue;
   }
   // One result per run id: a line logcat duplicated must not stand in for a missing run.
@@ -42,9 +44,12 @@ const stageMedians = rs => {
 
 let ok = expected.length > 0;
 for (let r = 1; r <= RUNS; r++) {
-  if (envs.get(String(r))?.hermes !== true) ok = false;
+  const launches = envs.get(String(r)) ?? [];
+  if (launches.length === 0 || !launches.every(e => e.hermes === true)) ok = false;
 }
-const distinct = [...new Set([...envs.values()].map(e => JSON.stringify(e)))];
+const distinct = [
+  ...new Set([...envs.values()].flat().map(e => JSON.stringify(e))),
+];
 console.log('env', distinct.join(' '), `(${envs.size} of ${RUNS} runs)`);
 for (const e of expected) {
   const rs = [...(runs.get(e.name) ?? new Map()).values()];

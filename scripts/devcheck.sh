@@ -40,33 +40,40 @@ printf '%s\nbranch=%s commit=%s tree=clean at=%s purpose=devcheck\n' \
   > "$PRIMARY/.claude/scratch/device-installed-from"
 echo "installed DEVCHECK build $HEAD7 on the phone (replaces whatever build was there)"
 
+# One launch per fixture per run: each page is measured in a fresh process, as a share is.
+# Measuring every page in one process put Wikipedia at 2196 ms behind the 5 MB page, against
+# 1344 ms alone (a544319, reference device).
+NAMES=$(node -e "for (const e of require(process.argv[1])) console.log(e.name)" "$EXPECTED")
+[ -n "$NAMES" ] || { echo "no fixtures in $EXPECTED" >&2; exit 1; }
 for run in $(seq "$RUNS"); do
-  adb shell am force-stop "$PKG"
   # Heat throttles the CPU; record it so a slow run can be told apart from a slow page.
   thermal=$(adb shell dumpsys thermalservice 2>/dev/null | tr -d '\r')
   echo "run $run: $(grep -m1 -i 'Thermal Status' <<<"$thermal" || echo 'thermal status unknown')"
-  adb logcat -c
-  # -W waits for the launch; without it the first pidof can run before the process exists and
-  # a healthy run is reported as a death.
-  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
-  done_=""
-  logs=""
-  seen=""
-  for _ in $(seq 300); do
-    # Read whole, then search (scripts/lib/device.sh, device_has).
-    logs=$(adb logcat -d -s ReactNativeJS:I)
-    if device_has "$logs" 'DEVCHECK_DONE'; then done_=1; break; fi
-    pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
-    if [ -n "$pid" ]; then seen=1; fi
-    if [ -n "$seen" ] && [ -z "$pid" ]; then
-      echo "run $run: app process died during the devcheck" >&2
-      crash=$(adb logcat -d -b crash,main)
-      grep -E "AndroidRuntime|FATAL|libc|OutOfMemory|hermes" <<<"$crash" | tail -20 >&2 || true
-      exit 2
-    fi
-    sleep 1
+  for name in $NAMES; do
+    adb shell am force-stop "$PKG"
+    adb logcat -c
+    # -W waits for the launch; without it the first pidof can run before the process exists
+    # and a healthy run is reported as a death.
+    adb shell am start -W -n "$PKG/.MainActivity" -d "devcheck://fixture/$name" >/dev/null
+    done_=""
+    logs=""
+    seen=""
+    for _ in $(seq 300); do
+      # Read whole, then search (scripts/lib/device.sh, device_has).
+      logs=$(adb logcat -d -s ReactNativeJS:I)
+      if device_has "$logs" 'DEVCHECK_DONE'; then done_=1; break; fi
+      pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+      if [ -n "$pid" ]; then seen=1; fi
+      if [ -n "$seen" ] && [ -z "$pid" ]; then
+        echo "run $run $name: app process died during the devcheck" >&2
+        crash=$(adb logcat -d -b crash,main)
+        grep -E "AndroidRuntime|FATAL|libc|OutOfMemory|hermes" <<<"$crash" | tail -20 >&2 || true
+        exit 2
+      fi
+      sleep 1
+    done
+    [ -n "$done_" ] || { echo "run $run $name: no DEVCHECK_DONE within 300 s (process seen: ${seen:-no})" >&2; exit 1; }
+    grep -oE 'DEVCHECK(_ENV)? \{.*\}' <<<"$logs" | sed "s/^/run=$run /" >> "$DEVICE_OUT"
   done
-  [ -n "$done_" ] || { echo "run $run: no DEVCHECK_DONE within 300 s (process seen: ${seen:-no})" >&2; exit 1; }
-  grep -oE 'DEVCHECK(_ENV)? \{.*\}' <<<"$logs" | sed "s/^/run=$run /" >> "$DEVICE_OUT"
 done
 node scripts/devcheck-report.mjs "$EXPECTED" "$DEVICE_OUT" "$RUNS"

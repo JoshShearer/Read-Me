@@ -54,3 +54,8 @@ test('a duplicated line does not stand in for a missing run', () => {
   const r = report([env(1, true), row(1), row(1), env(2, true), row(2), env(3, true)], 3);
   assert.equal(r.status, 1, r.stdout);
 });
+
+test('with one launch per fixture, any launch not on Hermes fails its run', () => {
+  const r = report([env(1, false), env(1, true), row(1), env(2, true), row(2), env(3, true), row(3)], 3);
+  assert.equal(r.status, 1, r.stdout);
+});
