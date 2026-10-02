@@ -36,6 +36,7 @@ import io.loopstring.readme.store.Store
  */
 class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private val main = Handler(Looper.getMainLooper())
+  private val claim = MediaButtonClaim(main)
   private lateinit var store: Store
   private lateinit var audio: AudioManager
   private lateinit var speaker: TtsSpeaker
@@ -96,6 +97,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackHub.controller = null
     PlaybackHub.queue = null
     PlaybackHub.publish(queue.snapshot().copy(playing = false))
+    claim.release()
     session.release()
     speaker.shutdown()
     super.onDestroy()
@@ -204,6 +206,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       queue.pause()
       return false
     }
+    claim.claim()
     if (wakeLock == null) {
       // SPIKE-05 measured gaps on USB power without a wake lock; battery and Doze were never
       // measured, so playback holds one while speaking (device:gap measures it).
