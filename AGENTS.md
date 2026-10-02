@@ -39,6 +39,8 @@ npm run device:install                      # takes the device slot, installs th
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
+npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text (clears app data)
+npm run device:gap        # R-M07 gap target: 10 min at 2x on battery (simulated), forced Doze, screen off (about 12 min; clears app data)
 ```
 
 ### Device work: the one-phone slot
@@ -140,7 +142,16 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   list; verified by `npm run device:intake` (2026-10-02, build 3c473b3: an https link, a
   plain-http link and a text became readable, a dead link `fetch-failed: offline`, no item text
   or URL path in logcat).
-  No playback, reader, trim screen or bridge yet.
+- **Playback (Phase 3, REA-17):** `PlaybackService` (`mediaPlayback` FGS, ADR 0005) owns a
+  sentence queue on its own `TextToSpeech` with an offline voice; media session,
+  notification, audio focus, noisy pause, partial wake lock while speaking; position saved
+  per sentence, archive at the end. Media keys reach it only because `MediaButtonClaim`
+  plays 200 ms of silence at each start (TTS audio belongs to the engine's uid). Verified
+  2026-10-02 on the reference device: `npm run device:playback` (build ec5bce1),
+  `npm run device:gap` (build 59324f5: n=92 p50=7 p95=17 max=31 ms, stalls 0, errors 0,
+  10 min at 2x, battery, forced Doze, screen off), `npm run device:intake` (build da81794);
+  app code identical across the three. A cold engine took 8 s to first audio once.
+  No reader, trim screen or bridge yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
@@ -153,7 +164,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   - SPIKE-04: no proprietary dependencies, but the release build runs a prebuilt `hermesc` and
     `node_modules` holds binaries the Phase 6 F-Droid recipe must remove or rebuild.
   - SPIKE-05: gap p95 11 ms, max 22 ms at 2x with two instances alive, on USB power without a
-    wake lock (battery and Doze untested; Phase 3 measures); R-M07 stands.
+    wake lock (battery and Doze: measured in Phase 3, see Playback above); R-M07 stands.
   - SPIKE-06: two instances serialize (playback stalls up to 3.5 s while the other synthesizes);
     the bridge answers 503 while Read Me is playing (ADR 0004).
 - **Measured facts this spec rests on** live in the plugin repo's `AGENTS.md`, section "Android

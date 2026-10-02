@@ -186,6 +186,11 @@ the 95th percentile and at most 1,000 ms at the maximum, with no stall. The 300 
 a target, not a measurement; SPIKE-05 measures the baseline and may revise it with an
 amendment here.
 
+**Measured (Phase 3, 2026-10-02, reference device, build 59324f5):** n=92 gaps, p50 7 ms,
+p95 17 ms, max 31 ms, no stall, no engine error, over 10 minutes at 2.0x on battery
+(`dumpsys battery unplug`) in forced deep Doze with the screen off and a partial wake lock
+held while speaking (`npm run device:gap`). The target stands.
+
 ### R-M08 - Sentence segmentation
 
 Sentences MUST be produced by `Intl.Segmenter` with sentence granularity if the JS runtime
@@ -609,7 +614,8 @@ Each spike answers one question on the reference device and records the answer h
   phone was on USB power, `USB powered: true`, `stay_on_while_plugged_in=7`).
   Consequence: R-M07 unchanged. PlaybackService can queue with `QUEUE_ADD` three utterances
   ahead under a `mediaPlayback` foreground service. Whether it needs a partial wake lock on
-  battery and under Doze is open; Phase 3 measures it.
+  battery and under Doze is open; Phase 3 measures it. Battery and Doze: measured in Phase 3
+  with a wake lock held while speaking (R-M07, "Measured").
 - **SPIKE-06 - Two engine instances.** Do two `TextToSpeech` instances in one process,
   bound to the same engine, run `speak()` and `synthesizeToFile()` concurrently without one
   cancelling or serializing behind the other? If not, R-M07/R-M12 need a contention policy
