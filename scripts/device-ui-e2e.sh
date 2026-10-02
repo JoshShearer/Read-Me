@@ -35,6 +35,8 @@ share "dead http://127.0.0.1:9/nothing-here"
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 
 ui() {
+  # Remove the last dump first: a failed dump must not hand back the previous screen.
+  adb shell rm -f /sdcard/readme-ui.xml
   adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
   adb shell cat /sdcard/readme-ui.xml 2>/dev/null || true
 }
@@ -51,6 +53,26 @@ tap_node() {
   [ -n "$b" ] || { echo "FAIL: nothing on screen has $1 matching $2"; exit 1; }
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+}
+# centre_of <ERE on content-desc>: prints "x y" of the first matching node, or nothing.
+centre_of() {
+  local b
+  b=$(ui | grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+    | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+  [ -n "$b" ] || return 0
+  set -- $b
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+# uiautomator cannot dump while the Reader updates ("could not get idle state", 2026-10-02),
+# so the highlight is checked in pixels: the current sentence's background is #ffe680.
+highlight_px() {
+  adb exec-out screencap | node -e '
+    const b = require("fs").readFileSync(0);
+    const w = b.readUInt32LE(0), h = b.readUInt32LE(4), off = b.length - w * h * 4;
+    let n = 0;
+    for (let i = off; i < b.length; i += 4)
+      if (Math.abs(b[i] - 255) < 4 && Math.abs(b[i + 1] - 230) < 4 && Math.abs(b[i + 2] - 128) < 4) n++;
+    console.log(n);'
 }
 on_screen() {
   for _ in $(seq 15); do device_has "$(ui)" "$1" && return 0; sleep 1; done
@@ -76,13 +98,20 @@ tap_node content-desc 'trim done'
 
 # Reader plays only the kept sentences and highlights the current one (R-M07)
 on_screen 'content-desc="play"' || fail=1
-tap_node content-desc 'play'
+play_at=$(centre_of play)
+[ -n "$play_at" ] || { echo "FAIL: no play button"; exit 1; }
+adb shell input tap $play_at
 for _ in $(seq 20); do device_has "$(logs)" 'playback start item=1 ' && break; sleep 1; done
 device_has "$(logs)" 'playback start item=1 sentences=20 ' || { echo "FAIL: expected 20 kept sentences"; logs | grep 'playback start' | sed 's/^/  /'; fail=1; }
-on_screen 'content-desc="current paragraph"' || fail=1
-sleep 3
-tap_node content-desc 'pause'
+sleep 2
+px=$(highlight_px)
+[ "${px:-0}" -gt 1000 ] || { echo "FAIL: no highlighted sentence on screen ($px px)"; fail=1; }
+# Pause sits where Play was (the same button, relabelled).
+adb shell input tap $play_at
 for _ in $(seq 10); do device_has "$(logs)" 'playback paused item=1 ' && break; sleep 1; done
+device_has "$(logs)" 'playback paused item=1 ' || { echo "FAIL: the Reader's pause did not pause"; fail=1; }
+on_screen 'content-desc="play"' || fail=1
+on_screen 'content-desc="current paragraph"' || fail=1
 
 # Back to the list: progress shows (R-M01)
 adb shell input keyevent KEYCODE_BACK
