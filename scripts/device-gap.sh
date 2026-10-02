@@ -19,7 +19,9 @@ node -e '
   const paras = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)]
     .map(m => m[1].replace(/<[^>]+>/g, "").replace(/&(\w+|#\d+);/g, (x, e) => ents[e] ?? " ")
       .replace(/\s+/g, " ").trim())
-    .filter(p => p.length > 40);
+    // No paragraph with a link or a domain: a share containing a URL goes down the intake link path,
+    // which downloads the page instead of reading this text (seen 2026-10-02, da81794).
+    .filter(p => p.length > 40 && !/https?:|www\.|\.org|\.com/i.test(p));
   let out = "Gap run\n\n", i = 0;
   while (out.length < 60000 && i < paras.length) out += paras[i++] + "\n\n";
   process.stdout.write(out);
@@ -65,6 +67,9 @@ echo "$line"
 [ -n "$line" ] || { echo "device:gap FAIL: no gaps line"; exit 1; }
 num() { grep -oE "$1=[0-9]+" <<<"$line" | cut -d= -f2; }
 fail=0
+log=$(rlog)
+device_has "$log" 'request id=' && { echo "FAIL: the share was downloaded as a link, not read as text"; fail=1; }
+device_has "$log" 'playback finished' && { echo "FAIL: the text ran out before $MINUTES min; not a $MINUTES-minute measurement"; fail=1; }
 [ "$(num n)" -ge $(( MINUTES * 5 )) ] || { echo "FAIL: only $(num n) gaps in $MINUTES min"; fail=1; }
 [ "$(num p95)" -le 300 ] || { echo "FAIL: p95 $(num p95) ms > 300"; fail=1; }
 [ "$(num max)" -le 1000 ] || { echo "FAIL: max $(num max) ms > 1000"; fail=1; }
