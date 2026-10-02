@@ -19,8 +19,8 @@ function report(lines, runs) {
 const env = (run, hermes) => `run=${run} DEVCHECK_ENV {"hermes":${hermes},"intlSegmenter":false}`;
 const row = run => `run=${run} DEVCHECK {"name":"page","hash":"h1","extractMs":10,"segmentMs":1}`;
 
-test('three Hermes runs that match pass', () => {
-  const r = report([1, 2, 3].flatMap(n => [env(n, true), row(n)]), 3);
+test('three cool Hermes runs that match pass', () => {
+  const r = report([1, 2, 3].flatMap(n => [`run=${n} DEVCHECK_THERMAL {"name":"page","status":0}`, env(n, true), row(n)]), 3);
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /devcheck: PASS/);
 });
@@ -71,4 +71,9 @@ test('a launch that started throttled fails: its timings are not an F17 measurem
 test('launches all at thermal status 0 pass', () => {
   const r = report([1, 2, 3].flatMap(n => [thermal(n, 0), env(n, true), row(n)]), 3);
   assert.equal(r.status, 0, r.stdout);
+});
+
+test('a launch with no thermal line fails: it cannot be shown to be cool', () => {
+  const r = report([thermal(1, 0), env(1, true), row(1), env(2, true), row(2), thermal(3, 0), env(3, true), row(3)], 3);
+  assert.equal(r.status, 1, r.stdout);
 });

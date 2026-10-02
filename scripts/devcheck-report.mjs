@@ -14,12 +14,14 @@ const expected = JSON.parse(readFileSync(expectedPath, 'utf8'));
 const runs = new Map();
 const envs = new Map();
 const throttled = [];
+const thermalSeen = new Map();
 for (const line of readFileSync(devicePath, 'utf8').split('\n')) {
   const t = /^run=(\d+) DEVCHECK_THERMAL (\{.*\})$/.exec(line);
   if (t) {
     // Heat throttles the CPU, so a launch that started above status 0 measures the phone's
     // temperature, not the code (fdaafaa: parse 2.4x slower at status 1).
     const th = JSON.parse(t[2]);
+    thermalSeen.set(t[1], (thermalSeen.get(t[1]) ?? 0) + 1);
     if (th.status !== 0) throttled.push(`run ${t[1]} ${th.name} status ${th.status}`);
     continue;
   }
@@ -86,6 +88,13 @@ for (const e of expected) {
       stagesMedianMs: stageMedians(rs),
     }),
   );
+}
+// devcheck.sh writes one thermal line per launch; a launch without one cannot be shown cool.
+for (let r = 1; r <= RUNS; r++) {
+  const launches = (envs.get(String(r)) ?? []).length;
+  if ((thermalSeen.get(String(r)) ?? 0) < launches) {
+    throttled.push(`run ${r}: ${launches - (thermalSeen.get(String(r)) ?? 0)} launch(es) with no thermal status`);
+  }
 }
 if (throttled.length > 0) {
   ok = false;
