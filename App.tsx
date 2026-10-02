@@ -1,118 +1,60 @@
-// A plain list of items. Tap a row to play it, tap again to pause or resume; the marker
-// shows what the service is doing. The real list, Trim and Reader screens are Phase 4.
+// R-M01: four screens, opening on the list. A route stack plus the hardware back button;
+// four routes do not need a navigation library (AGENTS.md 14 keeps dependencies minimal).
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  FlatList,
-  Linking,
-  Pressable,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-import {
-  drainFetched,
-  listItems,
-  onItemsChanged,
-  type Item,
-} from './src/library/library';
-import {
-  engineProblem,
-  getPlayback,
-  marker,
-  onPlayback,
-  toggle,
-  type Playback,
-} from './src/library/playback';
+import { BackHandler, StatusBar, Text, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { markOpened, type Item } from './src/library/library';
+import { ListScreen } from './src/ui/ListScreen';
+import { TrimScreen } from './src/ui/TrimScreen';
+import { back, openRoute, push, trimDone, type Route } from './src/ui/model';
+import { ui } from './src/ui/ui';
 
-function Library() {
+function Main() {
   const insets = useSafeAreaInsets();
-  const [items, setItems] = useState<Item[]>([]);
-  const [playback, setPlayback] = useState<Playback | null>(null);
-
-  const refresh = useCallback(() => {
-    listItems().then(setItems, () => setItems([]));
-  }, []);
+  const [stack, setStack] = useState<Route[]>([{ name: 'list' }]);
+  const top = stack[stack.length - 1];
 
   useEffect(() => {
-    refresh();
-    drainFetched().catch(() => undefined);
-    return onItemsChanged(() => {
-      refresh();
-      drainFetched().catch(() => undefined);
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      const next = back(stack);
+      if (next === null) return false;
+      setStack(next);
+      return true;
     });
-  }, [refresh]);
+    return () => sub.remove();
+  }, [stack]);
 
-  useEffect(() => {
-    getPlayback().then(setPlayback, () => undefined);
-    return onPlayback(setPlayback);
-  }, []);
-
-  const onPress = useCallback(
-    (id: number) => {
-      toggle(id, playback).catch(() => undefined);
+  const go = useCallback((r: Route) => setStack(s => push(s, r)), []);
+  const toList = useCallback(() => setStack([{ name: 'list' }]), []);
+  const open = useCallback(
+    (item: Item) => {
+      go(openRoute(item));
+      markOpened(item.id).catch(() => undefined);
     },
-    [playback],
+    [go],
   );
 
-  return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      {engineProblem(playback) ? (
-        <View style={styles.problem}>
-          <Text>
-            No offline text-to-speech voice is available, so Read Me cannot read aloud.
-          </Text>
-          <Pressable
-            onPress={() =>
-              Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(
-                () => undefined,
-              )
-            }>
-            <Text style={styles.link}>Open text-to-speech settings</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      <FlatList
-        data={items}
-        keyExtractor={item => String(item.id)}
-        ListEmptyComponent={<Text style={styles.empty}>Share a link or text to Read Me.</Text>}
-        renderItem={({ item }) => {
-          const mark = marker(item, playback);
-          return (
-            <Pressable style={styles.row} onPress={() => onPress(item.id)}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.state}>
-                {item.state}
-                {item.failReason ? `: ${item.failReason}` : ''}
-              </Text>
-              {mark ? <Text style={styles.state}>{mark}</Text> : null}
-            </Pressable>
-          );
-        }}
-      />
-    </View>
-  );
+  let screen: React.ReactElement;
+  switch (top.name) {
+    case 'list':
+      screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
+      break;
+    case 'trim':
+      screen = (
+        <TrimScreen id={top.id} onDone={() => setStack(s => trimDone(s, top.id))} onGone={toList} />
+      );
+      break;
+    default:
+      screen = <Text style={ui.empty}>Coming in this phase</Text>;
+  }
+  return <View style={[ui.screen, { paddingTop: insets.top }]}>{screen}</View>;
 }
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="default" />
-      <Library />
+      <Main />
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  empty: { padding: 24 },
-  problem: { padding: 16, gap: 8 },
-  link: { textDecorationLine: 'underline' },
-  row: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { fontSize: 16 },
-  state: { fontSize: 13, opacity: 0.7 },
-});
