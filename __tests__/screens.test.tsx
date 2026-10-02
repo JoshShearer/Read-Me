@@ -52,11 +52,21 @@ function strings(node: Node, out: string[] = []): string[] {
   return out;
 }
 
+// Unmounted after each test: a FlatList left mounted schedules updates after its test ends,
+// which Jest reports as a failure of whichever test is running (seen in a full-suite run).
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+afterEach(async () => {
+  await ReactTestRenderer.act(async () => {
+    while (mounted.length) mounted.pop()!.unmount();
+  });
+});
+
 async function render(el: React.ReactElement) {
   let r!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     r = ReactTestRenderer.create(el);
   });
+  mounted.push(r);
   return strings(r.toJSON()).join('\n');
 }
 
