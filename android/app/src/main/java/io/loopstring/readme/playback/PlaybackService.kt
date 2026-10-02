@@ -55,8 +55,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private var title = ""
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
-  private var bridge: BridgeServer? = null
-  private var synth: TtsSynth? = null
+  // Written on the main thread; read on TTS binder threads by preemptOnPlay.
+  @Volatile private var bridge: BridgeServer? = null
+  @Volatile private var synth: TtsSynth? = null
   @VisibleForTesting var bridgePreemptsForTest = 0
     private set
   // ADR 0004: playback starting stops a bridge synthesis in flight (the bridge's instance only).
@@ -95,7 +96,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       Route.BRIDGE -> {
         if (intent?.action == PlaybackCommands.ACTION_BRIDGE_OFF) Settings(this).bridgeEnabled = false
         syncBridge()
-        if (!ServiceLife.keepAlive(queue.snapshot().itemId != null, bridge != null)) {
+        // A play request waiting for the engine counts as an item.
+        val hasItem = queue.snapshot().itemId != null || waiting != null || PlaybackHub.hasPending()
+        if (!ServiceLife.keepAlive(hasItem, bridge != null)) {
           end()
           return START_NOT_STICKY
         }

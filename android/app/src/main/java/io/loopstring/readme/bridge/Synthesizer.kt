@@ -16,8 +16,12 @@ interface Synthesizer {
   /** The longest text one synthesis accepts (ADR 0008). */
   val maxChars: Int
 
-  /** Blocks until [out] holds the WAV or the synthesis ends otherwise. Never on the main thread. */
-  fun synthesize(text: String, rate: Float, out: File): SynthResult
+  /**
+   * Blocks until [out] holds the WAV or the synthesis ends otherwise. Never on the main thread.
+   * [proceed] is checked once the synthesis is registered for [cancel] and before the engine
+   * starts: false means playback started in between (ADR 0004), and the result is CANCELLED.
+   */
+  fun synthesize(text: String, rate: Float, out: File, proceed: () -> Boolean): SynthResult
 
   /** Ends a synthesis in flight with CANCELLED (ADR 0004). Any thread; a no-op when idle. */
   fun cancel()

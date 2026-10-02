@@ -22,7 +22,7 @@ class TtsSynthTest {
     assertFalse(s.ready)
     assertEquals(null, s.voice)
     val out = File(Files.createTempDirectory("c").toFile(), "x.wav")
-    assertEquals(SynthResult.FAILED, s.synthesize("Hello.", 1.0f, out))
+    assertEquals(SynthResult.FAILED, s.synthesize("Hello.", 1.0f, out) { true })
     s.cancel() // nothing in flight: a no-op
     s.shutdown()
   }

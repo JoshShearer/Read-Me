@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,8 +35,9 @@ class BridgeServerTest {
     @Volatile var lastRate = 0f
     @Volatile var behaviour: (File) -> SynthResult = { it.writeBytes(wav(1_000)); SynthResult.OK }
     val cancelled = CountDownLatch(1)
-    override fun synthesize(text: String, rate: Float, out: File): SynthResult {
+    override fun synthesize(text: String, rate: Float, out: File, proceed: () -> Boolean): SynthResult {
       lastRate = rate
+      if (!proceed()) return SynthResult.CANCELLED
       return behaviour(out)
     }
     override fun cancel() = cancelled.countDown()
@@ -350,6 +352,39 @@ class BridgeServerTest {
       BridgeServer(s.port, { token }, { false }, synth, BridgeFiles(cache), {})
     }.exceptionOrNull()
     assertTrue(e is java.net.BindException)
+  }
+
+  @Test fun playbackStartingAtTheLockedBusyCheckStillGets503() {
+    // Final review Important 1: playback starts between the second busy() check and the
+    // synthesis; the request must be answered 503, not synthesized alongside playback.
+    val calls = AtomicInteger()
+    var srv: BridgeServer? = null
+    val ran = AtomicInteger()
+    synth.behaviour = { f -> ran.incrementAndGet(); f.writeBytes(wav(10)); SynthResult.OK }
+    srv = BridgeServer(0, { token }, { if (calls.incrementAndGet() == 2) srv!!.preempt(); false }, synth, BridgeFiles(cache), { logs.add(it) })
+      .also { server = it }
+    val r = call(srv.port, synthHead(5), "hello".toByteArray())
+    assertEquals(503, r.status)
+    assertEquals(0, ran.get())
+  }
+
+  @Test fun aRequestWhoseClientLeftWhileQueuedIsNotSynthesized() {
+    // Final review Important 2: a request waiting for the synthesis lock whose client has gone
+    // must not synthesize text nobody will read.
+    val s = start()
+    val release = CountDownLatch(1)
+    val calls = AtomicInteger()
+    synth.behaviour = { f -> calls.incrementAndGet(); release.await(5, TimeUnit.SECONDS); f.writeBytes(wav(10)); SynthResult.OK }
+    val first = Thread { runCatching { call(s.port, synthHead(5), "hello".toByteArray()) } }.apply { start() }
+    Thread.sleep(300)
+    Socket("127.0.0.1", s.port).use { c ->
+      c.getOutputStream().write("${synthHead(5)}\r\n\r\nhello".toByteArray())
+      Thread.sleep(300)
+    }
+    release.countDown()
+    first.join(5_000)
+    Thread.sleep(500)
+    assertEquals(1, calls.get())
   }
 
   companion object {

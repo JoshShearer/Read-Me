@@ -10,6 +10,7 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -87,11 +88,12 @@ class BridgeServer(
     var status = 0
     var bodyBytes = 0
     var outBytes = 0L
+    var socket: Socket? = null
   }
 
   private fun serve(s: Socket) {
     val t0 = System.nanoTime()
-    val ex = Exchange()
+    val ex = Exchange().apply { socket = s }
     val cutoff = watchdog.schedule({ runCatching { s.close() } }, deadlineMs, TimeUnit.MILLISECONDS)
     try {
       s.use {
@@ -157,11 +159,14 @@ class BridgeServer(
       val preempted: Boolean
       synthLock.lock()
       try {
-        if (busy()) return busyReply(out, ex)
+        // Read before the busy check: a preempt after this point changes the epoch (ADR 0004).
         val e = epoch.get()
+        if (busy()) return busyReply(out, ex)
+        // Waiting for the lock can outlast the client; nobody would read this audio.
+        if (ex.socket?.let { clientGone(it, input) } == true) return
         val t0 = System.nanoTime()
         // AGENTS.md 9: the rate is applied here, by the engine, once.
-        result = synth.synthesize(text, rate, f)
+        result = synth.synthesize(text, rate, f) { epoch.get() == e }
         ms = (System.nanoTime() - t0) / 1_000_000
         preempted = epoch.get() != e
       } finally {
@@ -183,6 +188,21 @@ class BridgeServer(
     val t = token()
     if (t.length < 32 || value == null) return false
     return MessageDigest.isEqual("Bearer $t".toByteArray(), value.toByteArray())
+  }
+
+  /** True when the client has closed: a 1 ms read sees end of stream. The body was already read. */
+  private fun clientGone(s: Socket, input: InputStream): Boolean {
+    val t = s.soTimeout
+    return try {
+      s.soTimeout = 1
+      input.read() == -1
+    } catch (_: SocketTimeoutException) {
+      false
+    } catch (_: IOException) {
+      true
+    } finally {
+      runCatching { s.soTimeout = t }
+    }
   }
 
   private fun readBody(input: InputStream, len: Int): ByteArray? {

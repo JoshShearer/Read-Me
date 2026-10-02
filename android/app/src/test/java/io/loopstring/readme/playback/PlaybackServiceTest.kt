@@ -127,4 +127,17 @@ class PlaybackServiceTest {
     assertEquals(1, c.get().bridgePreemptsForTest)
     c.destroy()
   }
+
+  @Test fun turningTheBridgeOffKeepsAPlayRequestWaitingForTheEngine() {
+    // Final review: a play request held while the engine starts must survive a bridge intent.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    PlaybackHub.offer(PlaybackHub.Request(1L, "t", listOf(SentenceRow(0, 0, 5, "Hello")), 0))
+    val c = Robolectric.buildService(PlaybackService::class.java,
+      Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    shadowOf(Looper.getMainLooper()).idle()
+    c.withIntent(bridgeIntent(ctx)).startCommand(0, 2)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
 }

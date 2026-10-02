@@ -55,10 +55,16 @@ class TtsSynth(context: Context, private val preferredVoice: String?) : Synthesi
     status = TtsSpeaker.EngineStatus.READY
   }
 
-  override fun synthesize(text: String, rate: Float, out: File): SynthResult {
+  override fun synthesize(text: String, rate: Float, out: File, proceed: () -> Boolean): SynthResult {
     if (!ready) return SynthResult.FAILED
     val id = "bridge-${seq.incrementAndGet()}"
     wait.begin(id)
+    // ADR 0004: a preempt before begin() found nothing to cancel; this catches it.
+    if (!proceed()) {
+      wait.cancel()
+      wait.await(0)
+      return SynthResult.CANCELLED
+    }
     // A screen-off request from Obsidian must finish; held only for this one synthesis.
     val lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ReadMe:bridge")
       .apply { setReferenceCounted(false); acquire(TIMEOUT_MS + 5_000) }
@@ -70,7 +76,8 @@ class TtsSynth(context: Context, private val preferredVoice: String?) : Synthesi
         return SynthResult.FAILED
       }
       val r = wait.await(TIMEOUT_MS)
-      if (r == SynthResult.TIMEOUT) tts.stop()
+      // A cancel can land before the engine took the request; stop it now that it has.
+      if (r == SynthResult.TIMEOUT || r == SynthResult.CANCELLED) tts.stop()
       return r
     } finally {
       if (lock.isHeld) lock.release()
