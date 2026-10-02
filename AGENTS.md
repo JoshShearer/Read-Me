@@ -38,7 +38,7 @@ scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolve
 npm run device:install                      # takes the device slot, installs the release build
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
-npm run device:intake     # shares a link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
+npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
 ```
 
 ### Device work: the one-phone slot
@@ -137,8 +137,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   only on a predicted stall (ADR 0006).
 - **Native library and intake (Phase 2, REA-16):** share target, SQLite store (Kotlin owns it),
   Fetcher on WorkManager, start-up recovery, the `ReadMeSpeech` TurboModule and a plain item
-  list; verified by `npm run device:intake` (2026-10-02, build 0a0b477: a link and a text
-  reached `ready`, a dead link `fetch-failed: offline`, no item text or URL path in logcat).
+  list; verified by `npm run device:intake` (2026-10-02, build 3c473b3: an https link, a
+  plain-http link and a text became readable, a dead link `fetch-failed: offline`, no item text
+  or URL path in logcat).
   No playback, reader, trim screen or bridge yet.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
