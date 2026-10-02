@@ -12,6 +12,9 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     completeExtraction: jest.fn(async () => true),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
+    getPlayback: jest.fn(async () => ({
+      itemId: null, playing: false, paragraphIndex: -1, start: 0, end: 0, rate: 2, engine: 'unknown',
+    })),
   },
 }));
 import App from '../App';

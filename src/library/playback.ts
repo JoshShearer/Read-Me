@@ -1,0 +1,98 @@
+// The JS view of PlaybackService (R-M07, AGENTS.md 11). JS segments the kept text once per
+// play and hands over the sentence list and a start; the service then owns the queue,
+// position saves and the archive. Nothing here advances playback on an event. Never logs.
+import { NativeEventEmitter } from 'react-native';
+import Native, { type NativePlayback } from '../native/NativeReadMeSpeech';
+import { sentenceIndexAt } from '../segment/locate';
+import { segment } from '../segment/segment';
+import { remapPosition } from '../trim/cuts';
+import type { Paragraph, Position, Sentence } from '../types';
+import { getItem, type Item } from './library';
+
+export type Plan = { sentences: Sentence[]; startIndex: number };
+
+export type Playback = {
+  itemId: number | null;
+  playing: boolean;
+  sentence: { paragraphIndex: number; start: number; end: number } | null;
+  rate: number;
+  engine: string;
+};
+
+/**
+ * R-M11: resume at the start of the sentence that contains the saved offset under today's
+ * segmentation. A position in a paragraph cut since moves to the next kept one; a position
+ * past the end starts over. Null when nothing is kept.
+ */
+export function plan(
+  paragraphs: readonly Paragraph[],
+  cuts: readonly number[],
+  saved: Position | null,
+): Plan | null {
+  const cutSet = new Set(cuts);
+  const sentences = segment(paragraphs, cutSet);
+  if (sentences.length === 0) return null;
+  const moved = saved && remapPosition(saved, cutSet, paragraphs.length);
+  const i = moved ? sentenceIndexAt(sentences, moved) : 0;
+  return { sentences, startIndex: i < 0 ? 0 : i };
+}
+
+export async function playItem(id: number): Promise<boolean> {
+  const detail = await getItem(id);
+  if (detail === null) return false;
+  const p = plan(detail.paragraphs, detail.cuts, await Native.getPosition(id));
+  if (p === null) return false;
+  return Native.play(id, detail.item.title, p.sentences, p.startIndex);
+}
+
+/** A row tap: pause what plays, resume what is paused, otherwise play this item. */
+export async function toggle(id: number, current: Playback | null): Promise<boolean> {
+  if (current?.itemId === id) {
+    if (current.playing) return Native.pause();
+    // False when the service is gone (process restarted): play again from the saved position.
+    if (await Native.resume()) return true;
+  }
+  return playItem(id);
+}
+
+export const pause = () => Native.pause();
+export const resume = () => Native.resume();
+export const next = () => Native.next();
+export const previous = () => Native.previous();
+export const backParagraph = () => Native.backParagraph();
+export const setRate = (rate: number) => Native.setRate(rate);
+
+export function toPlayback(n: NativePlayback): Playback {
+  return {
+    itemId: n.itemId,
+    playing: n.playing,
+    sentence:
+      n.paragraphIndex < 0
+        ? null
+        : { paragraphIndex: n.paragraphIndex, start: n.start, end: n.end },
+    rate: n.rate,
+    engine: n.engine,
+  };
+}
+
+export async function getPlayback(): Promise<Playback> {
+  return toPlayback(await Native.getPlayback());
+}
+
+export function onPlayback(cb: (p: Playback) => void): () => void {
+  const sub = new NativeEventEmitter(Native).addListener(
+    'ReadMePlayback',
+    (n: unknown) => cb(toPlayback(n as NativePlayback)),
+  );
+  return () => sub.remove();
+}
+
+export function marker(item: Item, p: Playback | null): string {
+  if (p?.itemId === item.id) return p.playing ? 'playing' : 'paused';
+  return item.archivedAt === undefined ? '' : 'archived';
+}
+
+/** R-M06: no engine bound, or no offline voice. */
+export function engineProblem(p: Playback | null): boolean {
+  return p?.engine === 'no-engine' || p?.engine === 'no-voice';
+}
