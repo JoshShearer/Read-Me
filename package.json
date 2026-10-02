@@ -17,7 +17,9 @@
     "pretest": "node scripts/make-devcheck-fixtures.mjs",
     "pretypecheck": "node scripts/make-devcheck-fixtures.mjs",
     "device:devcheck": "scripts/devcheck.sh",
-    "device:intake": "bash scripts/device-intake-e2e.sh"
+    "device:intake": "bash scripts/device-intake-e2e.sh",
+    "device:playback": "bash scripts/device-playback-e2e.sh",
+    "device:gap": "bash scripts/device-gap.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
