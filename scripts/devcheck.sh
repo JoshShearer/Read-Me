@@ -67,7 +67,10 @@ for run in $(seq "$RUNS"); do
     adb logcat -c
     # -W waits for the launch; without it the first pidof can run before the process exists
     # and a healthy run is reported as a death.
-    adb shell am start -W -n "$PKG/.MainActivity" -d "devcheck://fixture/$name" >/dev/null
+    # VIEW: React Native's Linking reads the intent data only for ACTION_VIEW
+    # (IntentModule.kt); without it every launch silently ran every fixture.
+    adb shell am start -W -a android.intent.action.VIEW -n "$PKG/.MainActivity" \
+      -d "devcheck://fixture/$name" >/dev/null
     done_=""
     logs=""
     seen=""
@@ -86,6 +89,11 @@ for run in $(seq "$RUNS"); do
       sleep 1
     done
     [ -n "$done_" ] || { echo "run $run $name: no DEVCHECK_DONE within 300 s (process seen: ${seen:-no})" >&2; exit 1; }
+    results=$(grep -oE 'DEVCHECK \{.*\}' <<<"$logs" || true)
+    if [ "$(grep -c . <<<"$results")" != 1 ] || ! grep -q "\"name\":\"$name\"" <<<"$results"; then
+      echo "run $run $name: the launch did not run exactly its own fixture" >&2
+      exit 1
+    fi
     grep -oE 'DEVCHECK(_ENV)? \{.*\}' <<<"$logs" | sed "s/^/run=$run /" >> "$DEVICE_OUT"
   done
 done
