@@ -52,12 +52,7 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
   }
 
   private fun chooseVoice(): EngineStatus {
-    val voices = runCatching { tts.voices }.getOrNull().orEmpty().toList()
-    val default = runCatching { tts.defaultVoice }.getOrNull()
-    val language = (default?.locale ?: Locale.getDefault()).language
-    val pick = VoicePicker.pick(default?.let { info(it) }, voices.map { info(it) }, language, preferredVoice)
-      ?: return EngineStatus.NO_VOICE
-    val voice = (voices + listOfNotNull(default)).first { it.name == pick.name }
+    val voice = chooseVoice(tts, preferredVoice) ?: return EngineStatus.NO_VOICE
     return if (tts.setVoice(voice) == TextToSpeech.SUCCESS) EngineStatus.READY else EngineStatus.NO_VOICE
   }
 
@@ -86,6 +81,15 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
       notInstalled = v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true,
       quality = v.quality,
     )
+
+    /** R-M06, AGENTS.md 5: VoicePicker's choice among this engine's voices; null means none is offline. */
+    fun chooseVoice(tts: TextToSpeech, preferred: String?): Voice? {
+      val voices = runCatching { tts.voices }.getOrNull().orEmpty().toList()
+      val default = runCatching { tts.defaultVoice }.getOrNull()
+      val language = (default?.locale ?: Locale.getDefault()).language
+      val pick = VoicePicker.pick(default?.let { info(it) }, voices.map { info(it) }, language, preferred) ?: return null
+      return (voices + listOfNotNull(default)).first { it.name == pick.name }
+    }
 
     val ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_MEDIA)
