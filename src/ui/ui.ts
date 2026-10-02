@@ -20,6 +20,7 @@ export const ui = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '600' },
   button: { paddingHorizontal: 10, paddingVertical: 8 },
   buttonText: { fontSize: 15, textDecorationLine: 'underline' },
+  disabled: { opacity: 0.3 },
   row: { paddingHorizontal: 16, paddingVertical: 12 },
   title: { fontSize: 16 },
   small: { fontSize: 13, opacity: 0.7 },

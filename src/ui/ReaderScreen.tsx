@@ -142,8 +142,13 @@ export function ReaderScreen({
   const control = (fn: () => Promise<unknown>) => () => {
     fn().catch(() => undefined);
   };
-  const button = (label: string, a11y: string, onPress: () => void) => (
-    <Pressable style={ui.button} accessibilityLabel={a11y} onPress={onPress}>
+  const button = (label: string, a11y: string, onPress: () => void, disabled = false) => (
+    <Pressable
+      style={[ui.button, disabled ? ui.disabled : null]}
+      accessibilityLabel={a11y}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}>
       <Text style={ui.buttonText}>{label}</Text>
     </Pressable>
   );
@@ -181,11 +186,12 @@ export function ReaderScreen({
         }
       />
       <View collapsable={false} style={ui.transport}>
-        {/* Sentence controls act on whatever the service holds, so they appear only for this item. */}
-        {mine ? button('¶◀', 'back paragraph', control(backParagraph)) : null}
-        {mine ? button('◀', 'previous sentence', control(previous)) : null}
+        {/* Sentence controls act on whatever the service holds, so they work only for this
+            item; they stay in place, disabled, so Play/Pause never moves. */}
+        {button('¶◀', 'back paragraph', control(backParagraph), !mine)}
+        {button('◀', 'previous sentence', control(previous), !mine)}
         {button(mine?.playing ? 'Pause' : 'Play', mine?.playing ? 'pause' : 'play', control(() => toggle(id, playback)))}
-        {mine ? button('▶', 'next sentence', control(next)) : null}
+        {button('▶', 'next sentence', control(next), !mine)}
         {button('−', 'slower', () => changeRate(-1))}
         <Text>{formatRate(rate)}</Text>
         {button('+', 'faster', () => changeRate(1))}

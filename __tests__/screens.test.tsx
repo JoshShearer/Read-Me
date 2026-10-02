@@ -172,14 +172,21 @@ test('Reader shows kept paragraphs and the transport', async () => {
   expect(out).toContain('2.0x');
 });
 
-test('Reader offers only Play until its item is the one the service holds', async () => {
-  // /critique run A F2: next/previous/back paragraph act on whatever the service holds.
+test('Reader disables sentence controls until its item is the one the service holds', async () => {
+  // /critique run A F2: next/previous/back paragraph act on whatever the service holds. They
+  // stay in place (disabled) so Play/Pause never moves under the user's finger.
   mockState.detail = text(['One.']);
-  const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
-  expect(out).toContain('"play"');
-  expect(out).not.toContain('"next sentence"');
-  expect(out).not.toContain('"previous sentence"');
-  expect(out).not.toContain('"back paragraph"');
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  });
+  mounted.push(r);
+  const pressable = (label: string) =>
+    r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function');
+  for (const label of ['next sentence', 'previous sentence', 'back paragraph']) {
+    expect(pressable(label).props.disabled).toBe(true);
+  }
+  expect(pressable('play').props.disabled).toBeFalsy();
 });
 
 test('Settings lists offline voices, the default rate and storage', async () => {
