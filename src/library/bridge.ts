@@ -19,11 +19,18 @@ export function onBridge(cb: (b: Bridge) => void): () => void {
 /**
  * R-M12: "its foreground notification MUST say so". Android 13+ hides a foreground-service
  * notification that is not a media one unless POST_NOTIFICATIONS is granted, so turning the
- * bridge on asks for it. False when the user refused; the bridge still runs.
+ * bridge on asks for it, and the bridge stays off while it is refused.
  */
+const needsPermission = () => Platform.OS === 'android' && Number(Platform.Version) >= 33;
+
+/** Whether the bridge's notification can show, without asking. */
+export async function notificationsAllowed(): Promise<boolean> {
+  if (!needsPermission()) return true;
+  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+}
+
 export async function ensureNotifications(): Promise<boolean> {
-  if (Platform.OS !== 'android' || Number(Platform.Version) < 33) return true;
-  const p = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
-  if (await PermissionsAndroid.check(p)) return true;
-  return (await PermissionsAndroid.request(p)) === PermissionsAndroid.RESULTS.GRANTED;
+  if (await notificationsAllowed()) return true;
+  const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  return r === PermissionsAndroid.RESULTS.GRANTED;
 }

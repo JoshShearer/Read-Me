@@ -18,7 +18,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('../src/native/NativeReadMeSpeech', () => ({ __esModule: true, default: {} }));
 
-import { ensureNotifications, onBridge } from '../src/library/bridge';
+import { ensureNotifications, notificationsAllowed, onBridge } from '../src/library/bridge';
 
 beforeEach(() => {
   mockPlatform.Version = 36;
@@ -54,5 +54,16 @@ test('ensureNotifications does not ask when granted or before Android 13', async
   mockPermissions.check.mockResolvedValue(false);
   mockPlatform.Version = 32;
   expect(await ensureNotifications()).toBe(true);
+  expect(mockPermissions.request).not.toHaveBeenCalled();
+});
+
+test('notificationsAllowed checks without asking', async () => {
+  mockPermissions.check.mockResolvedValue(false);
+  expect(await notificationsAllowed()).toBe(false);
+  mockPermissions.check.mockResolvedValue(true);
+  expect(await notificationsAllowed()).toBe(true);
+  mockPlatform.Version = 32;
+  mockPermissions.check.mockResolvedValue(false);
+  expect(await notificationsAllowed()).toBe(true);
   expect(mockPermissions.request).not.toHaveBeenCalled();
 });

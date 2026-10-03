@@ -172,8 +172,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `libc++_shared.so` are not listed yet. Phase 6 completes it.
 - **Bridge (Phase 5, REA-20):** `BridgeServer` (Kotlin, plain JVM) on explicit 127.0.0.1:8787
   (configurable), hosted by PlaybackService while Settings has it on; contract v1 plus ADR 0008
-  (one synthesis at most `maxChars`). Settings asks for POST_NOTIFICATIONS when the bridge is
-  turned on: Android 13+ hid the bridge-only foreground notification without it (build c460f84).
+  (one synthesis at most `maxChars`). The bridge turns on only with POST_NOTIFICATIONS, which
+  Settings asks for: Android 13+ hid the bridge-only foreground notification without it (build
+  c460f84), and R-M12 requires it to say the bridge is on.
   Verified 2026-10-02 on the reference device, build 7c2c04a: `npm run device:bridge` (rate 2.0
   WAV 1.29 s against 2.58 s at 1.0; 401, 400, 413, 431 and a silent client; 503 busy while
   playing; from Obsidian's WebView with Read Me in the background: fetch and CapacitorHttp 200

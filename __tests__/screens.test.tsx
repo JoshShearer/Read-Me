@@ -245,8 +245,9 @@ test('turning the bridge on goes through the module', async () => {
   expect(strings(r.toJSON()).join('\n')).toContain('0123456789abcdef0123456789abcdef');
 });
 
-test('turning the bridge on with notifications refused says the notification is hidden', async () => {
+test('the bridge does not turn on while notifications are refused (R-M12)', async () => {
   const spy = jest.spyOn(bridgeLib, 'ensureNotifications').mockResolvedValue(false);
+  (Native.setBridgeEnabled as jest.Mock).mockClear();
   let r!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     r = ReactTestRenderer.create(<SettingsScreen onLicenses={() => {}} />);
@@ -256,7 +257,22 @@ test('turning the bridge on with notifications refused says the notification is 
     r.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
   });
   expect(spy).toHaveBeenCalled();
-  expect(Native.setBridgeEnabled).toHaveBeenCalledWith(true);
-  expect(strings(r.toJSON()).join('\n')).toContain('Notifications are off for Read Me');
+  expect(Native.setBridgeEnabled).not.toHaveBeenCalled();
+  expect(strings(r.toJSON()).join('\n')).toContain('Read Me needs to show a notification while the bridge is on');
+  spy.mockRestore();
+});
+
+test('an enabled bridge without notification permission is flagged when Settings opens', async () => {
+  const spy = jest.spyOn(bridgeLib, 'notificationsAllowed').mockResolvedValue(false);
+  mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('Read Me needs to show a notification while the bridge is on');
+  spy.mockRestore();
+});
+
+test('notifications off with the bridge off shows no bridge warning', async () => {
+  const spy = jest.spyOn(bridgeLib, 'notificationsAllowed').mockResolvedValue(false);
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).not.toContain('Read Me needs to show a notification');
   spy.mockRestore();
 });

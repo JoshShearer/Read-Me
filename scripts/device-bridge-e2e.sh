@@ -24,8 +24,6 @@ device_require_unlocked
 device_install_release
 
 device_clear_app
-# Settings asks for this when the bridge is turned on (Android 13+); granted here so no dialog.
-adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 adb logcat -c
 fail=0
 check() { if eval "$2"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
@@ -52,6 +50,18 @@ scroll_to_desc() {
     sleep 1
   done
 }
+tap_text() {
+  local b=""
+  for _ in $(seq 10); do
+    b=$(ui | grep -oE "text=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+      | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+    [ -n "$b" ] && break
+    sleep 1
+  done
+  [ -n "$b" ] || { echo "FAIL: nothing on screen has text $1"; exit 1; }
+  set -- $b
+  adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+}
 on_screen() { for _ in $(seq 15); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done; return 1; }
@@ -65,7 +75,16 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 
 echo "== Settings: turn the bridge on"
 tap_desc settings
+# R-M12: no notification permission, no bridge. Refuse once, then allow (Android 13+ dialog).
 tap_desc 'bridge on'
+tap_text 'Don.t allow'
+check "refused: Settings explains and the bridge stays off" \
+  "on_screen 'Read Me needs to show a notification while the bridge is on' && on_screen 'content-desc=\"bridge on\"'"
+adb forward tcp:$PORT tcp:$PORT >/dev/null
+check "refused: nothing listens on the port" \
+  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$PORT/health)\" = 000 ]"
+tap_desc 'bridge on'
+tap_text 'Allow'
 check "Settings says the bridge is on" "on_screen 'On at 127\.0\.0\.1:$PORT'"
 TOK=$(ui | grep -oE 'text="[0-9a-f]{32}"' | head -1 | grep -oE '[0-9a-f]{32}' || true)
 [ -n "$TOK" ] || { echo "FAIL: no pairing token on screen"; exit 1; }

@@ -387,6 +387,65 @@ class BridgeServerTest {
     assertEquals(1, calls.get())
   }
 
+  @Test fun aDrippedHeadIsCutAtTheHeadDeadline() {
+    // /critique F1: one byte at a time reset only the per-read timeout, so a dripping client
+    // held a worker until the 180 s deadline. The head now has its own short deadline.
+    val s = BridgeServer(0, { token }, { busy }, synth, BridgeFiles(cache), { logs.add(it) },
+      readTimeoutMs = 2_000, workers = 1, headDeadlineMs = 500).also { server = it }
+    val dripper = Thread {
+      runCatching {
+        Socket("127.0.0.1", s.port).use { c ->
+          for (b in "GET /health HTTP/1.1\r\nX-Slow: aaaaaaaaaaaaaaaaaaaa".toByteArray()) {
+            c.getOutputStream().write(b.toInt()); Thread.sleep(150)
+          }
+        }
+      }
+    }.apply { start() }
+    Thread.sleep(1_200)
+    assertEquals(200, call(s.port, "GET /health HTTP/1.1", timeoutMs = 3_000).status)
+    dripper.interrupt()
+  }
+
+  @Test fun queuedSynthesesAreCappedSoHealthStillAnswers() {
+    // /critique F1: requests waiting for the synthesis lock each held a worker.
+    val s = BridgeServer(0, { token }, { busy }, synth, BridgeFiles(cache), { logs.add(it) },
+      workers = 4, maxQueued = 1).also { server = it }
+    val release = CountDownLatch(1)
+    synth.behaviour = { f -> release.await(10, TimeUnit.SECONDS); f.writeBytes(wav(10)); SynthResult.OK }
+    val statuses = Collections.synchronizedList(ArrayList<Int>())
+    val threads = List(3) { Thread { runCatching { statuses.add(call(s.port, synthHead(5), "hello".toByteArray(), timeoutMs = 15_000).status) } }.apply { start(); Thread.sleep(150) } }
+    Thread.sleep(300)
+    // One synthesizes, one waits, the third is told the queue is full; /health still answers.
+    assertEquals(200, call(s.port, "GET /health HTTP/1.1", timeoutMs = 3_000).status)
+    release.countDown()
+    threads.forEach { it.join(10_000) }
+    assertEquals(listOf(200, 200, 503), statuses.sorted())
+  }
+
+  @Test fun repliesBeforeTheHeadParsesStillCarryCorsForLocalhost() {
+    // /critique (run A F2): 431 and a malformed head are answered before parsing.
+    val s = start()
+    val big = call(s.port, "GET /health HTTP/1.1\r\nOrigin: http://localhost\r\nX-Pad: " + "a".repeat(20_000))
+    assertEquals(431, big.status)
+    assertEquals("http://localhost", big.headers["access-control-allow-origin"])
+    val bad = call(s.port, "GET /health HTTP/1.1\r\nOrigin: http://localhost\r\nno colon")
+    assertEquals(400, bad.status)
+    assertEquals("http://localhost", bad.headers["access-control-allow-origin"])
+    val other = call(s.port, "GET /health HTTP/1.1\r\nOrigin: http://evil.example\r\nno colon")
+    assertNull(other.headers["access-control-allow-origin"])
+  }
+
+  @Test fun aClientThatHalfClosesAfterItsRequestStillGetsTheAudio() {
+    // /critique (run B F3): end of stream after a complete request is legal HTTP/1.1.
+    val s = start()
+    Socket("127.0.0.1", s.port).use { c ->
+      c.soTimeout = 5_000
+      c.getOutputStream().write("${synthHead(5)}\r\n\r\nhello".toByteArray())
+      c.shutdownOutput()
+      assertEquals(200, parse(c.getInputStream()).status)
+    }
+  }
+
   companion object {
     /** A minimal 16-bit mono WAV with [samples] silent samples. */
     fun wav(samples: Int): ByteArray {

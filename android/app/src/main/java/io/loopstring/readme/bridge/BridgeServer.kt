@@ -15,6 +15,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.Semaphore
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -37,6 +38,8 @@ class BridgeServer(
   private val readTimeoutMs: Int = READ_TIMEOUT_MS,
   private val deadlineMs: Long = DEADLINE_MS,
   workers: Int = WORKERS,
+  private val headDeadlineMs: Long = HEAD_DEADLINE_MS,
+  private val maxQueued: Int = MAX_QUEUED,
 ) : Closeable {
   // AGENTS.md 8: explicit IPv4 loopback; getLoopbackAddress() returned ::1 on Android 17.
   private val server = ServerSocket(requestedPort, BACKLOG, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
@@ -48,6 +51,9 @@ class BridgeServer(
   // Java socket writes have no timeout: a client that never reads would hold a worker forever.
   private val watchdog = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "bridge-watchdog").apply { isDaemon = true } }
   private val synthLock = ReentrantLock() // R-M12: synthesis is serialized
+  // One synthesizing plus [maxQueued] waiting: a waiter holds a worker, and the rest must stay
+  // free for /health and new requests (R-M12: no client may block them).
+  private val synthSlots = Semaphore(1 + maxQueued)
   private val epoch = AtomicInteger()
   @Volatile private var closed = false
 
@@ -116,7 +122,15 @@ class BridgeServer(
   }
 
   private fun handle(input: InputStream, out: OutputStream, ex: Exchange) {
-    val head = when (val r = Http.readHead(input)) {
+    // The per-read timeout restarts with every byte; a dripped head gets a deadline of its own.
+    val s = ex.socket
+    val headCut = s?.let { watchdog.schedule({ runCatching { it.close() } }, headDeadlineMs, TimeUnit.MILLISECONDS) }
+    val read = Http.readHead(input) { raw ->
+      // R-M12: errors carry CORS too, even when sent before the head parses.
+      if (ORIGIN_LINE.containsMatchIn(String(raw, Charsets.ISO_8859_1))) ex.origin = ALLOWED_ORIGIN
+    }
+    headCut?.cancel(false)
+    val head = when (val r = read) {
       HeadRead.Closed -> return
       HeadRead.TooLarge -> return error(out, ex, 431, "headers-too-large")
       HeadRead.Malformed -> return error(out, ex, 400, "bad-request")
@@ -152,18 +166,25 @@ class BridgeServer(
     // ADR 0008: one synthesis takes at most the engine's input limit.
     if (text.length > synth.maxChars) return error(out, ex, 413, "too-long", "\"maxChars\":${synth.maxChars}")
 
-    val f = files.create()
+    if (!synthSlots.tryAcquire()) return send(out, ex, 503, JSON, QUEUE_FULL)
+    val f = try {
+      files.create()
+    } catch (t: Throwable) {
+      synthSlots.release()
+      throw t
+    }
     try {
       var ms = 0L
       val result: SynthResult
       val preempted: Boolean
-      synthLock.lock()
+      val waited = !synthLock.tryLock()
+      if (waited) synthLock.lock()
       try {
         // Read before the busy check: a preempt after this point changes the epoch (ADR 0004).
         val e = epoch.get()
         if (busy()) return busyReply(out, ex)
         // Waiting for the lock can outlast the client; nobody would read this audio.
-        if (ex.socket?.let { clientGone(it, input) } == true) return
+        if (waited && ex.socket?.let { clientGone(it, input) } == true) return
         val t0 = System.nanoTime()
         // AGENTS.md 9: the rate is applied here, by the engine, once.
         result = synth.synthesize(text, rate, f) { epoch.get() == e }
@@ -171,6 +192,7 @@ class BridgeServer(
         preempted = epoch.get() != e
       } finally {
         synthLock.unlock()
+        synthSlots.release()
       }
       // Sent outside the lock: a slow reader must not hold up the next synthesis.
       when {
@@ -281,11 +303,15 @@ class BridgeServer(
     const val READ_TIMEOUT_MS = 10_000
     const val DEADLINE_MS = 180_000L
     const val WORKERS = 8
+    const val HEAD_DEADLINE_MS = 5_000L
+    const val MAX_QUEUED = 2
     private const val BACKLOG = 16
     private const val JSON = "application/json"
     private const val ALLOWED_ORIGIN = "http://localhost"
     private val METHODS = setOf("GET", "POST", "OPTIONS")
     private val ROUTES = setOf("/health", "/synthesize")
+    private val ORIGIN_LINE = Regex("(?im)^origin:[ \\t]*http://localhost[ \\t]*\r?$")
+    private val QUEUE_FULL = """{"error":"busy","reason":"queue"}""".toByteArray()
     private val REASONS = mapOf(
       200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",
       405 to "Method Not Allowed", 413 to "Payload Too Large", 431 to "Request Header Fields Too Large",

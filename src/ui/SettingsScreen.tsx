@@ -5,6 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, Text, TextInput, View } from 're
 import {
   copyBridgeToken,
   ensureNotifications,
+  notificationsAllowed,
   getBridge,
   onBridge,
   regenerateBridgeToken,
@@ -27,12 +28,15 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const [portError, setPortError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [notifyOff, setNotifyOff] = useState(false);
+  const [refused, setRefused] = useState(false);
 
   useEffect(() => {
     getBridge().then(b => {
       setBridge(b);
       setPortText(String(b.port));
     }, () => undefined);
+    // R-M12: the permission can be revoked at any time; check it each time Settings opens.
+    notificationsAllowed().then(ok => setNotifyOff(!ok), () => undefined);
     return onBridge(setBridge);
   }, []);
 
@@ -144,13 +148,18 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             accessibilityLabel={bridge.enabled ? 'bridge off' : 'bridge on'}
             onPress={() => {
               const on = !bridge.enabled;
-              const ask = on ? ensureNotifications() : Promise.resolve(true);
-              ask
+              if (!on) {
+                setBridgeEnabled(false).then(setBridge, () => undefined);
+                return;
+              }
+              // R-M12: the bridge's notification MUST say it is on, so no permission, no bridge.
+              ensureNotifications()
                 .then(granted => {
                   setNotifyOff(!granted);
-                  return setBridgeEnabled(on);
+                  setRefused(!granted);
+                  return granted ? setBridgeEnabled(true) : null;
                 })
-                .then(setBridge, () => undefined);
+                .then(b => b && setBridge(b), () => undefined);
             }}>
             <Text style={ui.buttonText}>{bridge.enabled ? 'Turn off' : 'Turn on'}</Text>
           </Pressable>
@@ -165,11 +174,21 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               onSubmitEditing={applyPort}
             />
           </View>
-          {notifyOff && bridge.enabled ? (
-            <Text style={ui.small}>
-              Notifications are off for Read Me, so Android hides the bridge's notification. The bridge
-              still runs; turn notifications on in Android settings to see it.
-            </Text>
+          {notifyOff && (bridge.enabled || refused) ? (
+            <View collapsable={false}>
+              <Text style={ui.small}>
+                Read Me needs to show a notification while the bridge is on, and notifications are off
+                for Read Me. Allow them in Android settings, then turn the bridge on.
+              </Text>
+              <Pressable
+                style={ui.button}
+                accessibilityLabel="open app settings"
+                onPress={() => {
+                  Linking.openSettings().catch(() => undefined);
+                }}>
+                <Text style={ui.buttonText}>Open Read Me's settings</Text>
+              </Pressable>
+            </View>
           ) : null}
           {portError ? <Text style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
           {bridge.enabled && bridge.token !== null ? (

@@ -25,15 +25,19 @@ object Http {
   const val INVALID = -1L
   private val DIGITS = Regex("[0-9]{1,10}")
 
-  /** Reads up to and including the blank line, never past it, so the body stays in [input]. */
-  fun readHead(input: InputStream, max: Int = MAX_HEAD): HeadRead {
+  /**
+   * Reads up to and including the blank line, never past it, so the body stays in [input].
+   * [rejected] receives the bytes read when the head is too large or malformed, so the caller
+   * can still find the Origin for its error reply.
+   */
+  fun readHead(input: InputStream, max: Int = MAX_HEAD, rejected: (ByteArray) -> Unit = {}): HeadRead {
     val buf = ByteArrayOutputStream()
     var matched = 0 // bytes of "\r\n\r\n" seen in a row
     while (true) {
       val c = input.read()
-      if (c == -1) return if (buf.size() == 0) HeadRead.Closed else HeadRead.Malformed
+      if (c == -1) return if (buf.size() == 0) HeadRead.Closed else HeadRead.Malformed.also { rejected(buf.toByteArray()) }
       buf.write(c)
-      if (buf.size() > max) return HeadRead.TooLarge
+      if (buf.size() > max) return HeadRead.TooLarge.also { rejected(buf.toByteArray()) }
       matched = when {
         c == '\r'.code && (matched == 0 || matched == 2) -> matched + 1
         c == '\n'.code && (matched == 1 || matched == 3) -> matched + 1
@@ -42,7 +46,7 @@ object Http {
       }
       if (matched == 4) {
         val bytes = buf.toByteArray()
-        return parse(String(bytes, 0, bytes.size - 4, Charsets.ISO_8859_1))
+        return parse(String(bytes, 0, bytes.size - 4, Charsets.ISO_8859_1)).also { if (it == HeadRead.Malformed) rejected(bytes) }
       }
     }
   }
