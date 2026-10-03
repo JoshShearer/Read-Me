@@ -16,9 +16,12 @@ data class PlaybackSnapshot(
 
 /** The engine side of the queue. PlaybackService backs it with a TextToSpeech instance. */
 interface Speaker {
-  fun speak(id: String, text: String)
+  /** False when the engine refused the utterance: it is not bound, or its process died. */
+  fun speak(id: String, text: String): Boolean
   fun stop()
   fun setRate(rate: Float)
+  /** Whether the engine is speaking or has utterances queued. */
+  fun isSpeaking(): Boolean
 }
 
 /**
@@ -29,4 +32,6 @@ interface PlaybackSink {
   fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int)
   fun finished(itemId: Long)
   fun changed(snapshot: PlaybackSnapshot)
+  /** The engine refused work or stopped speaking while the queue played; the queue has paused. */
+  fun engineLost()
 }

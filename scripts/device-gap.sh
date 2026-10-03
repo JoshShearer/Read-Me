@@ -107,6 +107,8 @@ device_has "$log" 'playback finished' && { echo "FAIL: the text ran out before $
 [ "$(num max)" -le 1000 ] || { echo "FAIL: max $(num max) ms > 1000"; fail=1; }
 [ "$(num stalls)" -eq 0 ] || { echo "FAIL: $(num stalls) stalls"; fail=1; }
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+# REA-25: a cold engine (8 s to first audio) must not be taken for a dead one.
+if rlog | grep -q 'engine lost'; then echo "FAIL: a stall was declared during normal playback"; fail=1; fi
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then
   echo "FAIL: crash logged"; fail=1
 fi

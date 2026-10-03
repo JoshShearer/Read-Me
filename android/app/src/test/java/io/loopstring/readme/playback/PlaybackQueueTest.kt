@@ -11,20 +11,36 @@ class PlaybackQueueTest {
     val spoken = mutableListOf<String>() // utterance ids, in order
     var stops = 0
     val rates = mutableListOf<Float>()
-    override fun speak(id: String, text: String) { spoken += id }
+    var refuse = false
+    var speaking = true
+    override fun speak(id: String, text: String): Boolean {
+      if (refuse) return false
+      spoken += id
+      return true
+    }
     override fun stop() { stops++ }
     override fun setRate(rate: Float) { rates += rate }
+    override fun isSpeaking() = speaking
   }
 
   private class FakeSink : PlaybackSink {
     val saves = mutableListOf<Triple<Long, Int, Int>>()
     val finished = mutableListOf<Long>()
     val snapshots = mutableListOf<PlaybackSnapshot>()
+    var failSaves = false
     override fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int) {
+      // Stands in for SQLiteDiskIOException, a RuntimeException that Store.savePosition rethrows.
+      if (failSaves) throw RuntimeException("disk I/O")
       saves += Triple(itemId, paragraphIndex, charOffset)
     }
-    override fun finished(itemId: Long) { finished += itemId }
+    var failFinish = false
+    override fun finished(itemId: Long) {
+      if (failFinish) throw RuntimeException("disk I/O")
+      finished += itemId
+    }
     override fun changed(snapshot: PlaybackSnapshot) { snapshots += snapshot }
+    var lost = 0
+    override fun engineLost() { lost++ }
   }
 
   private var now = 0L
@@ -216,5 +232,166 @@ class PlaybackQueueTest {
     queue.onStart("$g:0"); queue.onDone("$g:0"); queue.onStart("$g:1")
     assertEquals(SentenceRow(0, 5, 9, "A1."), sink.snapshots.last().sentence)
     assertTrue(sink.snapshots.last().playing)
+  }
+
+  @Test fun anItemStoppedForDeletionCannotBeLoadedAfterwards() {
+    // REA-18: deleteItem stops the queue, then deletes; the service may have checked the
+    // item exists just before and load it just after.
+    queue.stopItem(7)
+    assertFalse(queue.load(7, rows, 0, 2.0f))
+    assertTrue(speaker.spoken.isEmpty())
+    assertNull(queue.snapshot().itemId)
+  }
+
+  @Test fun stoppingAnotherItemLeavesPlaybackAlone() {
+    queue.load(7, rows, 0, 2.0f)
+    queue.stopItem(8)
+    assertTrue(queue.snapshot().playing)
+    assertEquals(7L, queue.snapshot().itemId)
+    assertTrue(queue.load(9, rows, 0, 2.0f))
+  }
+
+  @Test fun aFailedSaveStillQueuesTheNextSentenceAndIsCounted() {
+    // REA-18: Store.savePosition rethrows anything but a constraint error; a throw before the
+    // top-up left the queue playing with nothing queued.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    sink.failSaves = true
+    queue.onDone("$g:0")
+    assertEquals("$g:3", lastId())
+    assertTrue(queue.snapshot().playing)
+    assertTrue(queue.pause())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(2, queue.takeStats().saveErrors)
+  }
+
+  @Test fun threeErrorsInARowPauseAtTheFirstFailedSentence() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.onError("$g:2")
+    assertFalse(queue.snapshot().playing)
+    assertEquals(7L, queue.snapshot().itemId)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last()) // sentence 0 starts paragraph 0 at 0
+    assertTrue(sink.finished.isEmpty())
+  }
+
+  @Test fun anErrorBetweenGoodSentencesStillAdvances() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onStart("$g:1")
+    queue.onDone("$g:1")
+    queue.onError("$g:2")
+    assertTrue(queue.snapshot().playing)
+  }
+
+  @Test fun errorsAtTheEndPauseInsteadOfArchiving() {
+    queue.load(7, rows, 4, 2.0f)
+    val g = gen(lastId())
+    queue.onDone("$g:4")
+    queue.onError("$g:5")
+    assertTrue(sink.finished.isEmpty())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 3, 5), sink.saves.last()) // sentence 5 is paragraph 3 offset 5
+  }
+
+  @Test fun aRefusedSpeakPausesAndReportsTheEngineLost() {
+    // REA-18: after the engine process died, resume "played" silently with the wake lock held.
+    speaker.refuse = true
+    queue.load(7, rows, 2, 2.0f)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(1, sink.lost)
+    assertEquals(Triple(7L, 1, 0), sink.saves.last())
+  }
+
+  @Test fun anEngineThatStopsSpeakingIsLostAfterThreeChecks() {
+    queue.load(7, rows, 0, 2.0f)
+    speaker.speaking = false
+    assertFalse(queue.checkStall())
+    assertFalse(queue.checkStall())
+    assertTrue(queue.checkStall())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(1, sink.lost)
+  }
+
+  @Test fun aSlowFirstSentenceIsNotAStall() {
+    // A cold engine took 8 s to first audio (AGENTS.md); progress or speaking resets the count.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    speaker.speaking = false
+    queue.checkStall()
+    queue.checkStall()
+    queue.onStart("$g:0")
+    assertFalse(queue.checkStall())
+    assertFalse(queue.checkStall())
+    assertTrue(queue.snapshot().playing)
+    assertEquals(0, sink.lost)
+  }
+
+  @Test fun aPausedQueueIsNeverStalled() {
+    queue.load(7, rows, 0, 2.0f)
+    queue.pause()
+    speaker.speaking = false
+    repeat(5) { assertFalse(queue.checkStall()) }
+  }
+
+  @Test fun aSwappedSpeakerGetsTheRateAndTheNextResume() {
+    queue.load(7, rows, 2, 1.5f)
+    speaker.refuse = true
+    queue.next() // refused: lost
+    val fresh = FakeSpeaker()
+    queue.swapSpeaker(fresh)
+    assertEquals(listOf(1.5f), fresh.rates)
+    assertTrue(queue.resume())
+    assertEquals(3, fresh.spoken.size)
+  }
+
+  @Test fun errorsReportedAfterAStartStillCountAsARun() {
+    // Final review: Android delivers onStart then onError when an engine starts an utterance
+    // before failing it; resetting the run on onStart let a failing engine read silence to the end.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    for (i in 0..2) {
+      queue.onStart("$g:$i")
+      queue.onError("$g:$i")
+    }
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+  }
+
+  @Test fun aJumpEndsTheErrorRun() {
+    // Critique: two errors, Next, Next, then one error paused back at sentence 0.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.next()
+    queue.next()
+    queue.onError("${gen(lastId())}:4")
+    assertTrue(queue.snapshot().playing)
+  }
+
+  @Test fun aNewItemStartsWithNoErrorRun() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.pause()
+    queue.load(8, rows.take(2), 0, 2.0f)
+    queue.onError("${gen(lastId())}:0")
+    assertTrue(queue.snapshot().playing)
+    assertEquals(8L, queue.snapshot().itemId)
+  }
+
+  @Test fun aFailedArchiveStillClearsTheQueue() {
+    sink.failFinish = true
+    queue.load(7, rows.take(1), 0, 2.0f)
+    val g = gen(lastId())
+    queue.onStart("$g:0")
+    queue.onDone("$g:0")
+    assertEquals(null, queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
   }
 }

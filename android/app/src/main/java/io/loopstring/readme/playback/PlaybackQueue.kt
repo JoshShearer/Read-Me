@@ -2,7 +2,7 @@ package io.loopstring.readme.playback
 
 import io.loopstring.readme.store.Rate
 
-data class QueueStats(val gaps: GapSummary, val errors: Int)
+data class QueueStats(val gaps: GapSummary, val errors: Int, val saveErrors: Int)
 
 /**
  * R-M07 and srs.md "Playback": the sentence queue the native service owns (AGENTS.md 11).
@@ -11,7 +11,7 @@ data class QueueStats(val gaps: GapSummary, val errors: Int)
  * ignored. Gaps (onDone(n) to onStart(n+1)) are measured only across continuous play.
  */
 class PlaybackQueue(
-  private val speaker: Speaker,
+  private var speaker: Speaker,
   private val sink: PlaybackSink,
   private val clock: () -> Long,
   private val maxChars: Int = Utterances.MAX_CHARS,
@@ -27,10 +27,17 @@ class PlaybackQueue(
   private var lastDoneAt = -1L
   private val gaps = ArrayList<Long>()
   private var errors = 0
+  private var saveErrors = 0
+  // Reset only by onDone: an engine may report onStart and then onError for the same utterance.
+  private var consecutiveErrors = 0
+  private var firstErrorIndex = -1
+  private var stallTicks = 0
+  // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
+  private val deleted = HashSet<Long>()
 
   fun load(itemId: Long, sentences: List<SentenceRow>, startIndex: Int, rate: Float): Boolean =
     synchronized(lock) {
-      if (startIndex !in sentences.indices) return false
+      if (itemId in deleted || startIndex !in sentences.indices) return false
       saveLocked()
       val fitted = Utterances.fit(sentences, startIndex, maxChars)
       this.itemId = itemId
@@ -97,8 +104,9 @@ class PlaybackQueue(
     clearLocked()
   }
 
-  /** The item is being deleted: stop without saving into it. */
+  /** The item is being deleted: stop without saving into it, and never load it again. */
   fun stopItem(id: Long) = synchronized(lock) {
+    deleted += id
     if (itemId != id) return
     flushLocked()
     clearLocked()
@@ -106,6 +114,7 @@ class PlaybackQueue(
 
   fun onStart(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
     current = i
@@ -114,23 +123,43 @@ class PlaybackQueue(
 
   fun onDone(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
+    consecutiveErrors = 0
     lastDoneAt = clock()
     advanceLocked(i)
   }
 
   fun onError(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
     errors++
     lastDoneAt = -1
+    if (consecutiveErrors == 0) firstErrorIndex = i
+    consecutiveErrors++
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      pauseAtLocked(firstErrorIndex)
+      return
+    }
     advanceLocked(i)
+  }
+
+  /** Stops at [index] and saves it, so the user resumes where the engine started failing. */
+  private fun pauseAtLocked(index: Int) {
+    flushLocked()
+    playing = false
+    current = index
+    consecutiveErrors = 0
+    saveLocked()
+    publishLocked()
   }
 
   fun snapshot(): PlaybackSnapshot = synchronized(lock) { snapshotLocked() }
 
   fun takeStats(): QueueStats = synchronized(lock) {
-    val s = QueueStats(GapStats.summarize(gaps), errors)
+    val s = QueueStats(GapStats.summarize(gaps), errors, saveErrors)
     gaps.clear()
     errors = 0
+    saveErrors = 0
     s
   }
 
@@ -138,14 +167,24 @@ class PlaybackQueue(
     val id = itemId ?: return
     val next = i + 1
     if (next >= rows.size) {
+      if (consecutiveErrors > 0) {
+        // The last sentences failed: that is not reading to the end (R-M11 archives only then).
+        pauseAtLocked(firstErrorIndex)
+        return
+      }
       flushLocked()
       playing = false
-      sink.finished(id)
+      // A failed archive must still clear the queue, or the session shows "Reading" forever.
+      try {
+        sink.finished(id)
+      } catch (e: RuntimeException) {
+        saveErrors++
+      }
       clearLocked()
       return
     }
     current = next
-    sink.savePosition(id, rows[next].paragraphIndex, rows[next].start)
+    saveRowLocked(id, rows[next])
     topUpLocked()
   }
 
@@ -161,6 +200,9 @@ class PlaybackQueue(
 
   private fun restartLocked(index: Int) {
     flushLocked()
+    stallTicks = 0
+    // A new generation: errors before a jump or another item are not this run's.
+    consecutiveErrors = 0
     current = index
     queuedUntil = index
     playing = true
@@ -176,15 +218,53 @@ class PlaybackQueue(
 
   private fun topUpLocked() {
     while (playing && queuedUntil < rows.size && queuedUntil - current < AHEAD) {
-      speaker.speak("$generation:$queuedUntil", rows[queuedUntil].text)
+      if (!speaker.speak("$generation:$queuedUntil", rows[queuedUntil].text)) {
+        lostLocked()
+        return
+      }
       queuedUntil++
     }
+  }
+
+  /** Called every few seconds by the service while playing. True when the engine is lost. */
+  fun checkStall(): Boolean = synchronized(lock) {
+    if (!playing || speaker.isSpeaking()) {
+      stallTicks = 0
+      return false
+    }
+    if (++stallTicks < STALL_TICKS) return false
+    lostLocked()
+    true
+  }
+
+  /** A rebound engine (PlaybackService). Paused stays paused; the rate is applied once more. */
+  fun swapSpeaker(s: Speaker) = synchronized(lock) {
+    speaker = s
+    s.setRate(rate)
+  }
+
+  private fun lostLocked() {
+    flushLocked()
+    playing = false
+    stallTicks = 0
+    saveLocked()
+    publishLocked()
+    sink.engineLost()
   }
 
   private fun saveLocked() {
     val id = itemId ?: return
     val r = rows.getOrNull(current) ?: return
-    sink.savePosition(id, r.paragraphIndex, r.start)
+    saveRowLocked(id, r)
+  }
+
+  /** R-M11 asks for a save per sentence; a failed save must not stop the reading. */
+  private fun saveRowLocked(id: Long, r: SentenceRow) {
+    try {
+      sink.savePosition(id, r.paragraphIndex, r.start)
+    } catch (e: RuntimeException) {
+      saveErrors++
+    }
   }
 
   private fun clearLocked() {
@@ -194,6 +274,7 @@ class PlaybackQueue(
     queuedUntil = 0
     playing = false
     lastDoneAt = -1
+    consecutiveErrors = 0
     publishLocked()
   }
 
@@ -211,5 +292,7 @@ class PlaybackQueue(
 
   companion object {
     const val AHEAD = 3
+    const val MAX_CONSECUTIVE_ERRORS = 3
+    const val STALL_TICKS = 3
   }
 }

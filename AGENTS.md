@@ -40,8 +40,9 @@ npm run device:smoke                        # takes the slot, installs, launches
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
 npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text (clears app data)
+npm run device:lifecycle  # REA-25: a paused session survives 75 s in the background and headset Play resumes it (ADR 0009); a force-stopped TTS engine is rebound and reading resumes (clears app data; about 3 min)
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
-GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
+GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): once, before a release (Phase 6b acceptance). Branches that touch queue timing run the 2-min default
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
@@ -161,6 +162,14 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   app code identical across the three. A cold engine took 8 s to first audio once (the
   engine's own `time-to-first-audio: 8056` log, build 446b630, device:playback run).
   R-M06's blocking state: the Reader probes the engine on open (Phase 4).
+  Phase 6a (REA-25), verified 2026-10-03 on build 9332d61: a user pause holds the foreground
+  (ADR 0009, 30 min by design; on the phone, headset Play worked 75 s after a pause, where
+  before Android removed the paused service at 60 s and Play did nothing; the 30 min and the
+  expiry are unit-tested only); a dead engine (force-stopped mid-read) is noticed within 15 s and
+  rebound once per user Play; three engine errors in a row pause instead of archiving; a
+  failed position save no longer stops reading. `npm run device:lifecycle`, `device:playback`,
+  `device:ui`, `device:bridge` passed; `GAP_MINUTES=10 npm run device:gap`: n=92 p50=11
+  p95=18 max=29 ms, stalls 0, errors 0.
 - **UI (Phase 4, REA-19):** List (unread / Archive, words, progress, R-M10 states and
   actions), Trim (first open; tap, "Cut everything after this", "Start here"), Reader
   (highlight kept in view, transport, engine card probed on open), Settings (offline voices,

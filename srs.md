@@ -183,6 +183,8 @@ Speech MUST use Android's `android.speech.tts.TextToSpeech` only.
 - Playback MUST continue with the screen off and the app in the background, through a
   foreground service with a media session, so lock-screen, notification and headset
   controls work (play/pause, next, previous).
+- After a user pause, those controls MUST keep working for at least 30 minutes; after that
+  the session may end and resuming may need the app (ADR 0009, amended 2026-10-03, REA-25).
 - Audio focus MUST be requested; playback pauses on transient loss (a call, a navigation
   prompt) and on headphones disconnecting.
 

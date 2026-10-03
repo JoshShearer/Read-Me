@@ -26,7 +26,8 @@
     "device:bridge": "bash scripts/device-bridge-e2e.sh",
     "brand": "python3 scripts/gen-brand.py",
     "device:screenshots": "bash scripts/device-screenshots.sh",
-    "device:themes": "bash scripts/device-themes.sh"
+    "device:themes": "bash scripts/device-themes.sh",
+    "device:lifecycle": "bash scripts/device-lifecycle.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

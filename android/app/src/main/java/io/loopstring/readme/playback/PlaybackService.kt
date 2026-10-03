@@ -53,6 +53,19 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private var wakeLock: PowerManager.WakeLock? = null
   private var noisyRegistered = false
   private var waiting: PlaybackHub.Request? = null
+  private var rebinding = false
+  // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
+  private var resumeAfterRebind = false
+  private var pausedAt = -1L
+  private val pauseExpired = Runnable { if (!destroyed) syncForeground(queue.snapshot()) }
+  private var rebinds = 0
+  private val stallTick = object : Runnable {
+    override fun run() {
+      if (destroyed) return
+      queue.checkStall()
+      main.postDelayed(this, STALL_TICK_MS)
+    }
+  }
   private var title = ""
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
@@ -157,6 +170,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     title = r.title
     val rate = Settings(this).rate
+    rebinds = 0
     if (queue.load(r.itemId, r.sentences, r.startIndex, rate)) {
       Log.i(TAG, "playback start item=${r.itemId} sentences=${r.sentences.size} from=${r.startIndex} rate=$rate")
     } else {
@@ -167,18 +181,31 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   /** Every control path (JS, notification, media session, noisy, focus) comes through here. */
   private fun handle(action: String): Boolean = when (action) {
     PlaybackCommands.ACTION_PAUSE -> {
+      resumeAfterRebind = false
       val heldForFocus = pausedForFocus
       pausedForFocus = false
-      // Already paused by a focus loss: no snapshot follows, so release what that held here.
-      queue.pause() || heldForFocus.also { if (it) main.post { if (!destroyed) releaseHeld() } }
+      // Already paused by a focus loss: no snapshot follows, so release what that held here,
+      // and start ADR 0009's window as a user pause would.
+      queue.pause() || heldForFocus.also {
+        if (it) main.post { if (!destroyed) { startPauseWindow(); releaseHeld() } }
+      }
     }
-    PlaybackCommands.ACTION_PLAY -> queue.resume()
+    PlaybackCommands.ACTION_PLAY -> {
+      rebinds = 0
+      queue.resume()
+    }
     PlaybackCommands.ACTION_TOGGLE ->
-      if (queue.snapshot().playing) handle(PlaybackCommands.ACTION_PAUSE) else queue.resume()
+      if (queue.snapshot().playing) {
+        handle(PlaybackCommands.ACTION_PAUSE)
+      } else {
+        rebinds = 0
+        queue.resume()
+      }
     PlaybackCommands.ACTION_NEXT -> queue.next()
     PlaybackCommands.ACTION_PREVIOUS -> queue.previous()
     PlaybackCommands.ACTION_BACK_PARAGRAPH -> queue.backParagraph()
     PlaybackCommands.ACTION_STOP -> {
+      resumeAfterRebind = false
       queue.stop()
       true
     }
@@ -223,6 +250,20 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   // --- TtsSpeaker.Callbacks ---
 
   override fun onReady(status: TtsSpeaker.EngineStatus) {
+    if (rebinding) {
+      rebinding = false
+      PlaybackHub.engine = status.wire
+      if (status == TtsSpeaker.EngineStatus.READY) {
+        Log.i(TAG, "playback engine rebound")
+        // A play request made while rebinding wins over resuming what was lost.
+        val r = waiting
+        waiting = null
+        if (r != null) load(r) else if (resumeAfterRebind) queue.resume()
+      } else {
+        Log.i(TAG, "playback engine ${status.wire}")
+      }
+      return
+    }
     PlaybackHub.engine = status.wire
     val r = waiting
     waiting = null
@@ -250,6 +291,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     Log.i(TAG, "playback finished item=$itemId")
   }
 
+  override fun engineLost() {
+    main.post { if (!destroyed) recoverEngine() }
+  }
+
   override fun changed(snapshot: PlaybackSnapshot) {
     PlaybackHub.publish(snapshot)
     main.post { if (!destroyed) onSnapshot(snapshot) }
@@ -273,19 +318,39 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       logStats()
       val hold = PausePolicy.hold(pausedForFocus)
       releasePlayingResources(abandon = !hold.focus, keepNoisy = hold.noisy)
+      if (!pausedForFocus) startPauseWindow()
     }
     updateSession(s)
     syncForeground(s)
   }
 
+  /** REA-18: rebind playback's own engine (never the bridge's) and resume where it stopped. */
+  private fun recoverEngine() {
+    if (!RecoveryPolicy.rebind(rebinds, rebinding)) {
+      if (!rebinding) Log.i(TAG, "playback engine lost; paused")
+      return
+    }
+    rebinds++
+    rebinding = true
+    resumeAfterRebind = true
+    Log.i(TAG, "playback engine lost; rebinding")
+    speaker.shutdown()
+    speaker = TtsSpeaker(this, this, Settings(this).voice)
+    queue.swapSpeaker(speaker)
+  }
+
   /** False when playback could not be granted focus or the foreground, and was paused. */
   private fun startPlaying(): Boolean {
+    pausedAt = -1L
+    main.removeCallbacks(pauseExpired)
     pausedForFocus = false
     if (!requestFocus()) {
       queue.pause()
       return false
     }
     claim.claim()
+    main.removeCallbacks(stallTick)
+    main.postDelayed(stallTick, STALL_TICK_MS)
     if (wakeLock == null) {
       // SPIKE-05 measured gaps on USB power without a wake lock; battery and Doze were never
       // measured, so playback holds one while speaking (device:gap measures it).
@@ -302,12 +367,20 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     return true
   }
 
+  /** ADR 0009: a user pause keeps the foreground for PauseWindow.HOLD_MS. */
+  private fun startPauseWindow() {
+    pausedAt = SystemClock.elapsedRealtime()
+    main.removeCallbacks(pauseExpired)
+    main.postDelayed(pauseExpired, PauseWindow.HOLD_MS)
+  }
+
   private fun releaseHeld() {
     releasePlayingResources(abandon = true)
     syncForeground(queue.snapshot())
   }
 
   private fun releasePlayingResources(abandon: Boolean, keepNoisy: Boolean = false) {
+    main.removeCallbacks(stallTick)
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     if (noisyRegistered && !keepNoisy) {
@@ -320,11 +393,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun syncForeground(s: PlaybackSnapshot) {
     val bridgeOn = bridge != null
     if (s.itemId == null && !bridgeOn) return
-    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn)) {
+    val held = PauseWindow.held(pausedAt, SystemClock.elapsedRealtime())
+    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn, held)) {
       goForeground(s)
     } else {
-      // Paused: the notification stays (with Play) but can be swiped away, and the system may
-      // stop the service; the position is already saved.
+      // Paused for longer than ADR 0009's window: the notification stays (with Play) but can be
+      // swiped away, and the system may stop the service; the position is already saved.
       stopForeground(STOP_FOREGROUND_DETACH)
       getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
     }
@@ -347,6 +421,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   private fun end() {
+    main.removeCallbacks(pauseExpired)
+    pausedAt = -1L
     waiting = null
     releasePlayingResources(abandon = true)
     session.isActive = false
@@ -362,8 +438,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun logStats() {
     val st = queue.takeStats()
     val g = st.gaps
-    if (g.count == 0 && st.errors == 0) return
-    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors}")
+    if (g.count == 0 && st.errors == 0 && st.saveErrors == 0) return
+    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors} saveErrors=${st.saveErrors}")
   }
 
   // --- focus, noisy, session, notification ---
@@ -486,6 +562,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     private const val CHANNEL = "playback"
     const val NOTIFICATION_ID = 3001
     private const val WAKE_LOCK_MS = 4 * 60 * 60 * 1000L
+    private const val STALL_TICK_MS = 5_000L
 
     /** Called from ReadMeSpeech while the app is in the foreground (the user tapped play). */
     fun start(context: Context, request: PlaybackHub.Request) {
