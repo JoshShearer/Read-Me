@@ -181,8 +181,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackCommands.ACTION_PAUSE -> {
       val heldForFocus = pausedForFocus
       pausedForFocus = false
-      // Already paused by a focus loss: no snapshot follows, so release what that held here.
-      queue.pause() || heldForFocus.also { if (it) main.post { if (!destroyed) releaseHeld() } }
+      // Already paused by a focus loss: no snapshot follows, so release what that held here,
+      // and start ADR 0009's window as a user pause would.
+      queue.pause() || heldForFocus.also {
+        if (it) main.post { if (!destroyed) { startPauseWindow(); releaseHeld() } }
+      }
     }
     PlaybackCommands.ACTION_PLAY -> {
       rebinds = 0
@@ -248,7 +251,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       PlaybackHub.engine = status.wire
       if (status == TtsSpeaker.EngineStatus.READY) {
         Log.i(TAG, "playback engine rebound")
-        queue.resume()
+        // A play request made while rebinding wins over resuming what was lost.
+        val r = waiting
+        waiting = null
+        if (r != null) load(r) else queue.resume()
       } else {
         Log.i(TAG, "playback engine ${status.wire}")
       }
@@ -308,11 +314,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       logStats()
       val hold = PausePolicy.hold(pausedForFocus)
       releasePlayingResources(abandon = !hold.focus, keepNoisy = hold.noisy)
-      if (!pausedForFocus) {
-        pausedAt = SystemClock.elapsedRealtime()
-        main.removeCallbacks(pauseExpired)
-        main.postDelayed(pauseExpired, PauseWindow.HOLD_MS)
-      }
+      if (!pausedForFocus) startPauseWindow()
     }
     updateSession(s)
     syncForeground(s)
@@ -358,6 +360,13 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       noisyRegistered = true
     }
     return true
+  }
+
+  /** ADR 0009: a user pause keeps the foreground for PauseWindow.HOLD_MS. */
+  private fun startPauseWindow() {
+    pausedAt = SystemClock.elapsedRealtime()
+    main.removeCallbacks(pauseExpired)
+    main.postDelayed(pauseExpired, PauseWindow.HOLD_MS)
   }
 
   private fun releaseHeld() {

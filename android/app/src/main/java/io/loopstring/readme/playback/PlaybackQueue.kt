@@ -28,6 +28,7 @@ class PlaybackQueue(
   private val gaps = ArrayList<Long>()
   private var errors = 0
   private var saveErrors = 0
+  // Reset only by onDone: an engine may report onStart and then onError for the same utterance.
   private var consecutiveErrors = 0
   private var firstErrorIndex = -1
   private var stallTicks = 0
@@ -114,7 +115,6 @@ class PlaybackQueue(
   fun onStart(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
     stallTicks = 0
-    consecutiveErrors = 0
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
     current = i

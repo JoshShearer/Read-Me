@@ -343,4 +343,17 @@ class PlaybackQueueTest {
     assertTrue(queue.resume())
     assertEquals(3, fresh.spoken.size)
   }
+
+  @Test fun errorsReportedAfterAStartStillCountAsARun() {
+    // Final review: Android delivers onStart then onError when an engine starts an utterance
+    // before failing it; resetting the run on onStart let a failing engine read silence to the end.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    for (i in 0..2) {
+      queue.onStart("$g:$i")
+      queue.onError("$g:$i")
+    }
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+  }
 }

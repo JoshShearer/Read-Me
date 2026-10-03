@@ -140,4 +140,49 @@ class PlaybackServiceTest {
     assertFalse(shadowOf(c.get()).isStoppedBySelf)
     c.destroy()
   }
+
+  private fun request(id: Long) = PlaybackHub.Request(id, "t", listOf(SentenceRow(0, 0, 5, "Hello"), SentenceRow(0, 6, 11, "World")), 0)
+
+  /** A service playing item 1 on a ready engine (Robolectric's engine never calls back by itself). */
+  private fun playing(): org.robolectric.android.controller.ServiceController<PlaybackService> {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val id = Store.get(ctx).insertText("t", listOf("Hello World"), 1L)
+    PlaybackHub.offer(request(id))
+    val c = Robolectric.buildService(PlaybackService::class.java,
+      Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    shadowOf(Looper.getMainLooper()).idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    return c
+  }
+
+  @Test fun aPauseDuringAFocusPauseKeepsThePausedWindow() {
+    // Final review: Pause pressed while a call holds playback skipped ADR 0009's window, so the
+    // service left the foreground at once and Android stopped it about a minute later.
+    val c = playing()
+    val am = ApplicationProvider.getApplicationContext<Context>().getSystemService(android.media.AudioManager::class.java)
+    shadowOf(am).lastAudioFocusRequest.listener.onAudioFocusChange(android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+    shadowOf(Looper.getMainLooper()).idle()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertFalse(shadowOf(c.get()).isForegroundStopped)
+    c.destroy()
+  }
+
+  @Test fun aPlayRequestDuringARebindIsPlayedWhenTheEngineIsBack() {
+    // Final review: the rebind branch resumed the old item and left the new request waiting.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() } // Robolectric's engine is never speaking
+    shadowOf(Looper.getMainLooper()).idle() // recoverEngine: rebinding
+    val second = Store.get(ctx).insertText("u", listOf("Hello World"), 2L)
+    PlaybackHub.offer(request(second))
+    c.withIntent(Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)).startCommand(0, 2)
+    shadowOf(Looper.getMainLooper()).idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertEquals(second, PlaybackHub.queue!!.snapshot().itemId)
+    c.destroy()
+  }
 }
