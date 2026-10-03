@@ -25,5 +25,10 @@ unchanged: it holds everything until focus returns.
   resuming needs the app; the position is saved (R-M11).
 - The notification cannot be swiped away for those 30 minutes on Android versions that keep
   foreground notifications ongoing.
+- The window is at least 30 minutes, not exactly 30: the expiry is a `Handler` delay, whose
+  clock stops while the phone is in deep sleep, so with the screen off it can end later.
+- Verified on the reference device (2026-10-03, build 9332d61): Play from the headset key
+  75 s after a pause, past the 60 s at which Android removed the service before. The full
+  30 minutes, and the expiry, are covered by unit tests only.
 - 30 minutes is a choice, not a measurement: long enough for a conversation or a stop, short
   enough not to sit in the status bar all day. Change `PauseWindow.HOLD_MS` and this ADR together.

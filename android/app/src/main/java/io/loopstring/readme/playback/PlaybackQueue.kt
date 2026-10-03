@@ -174,7 +174,12 @@ class PlaybackQueue(
       }
       flushLocked()
       playing = false
-      sink.finished(id)
+      // A failed archive must still clear the queue, or the session shows "Reading" forever.
+      try {
+        sink.finished(id)
+      } catch (e: RuntimeException) {
+        saveErrors++
+      }
       clearLocked()
       return
     }
@@ -196,6 +201,8 @@ class PlaybackQueue(
   private fun restartLocked(index: Int) {
     flushLocked()
     stallTicks = 0
+    // A new generation: errors before a jump or another item are not this run's.
+    consecutiveErrors = 0
     current = index
     queuedUntil = index
     playing = true
@@ -267,6 +274,7 @@ class PlaybackQueue(
     queuedUntil = 0
     playing = false
     lastDoneAt = -1
+    consecutiveErrors = 0
     publishLocked()
   }
 

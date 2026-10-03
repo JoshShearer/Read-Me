@@ -33,7 +33,11 @@ class PlaybackQueueTest {
       if (failSaves) throw RuntimeException("disk I/O")
       saves += Triple(itemId, paragraphIndex, charOffset)
     }
-    override fun finished(itemId: Long) { finished += itemId }
+    var failFinish = false
+    override fun finished(itemId: Long) {
+      if (failFinish) throw RuntimeException("disk I/O")
+      finished += itemId
+    }
     override fun changed(snapshot: PlaybackSnapshot) { snapshots += snapshot }
     var lost = 0
     override fun engineLost() { lost++ }
@@ -355,5 +359,39 @@ class PlaybackQueueTest {
     }
     assertFalse(queue.snapshot().playing)
     assertEquals(Triple(7L, 0, 0), sink.saves.last())
+  }
+
+  @Test fun aJumpEndsTheErrorRun() {
+    // Critique: two errors, Next, Next, then one error paused back at sentence 0.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.next()
+    queue.next()
+    queue.onError("${gen(lastId())}:4")
+    assertTrue(queue.snapshot().playing)
+  }
+
+  @Test fun aNewItemStartsWithNoErrorRun() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.pause()
+    queue.load(8, rows.take(2), 0, 2.0f)
+    queue.onError("${gen(lastId())}:0")
+    assertTrue(queue.snapshot().playing)
+    assertEquals(8L, queue.snapshot().itemId)
+  }
+
+  @Test fun aFailedArchiveStillClearsTheQueue() {
+    sink.failFinish = true
+    queue.load(7, rows.take(1), 0, 2.0f)
+    val g = gen(lastId())
+    queue.onStart("$g:0")
+    queue.onDone("$g:0")
+    assertEquals(null, queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
   }
 }

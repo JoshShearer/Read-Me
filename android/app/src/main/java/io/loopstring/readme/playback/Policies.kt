@@ -89,7 +89,7 @@ data class PauseHold(val foreground: Boolean, val noisy: Boolean, val focus: Boo
  * keep the foreground (Android 12+ refuses a foreground start from the background, so a resume
  * on focus gain with the screen off would fail), the focus request (to hear the gain) and the
  * noisy receiver (headphones unplugged meanwhile must cancel that resume). A user pause keeps
- * nothing.
+ * neither focus nor the receiver; its foreground is ServiceLife's (ADR 0009).
  */
 object PausePolicy {
   fun hold(pausedForFocus: Boolean) = PauseHold(pausedForFocus, pausedForFocus, pausedForFocus)

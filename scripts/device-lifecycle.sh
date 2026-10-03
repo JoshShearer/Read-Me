@@ -11,6 +11,9 @@ device_require_unlocked
 device_install_release
 
 ENGINE=$(adb shell settings get secure tts_default_synth | tr -d '\r')
+case "$ENGINE" in
+  ''|null) echo "no default TTS engine set (Settings > Text-to-speech); cannot kill it"; exit 1 ;;
+esac
 text="Quietly the heron waited by the water while the morning went on without it."
 for i in $(seq 2 30); do
   text+="
@@ -63,6 +66,12 @@ adb shell input keyevent KEYCODE_HOME
 sleep 75
 n=$(adb shell dumpsys activity services "$PKG" | grep -cE 'ServiceRecord.*PlaybackService' || true)
 if [ "$n" -ge 1 ]; then echo "ok: the service is still there"; else echo "FAIL: the service is gone"; fail=1; fi
+# Still there is not enough: a paused service that left the foreground is the 60 s case.
+if adb shell dumpsys activity services "$PKG" | grep -q 'isForeground=true'; then
+  echo "ok: still in the foreground"
+else
+  echo "FAIL: no longer in the foreground"; fail=1
+fi
 adb logcat -c
 adb shell input keyevent KEYCODE_MEDIA_PLAY
 wait_log 'playback resumed item=1' 10 && echo "ok: headset Play resumed" || fail=1

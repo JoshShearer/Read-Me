@@ -185,4 +185,18 @@ class PlaybackServiceTest {
     assertEquals(second, PlaybackHub.queue!!.snapshot().itemId)
     c.destroy()
   }
+
+  @Test fun aPauseDuringARebindStaysPausedWhenTheEngineIsBack() {
+    // Critique F1: the rebind resumed unconditionally, so a headset Pause during it was lost.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() }
+    shadowOf(Looper.getMainLooper()).idle() // recoverEngine: rebinding
+    c.withIntent(Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_PAUSE)).startCommand(0, 2)
+    shadowOf(Looper.getMainLooper()).idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
 }

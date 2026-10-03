@@ -54,6 +54,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private var noisyRegistered = false
   private var waiting: PlaybackHub.Request? = null
   private var rebinding = false
+  // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
+  private var resumeAfterRebind = false
   private var pausedAt = -1L
   private val pauseExpired = Runnable { if (!destroyed) syncForeground(queue.snapshot()) }
   private var rebinds = 0
@@ -179,6 +181,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   /** Every control path (JS, notification, media session, noisy, focus) comes through here. */
   private fun handle(action: String): Boolean = when (action) {
     PlaybackCommands.ACTION_PAUSE -> {
+      resumeAfterRebind = false
       val heldForFocus = pausedForFocus
       pausedForFocus = false
       // Already paused by a focus loss: no snapshot follows, so release what that held here,
@@ -202,6 +205,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackCommands.ACTION_PREVIOUS -> queue.previous()
     PlaybackCommands.ACTION_BACK_PARAGRAPH -> queue.backParagraph()
     PlaybackCommands.ACTION_STOP -> {
+      resumeAfterRebind = false
       queue.stop()
       true
     }
@@ -254,7 +258,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
         // A play request made while rebinding wins over resuming what was lost.
         val r = waiting
         waiting = null
-        if (r != null) load(r) else queue.resume()
+        if (r != null) load(r) else if (resumeAfterRebind) queue.resume()
       } else {
         Log.i(TAG, "playback engine ${status.wire}")
       }
@@ -328,6 +332,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     rebinds++
     rebinding = true
+    resumeAfterRebind = true
     Log.i(TAG, "playback engine lost; rebinding")
     speaker.shutdown()
     speaker = TtsSpeaker(this, this, Settings(this).voice)

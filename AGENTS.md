@@ -163,8 +163,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   engine's own `time-to-first-audio: 8056` log, build 446b630, device:playback run).
   R-M06's blocking state: the Reader probes the engine on open (Phase 4).
   Phase 6a (REA-25), verified 2026-10-03 on build 9332d61: a user pause holds the foreground
-  30 min (ADR 0009; before, Android removed a paused background service after 60 s and
-  headset Play did nothing); a dead engine (force-stopped mid-read) is noticed within 15 s and
+  (ADR 0009, 30 min by design; on the phone, headset Play worked 75 s after a pause, where
+  before Android removed the paused service at 60 s and Play did nothing; the 30 min and the
+  expiry are unit-tested only); a dead engine (force-stopped mid-read) is noticed within 15 s and
   rebound once per user Play; three engine errors in a row pause instead of archiving; a
   failed position save no longer stops reading. `npm run device:lifecycle`, `device:playback`,
   `device:ui`, `device:bridge` passed; `GAP_MINUTES=10 npm run device:gap`: n=92 p50=11
