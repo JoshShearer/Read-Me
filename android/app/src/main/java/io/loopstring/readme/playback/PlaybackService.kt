@@ -227,7 +227,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       }
     }
     if (!want || bridge != null) return
-    val sy = TtsSynth(this, s.voice)
+    val sy = TtsSynth(this, s.voice, log = { Log.i(TAG, it) })
     try {
       bridge = BridgeServer(
         s.bridgePort,
