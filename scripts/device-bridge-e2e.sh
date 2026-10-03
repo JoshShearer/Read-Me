@@ -44,6 +44,14 @@ tap_desc() {
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
+# Settings scrolls: once the voices load, the bridge row can sit below the fold.
+scroll_to_desc() {
+  for _ in $(seq 6); do
+    ui | grep -qE "content-desc=\"$1\"" && return 0
+    adb shell input swipe 670 2400 670 900 300
+    sleep 1
+  done
+}
 on_screen() { for _ in $(seq 15); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done; return 1; }
@@ -145,6 +153,7 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 # The Reader is still open: back to the List, then Settings.
 adb shell input keyevent KEYCODE_BACK
 tap_desc settings
+scroll_to_desc 'bridge off'
 tap_desc 'bridge off'
 sleep 2
 check "the bridge is gone" "[ \"\$(code --max-time 3 $B/health)\" = 000 ]"
