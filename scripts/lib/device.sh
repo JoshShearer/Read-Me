@@ -112,6 +112,20 @@ device_crash_seen() {
   device_has "$log" "Fatal signal .*[^0-9]pid $pid [(]|>>> $PKG <<<|AndroidRuntime: Process: $PKG,"
 }
 
+# device_clear_app: clears Read Me's data and waits until its old tasks are gone. pm clear
+# removes them asynchronously, and a share started meanwhile was killed with them ("Killing
+# ... remove task", reference device, 2026-10-02, build 5695d8b, after device:bridge left
+# tasks open). Waits at most 10 s.
+device_clear_app() {
+  adb shell pm clear "$PKG" >/dev/null
+  for _ in $(seq 20); do
+    adb shell dumpsys activity activities | grep -qE "A=[0-9]+:$PKG\b" || return 0
+    sleep 0.5
+  done
+  echo "device_clear_app: $PKG still has tasks after 10 s" >&2
+  return 1
+}
+
 # Installs only an APK that `npm run build:release` stamped from this HEAD, and records the
 # stamp (commit and clean/dirty), not HEAD: commit, build, commit again and HEAD names a build
 # the phone is not running. A dirty stamp is allowed here and recorded as dirty; spike runs

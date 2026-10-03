@@ -23,7 +23,7 @@ device_take interactive
 device_require_unlocked
 device_install_release
 
-adb shell pm clear "$PKG" >/dev/null
+device_clear_app
 # Settings asks for this when the bridge is turned on (Android 13+); granted here so no dialog.
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 adb logcat -c

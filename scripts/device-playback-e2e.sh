@@ -19,7 +19,7 @@ for i in $(seq 2 9); do
 Paragraph $i begins here. It has a second sentence for the queue. A third one keeps the reader busy. The fourth closes paragraph $i."
 done
 
-adb shell pm clear "$PKG" >/dev/null
+device_clear_app
 adb logcat -c
 # The text goes on stdin, not the adb argv, which adbd logs (AGENTS.md, SPIKE-01).
 printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$text")" \
