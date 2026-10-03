@@ -153,7 +153,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       {bridge === null ? null : (
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
           <Toggle
-            label="Obsidian bridge"
+            label="Use the bridge"
             value={bridge.enabled}
             onValueChange={on => {
               if (!on) {

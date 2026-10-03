@@ -63,8 +63,8 @@ tap_text() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 on_screen() { for _ in $(seq 15); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
-# REA-28: the bridge is a switch labelled "Obsidian bridge"; its state is the node's checked=.
-BRIDGE='Obsidian bridge'
+# REA-28: the bridge is a switch labelled "Use the bridge"; its state is the node's checked=.
+BRIDGE='Use the bridge'
 bridge_is() { on_screen "content-desc=\"$BRIDGE\"[^>]*checked=\"$1\""; }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done; return 1; }

@@ -117,10 +117,10 @@ for mode in light dark; do
   tap_node content-desc 'pause'
   adb shell input keyevent KEYCODE_BACK
   tap_node content-desc 'settings'
-  wait_for 'content-desc="voice"'
+  wait_for 'content-desc="voice, [^"]+"'
   shot "$mode-5-settings"
   # REA-28: the voice Select's bottom sheet, over its scrim.
-  tap_node content-desc 'voice'
+  tap_node content-desc 'voice, [^"]+'
   wait_for 'content-desc="close voice"'
   shot "$mode-5b-voice-sheet"
   adb shell input keyevent KEYCODE_BACK

@@ -221,9 +221,9 @@ test('Settings lists offline voices, the default rate and storage', async () => 
   expect(out).toContain('Licenses');
 });
 
-// REA-28: the bridge is a switch whose label stays "Obsidian bridge"; its state is checked.
+// REA-28: the bridge is a switch whose label stays "Use the bridge"; its state is checked.
 const bridgeSwitch = (r: ReactTestRenderer.ReactTestRenderer) =>
-  r.root.find(n => n.props.accessibilityRole === 'switch' && n.props.accessibilityLabel === 'Obsidian bridge');
+  r.root.find(n => n.props.accessibilityRole === 'switch' && n.props.accessibilityLabel === 'Use the bridge');
 
 async function settings() {
   let r!: ReactTestRenderer.ReactTestRenderer;

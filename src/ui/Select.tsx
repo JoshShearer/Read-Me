@@ -7,8 +7,12 @@
 // (react/react-native#58265, see ui.ts).
 //
 // Accessibility: the field is a combobox whose label is the setting's name and whose value is
-// the current option; each option is a radio with a checked state. Each option's label is
-// "<name> <value>" so the device scripts can find one by its value.
+// the current option (Android reads both, and uiautomator dumps them as "<name>, <option>");
+// each option is a radio with a checked state, labelled "<name> <value>" so the device
+// scripts can find one by its value.
+//
+// The field shows no title of its own: the screen's section heading names it, and a second
+// "Voice" inside the box read as a stutter on the phone.
 import React, { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,7 +34,7 @@ export function Select({
 }: {
   /** Lower-case accessibility name; also the prefix of each option's label. */
   name: string;
-  /** Shown above the value in the field and at the top of the sheet. */
+  /** The heading of the sheet. */
   title: string;
   options: readonly Option[];
   value: string | null;
@@ -58,7 +62,6 @@ export function Select({
         onPress={() => setOpen(true)}
         style={[s.field, { borderColor: p.outline }]}>
         <View collapsable={false} style={s.fieldText}>
-          <Text tone="secondary" style={s.small}>{title}</Text>
           <Text numberOfLines={1}>{current?.label ?? placeholder}</Text>
           {current?.detail ? <Text tone="secondary" style={s.small}>{current.detail}</Text> : null}
         </View>

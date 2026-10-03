@@ -134,27 +134,35 @@ tap_node text '(Delete|DELETE)'
 for _ in $(seq 10); do device_has "$(ui)" 'fetch-failed: offline' || break; sleep 1; done
 device_has "$(ui)" 'fetch-failed: offline' && { echo "FAIL: the dead link was not deleted"; fail=1; }
 
-# Settings: the voice Select (REA-28), then Licenses (R-M01, R-M13). The field is labelled
-# "voice"; its sheet lists each offline voice as a radio labelled "voice <name>".
+# Settings: the voice Select (REA-28), then Licenses (R-M01, R-M13). The field is a combobox
+# labelled "voice" whose value is the current voice, dumped as "voice, <name>"; its sheet lists
+# each offline voice as a radio labelled "voice <name>" with checked=.
+FIELD='voice, [^"]+'
 tap_node content-desc 'settings'
-on_screen 'content-desc="voice"' || fail=1
+on_screen "content-desc=\"$FIELD\"" || fail=1
 on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
-tap_node content-desc 'voice'
+tap_node content-desc "$FIELD"
 sheet=""
-for _ in $(seq 10); do sheet=$(ui); device_has "$sheet" 'content-desc="voice [^"]+"' && break; sleep 1; done
-voices=$(grep -oE 'content-desc="voice [^"]+"' <<<"$sheet" | sed -E 's/content-desc="voice (.*)"/\1/' || true)
-was=$(grep -oE 'content-desc="voice [^"]+"[^>]*checked="true"' <<<"$sheet" | head -1 | sed -E 's/content-desc="voice ([^"]+)".*/\1/' || true)
+for _ in $(seq 10); do sheet=$(ui); device_has "$sheet" 'content-desc="close voice"' && break; sleep 1; done
+radios=$(grep -oE 'content-desc="voice [^",]+"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' <<<"$sheet" || true)
+voices=$(sed -E 's/content-desc="voice ([^"]+)".*/\1/' <<<"$radios")
+was=$(grep -E 'checked="true"' <<<"$radios" | head -1 | sed -E 's/content-desc="voice ([^"]+)".*/\1/' || true)
 n=$(grep -c . <<<"$voices" || true)
-echo "voice sheet: $n voices, one checked: ${was:+yes}"
+echo "voice sheet: $n voices on screen, one checked: ${was:+yes}"
 [ "$n" -ge 1 ] && [ -n "$was" ] || { echo "FAIL: the voice sheet has no checked voice"; fail=1; }
-other=$(grep -vxF "$was" <<<"$voices" | head -1 || true)
+# Another voice whose row is fully on screen: the list opens scrolled to the checked one, so
+# the row above can be cut to a sliver under the sheet's heading (2026-10-03).
+other=$(grep -v 'checked="true"' <<<"$radios" | while read -r r; do
+  read -r y0 y1 < <(sed -E 's/.*\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' <<<"$r")
+  [ $((y1 - y0)) -ge 150 ] && { sed -E 's/content-desc="voice ([^"]+)".*/\1/' <<<"$r"; break; }
+done || true)
 if [ -n "$other" ]; then
   # Pick another voice: the sheet closes and the field shows it.
   tap_node content-desc "voice $other"
   for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
   device_has "$(ui)" 'content-desc="close voice"' && { echo "FAIL: the voice sheet stayed open after a pick"; fail=1; }
   on_screen "text=\"$other\"" || { echo "FAIL: the field does not show the picked voice"; fail=1; }
-  tap_node content-desc 'voice'
+  tap_node content-desc "$FIELD"
   tap_node content-desc "voice $was"
   on_screen "text=\"$was\"" || { echo "FAIL: the first voice was not restored"; fail=1; }
 else
@@ -162,7 +170,7 @@ else
   adb shell input keyevent KEYCODE_BACK
 fi
 # Back closes an open sheet without leaving Settings.
-tap_node content-desc 'voice'
+tap_node content-desc "$FIELD"
 on_screen 'content-desc="close voice"' || fail=1
 adb shell input keyevent KEYCODE_BACK
 for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
