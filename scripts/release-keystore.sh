@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 KS=${1:-$HOME/.android-keys/read-me-release.jks}
 [ -e "$KS" ] && { echo "refused: $KS exists; never overwrite a release key"; exit 1; }
-mkdir -p "$(dirname "$KS")"; chmod 700 "$(dirname "$KS")"
+mkdir -p "$(dirname "$KS")" release; chmod 700 "$(dirname "$KS")"
 keytool -genkeypair -v -keystore "$KS" -alias read-me -keyalg RSA -keysize 4096 -validity 10000 \
   -dname "CN=Read Me, O=Loopstring"
 chmod 600 "$KS"
