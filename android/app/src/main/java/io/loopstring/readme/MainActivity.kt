@@ -1,9 +1,13 @@
 package io.loopstring.readme
 
+import android.util.Log
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import io.loopstring.readme.playback.PlaybackHub
+import io.loopstring.readme.playback.PlaybackService
+import io.loopstring.readme.store.Settings
 
 class MainActivity : ReactActivity() {
 
@@ -19,4 +23,14 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  /** R-M12: after a reboot or process death the bridge returns when Read Me is next opened. */
+  override fun onResume() {
+    super.onResume()
+    try {
+      if (Settings(this).bridgeEnabled && PlaybackHub.bridge.state != "on") PlaybackService.syncBridge(this)
+    } catch (e: IllegalStateException) {
+      Log.i("ReadMe", "bridge start refused: ${e.javaClass.simpleName}")
+    }
+  }
 }

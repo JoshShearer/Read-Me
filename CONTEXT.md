@@ -89,11 +89,15 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
-  lifecycle per ADR 0007; Settings: the rate and voice), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
+  lifecycle per ADR 0007; Settings: the rate, voice and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
   wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and
-  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats)
+  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats),
+  bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
+  server, caps, token, CORS, drain; Http: request-head parsing; TtsSynth: the bridge's own
+  TextToSpeech; BridgeFiles: cache WAVs and the start-up sweep; BridgeView: Settings state and
+  the sensitive-clip Copy)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
                              devcheck.sh + devcheck-report.mjs (pipeline on Hermes vs Node),
@@ -101,13 +105,14 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
                              device-playback-e2e.sh (play, pause, media keys screen-off, archive),
                              device-gap.sh (R-M07 gaps, 10 min at 2x, battery + Doze),
                              device-ui-e2e.sh (every screen), make-notices.mjs (Settings > Licenses asset),
+                             device-bridge-e2e.sh + obsidian-cdp-bridge.mjs (R-M12 over adb forward and
+                             from inside Obsidian's WebView),
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
-                             contention, 0005 foreground service type, 0006 Readability stall guard)
+                             contention, 0005 foreground service type, 0006 Readability stall guard,
+                             0007 item lifecycle, 0008 bridge text limit)
 .github/workflows/ci.yml     CI: js job + android job
 ```
-
-Planned: `BridgeServer`.
 
 **Identifiers:** application id `io.loopstring.readme`; launcher `io.loopstring.readme/.MainActivity`;
 JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS` (JS console),

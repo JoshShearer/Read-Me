@@ -59,6 +59,16 @@ export type NativeEngine = {
   selected: string | null;
 };
 
+// R-M12: state is 'off', 'starting', 'on' or 'failed'; error is an exception class name
+// ('BindException' when the port is taken). token is null while the bridge is off.
+export type NativeBridge = {
+  enabled: boolean;
+  state: string;
+  port: number;
+  token: string | null;
+  error: string | null;
+};
+
 export interface Spec extends TurboModule {
   listItems(): Promise<NativeItem[]>;
   getItem(id: number): Promise<NativeItemDetail | null>;
@@ -97,6 +107,11 @@ export interface Spec extends TurboModule {
   getEngine(): Promise<NativeEngine>;
   setVoice(name: string | null): Promise<void>;
   getNotices(): Promise<string>;
+  getBridge(): Promise<NativeBridge>;
+  setBridgeEnabled(enabled: boolean): Promise<NativeBridge>;
+  setBridgePort(port: number): Promise<NativeBridge>;
+  regenerateBridgeToken(): Promise<NativeBridge>;
+  copyBridgeToken(): Promise<void>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

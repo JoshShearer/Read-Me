@@ -39,7 +39,7 @@ restore() {
 }
 DEVICE_ON_EXIT=restore
 
-adb shell pm clear "$PKG" >/dev/null
+device_clear_app
 adb logcat -c
 # The device's shell expands the file into the extra; nothing long rides the adb argv.
 # Two runs started 2 s after an unlock ended with an empty list (2026-10-02); the same share

@@ -444,10 +444,13 @@ engine instance.
 
 | Route | Method | Auth | Response |
 |---|---|---|---|
-| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy}` |
+| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy, maxChars}` |
 | `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate`. `503` `{"error":"busy","reason":"playback"}` while Read Me is playing (ADR 0004) |
 
-- Body: UTF-8 text, at most 64 KiB.
+- Body: UTF-8 text, at most 64 KiB, and at most `maxChars` characters (ADR 0008; 413
+  `{"error":"too-long","maxChars":N}` otherwise).
+- Errors are JSON `{"error":"<code>"}`: 400 (bad request, length, rate, UTF-8, empty), 401, 404,
+  405, 413, 431, 500, 503 (`busy` or `tts-not-ready`), 504 (synthesis over 120 s) (ADR 0008).
 - `rate` defaults to 1.0. Whatever rate is requested is applied by the engine, so the
   returned audio is already at that rate.
 - **The `local-tts-reader` plugin MUST call with `rate=1.0`** and let its Player apply the

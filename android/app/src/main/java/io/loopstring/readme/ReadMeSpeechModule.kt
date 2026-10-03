@@ -5,7 +5,10 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableMap
+import io.loopstring.readme.bridge.BridgeView
+import io.loopstring.readme.bridge.TokenClipboard
 import io.loopstring.readme.fetch.FetchWorker
+import io.loopstring.readme.playback.BridgeStatus
 import io.loopstring.readme.playback.EngineProbe
 import io.loopstring.readme.playback.PlaybackCommands
 import io.loopstring.readme.playback.PlaybackHub
@@ -34,17 +37,23 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     reactApplicationContext.emitDeviceEvent(EVENT_PLAYBACK, it.toMap())
   }
 
+  private val onBridge: (BridgeStatus) -> Unit = {
+    reactApplicationContext.emitDeviceEvent(EVENT_BRIDGE, bridgeMap())
+  }
+
   override fun getName(): String = NAME
 
   override fun initialize() {
     super.initialize()
     ItemEvents.add(onChange)
     PlaybackHub.addListener(onPlayback)
+    PlaybackHub.addBridgeListener(onBridge)
   }
 
   override fun invalidate() {
     ItemEvents.remove(onChange)
     PlaybackHub.removeListener(onPlayback)
+    PlaybackHub.removeBridgeListener(onBridge)
     super.invalidate()
   }
 
@@ -209,6 +218,42 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     reactApplicationContext.assets.open("notices.json").bufferedReader().use { it.readText() }
   }
 
+  // R-M12, R-M01 Settings. The token goes to JS only to be shown; nothing here logs it (AGENTS.md 4).
+  override fun getBridge(promise: Promise) = settle(promise) { bridgeMap() }
+
+  override fun setBridgeEnabled(enabled: Boolean, promise: Promise) = settle(promise) {
+    settings.bridgeEnabled = enabled
+    if (enabled) settings.bridgeToken() // generated once, on first use
+    PlaybackService.syncBridge(reactApplicationContext)
+    bridgeMap()
+  }
+
+  override fun setBridgePort(port: Double, promise: Promise) = settle(promise) {
+    settings.bridgePort = port.toInt()
+    if (settings.bridgeEnabled) PlaybackService.syncBridge(reactApplicationContext)
+    bridgeMap()
+  }
+
+  override fun regenerateBridgeToken(promise: Promise) = settle(promise) {
+    settings.regenerateBridgeToken()
+    bridgeMap()
+  }
+
+  override fun copyBridgeToken(promise: Promise) = settle(promise) {
+    TokenClipboard.copy(reactApplicationContext, settings.bridgeToken())
+    null
+  }
+
+  private fun bridgeMap(): WritableMap = Arguments.createMap().apply {
+    val on = settings.bridgeEnabled
+    val hub = PlaybackHub.bridge
+    putBoolean("enabled", on)
+    putString("state", BridgeView.state(on, hub.state))
+    putInt("port", settings.bridgePort)
+    putString("token", if (on) settings.bridgeToken() else null)
+    putString("error", if (on && hub.state == "failed") hub.error else null)
+  }
+
   // NativeEventEmitter's contract; the events go out through emitDeviceEvent.
   override fun addListener(eventName: String) {}
 
@@ -243,5 +288,6 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     const val NAME = "ReadMeSpeech"
     const val EVENT_CHANGED = "ReadMeItemsChanged"
     const val EVENT_PLAYBACK = "ReadMePlayback"
+    const val EVENT_BRIDGE = "ReadMeBridge"
   }
 }

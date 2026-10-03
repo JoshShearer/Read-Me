@@ -43,6 +43,7 @@ npm run device:playback   # shares a text, plays it, pauses/resumes by tap and b
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
+npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
 npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
                             # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
@@ -165,13 +166,27 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   default rate, storage, Licenses from a generated asset). Verified 2026-10-02 on the
   reference device, build 3b86e03: `npm run device:ui` (including the highlight kept in view
   deep in an 80-sentence paragraph) and `npm run device:playback` (through Trim and the
-  Reader); `npm run device:intake` on c870f28. No bridge yet (Settings has no bridge row until Phase 5).
+  Reader); `npm run device:intake` on c870f28. The bridge is Phase 5 (below).
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
   R-M13 is partial: Licenses lists npm packages (with their license text where the package
   ships one) and Maven artifacts (license name and URL only); native components compiled
   into `libreactnative.so` (folly, glog, double-conversion, fast_float) and the NDK's
   `libc++_shared.so` are not listed yet. Phase 6 completes it.
+- **Bridge (Phase 5, REA-20):** `BridgeServer` (Kotlin, plain JVM) on explicit 127.0.0.1:8787
+  (configurable), hosted by PlaybackService while Settings has it on; contract v1 plus ADR 0008
+  (one synthesis at most `maxChars`). The bridge turns on only with POST_NOTIFICATIONS, which
+  Settings asks for: Android 13+ hid the bridge-only foreground notification without it (build
+  c460f84), and R-M12 requires it to say the bridge is on.
+  Verified 2026-10-02 on the reference device, build bbcf3cb: `npm run device:bridge` (refusing
+  the notification permission leaves the bridge off; rate 2.0 WAV 1.29 s against 2.58 s at 1.0;
+  401, 400, 413, 431 and a silent client; 503 busy while playing; from Obsidian's WebView with
+  Read Me in the background: fetch and CapacitorHttp 200 at rate 1.0, a 64 KiB POST read as 401
+  without the token and as 503 while playing; the bridge stays on after playback ends; token
+  absent from logcat) and `npm run device:ui`; `npm run device:playback` on build 7c2c04a
+  (playback code unchanged since). After a reboot or process death the
+  bridge returns when Read Me is next opened (no boot receiver). Not established: Android
+  14-16, the real plugin (NRL-130), screen-off use from Obsidian.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

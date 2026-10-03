@@ -45,7 +45,7 @@ As each sentence is spoken it lights up on the screen, so you can glance down an
 NOTES='Notes from the garden in early October. The tomatoes are finally done, and the beans have climbed past the top of the fence. Next year the squash goes on the north side, where it can sprawl without shading anything else.'
 HISTORY='A short history of the lighthouse keeper'"'"'s log. Every four hours the keeper wrote the wind, the weather and the ships that passed. Most entries are a single line. A few, written on long winter nights, run for pages.'
 
-adb shell pm clear "$PKG" >/dev/null
+device_clear_app
 adb logcat -c
 share() {
   # The text goes on stdin, not the adb argv, which adbd logs (AGENTS.md, SPIKE-01).

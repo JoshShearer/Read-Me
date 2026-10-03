@@ -29,8 +29,9 @@ Playback has priority. While Read Me's playback is speaking, the bridge does not
   timeout, before closing: closing a socket with unread data in its receive buffer sends a TCP
   reset on Linux, and a WebView `fetch` would then see a network error instead of the 503. The
   same applies to 401 and 413 (R-M12). Like every response, it carries the R-M12 CORS headers.
-  Not yet measured: Phase 5 sends a 64 KiB unauthenticated POST and a 64 KiB POST during
-  playback from Obsidian's WebView and checks that both statuses are readable.
+  Measured 2026-10-02 on the reference device (build 7c2c04a, `npm run device:bridge`): from
+  Obsidian's WebView, a 64 KiB unauthenticated POST read as 401 and a 64 KiB POST during
+  playback read as 503 `{"error":"busy","reason":"playback"}`.
 - "Speaking" is PlaybackService's playing state. Paused and stopped count as idle, so the bridge
   serves whenever the user is not listening in Read Me.
 - If playback starts while a bridge synthesis is in flight, the bridge stops its own instance

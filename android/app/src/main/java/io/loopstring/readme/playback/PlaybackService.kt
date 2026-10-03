@@ -23,15 +23,20 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import io.loopstring.readme.MainActivity
 import io.loopstring.readme.R
+import io.loopstring.readme.bridge.BridgeFiles
+import io.loopstring.readme.bridge.BridgeServer
+import io.loopstring.readme.bridge.TtsSynth
 import io.loopstring.readme.playback.PlaybackCommands.Route
 import io.loopstring.readme.store.Settings
 import io.loopstring.readme.store.Store
+import java.io.IOException
 
 /**
- * R-M07: the `mediaPlayback` foreground service that owns playback (ADR 0005; Phase 5's bridge
- * moves in later). The queue runs on TTS binder threads and never needs JS. Logs carry ids,
+ * R-M07 and R-M12: the `mediaPlayback` foreground service that owns playback and, when
+ * enabled, hosts the bridge (ADR 0005). The queue runs on TTS binder threads and never needs JS. Logs carry ids,
  * counts, offsets and durations only; the title appears in the notification, never in a log
  * (AGENTS.md 1).
  */
@@ -51,6 +56,15 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private var title = ""
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
+  // Written on the main thread; read on TTS binder threads by preemptOnPlay.
+  @Volatile private var bridge: BridgeServer? = null
+  @Volatile private var synth: TtsSynth? = null
+  @VisibleForTesting var bridgePreemptsForTest = 0
+    private set
+  // ADR 0004: playback starting stops a bridge synthesis in flight (the bridge's instance only).
+  private val preemptOnPlay: (PlaybackSnapshot) -> Unit = { s ->
+    if (s.playing) bridge?.let { it.preempt(); bridgePreemptsForTest++ }
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -69,14 +83,27 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackHub.queue = queue
     PlaybackHub.controller = ::handle
     PlaybackHub.engine = speaker.status.wire
+    val swept = BridgeFiles(cacheDir).sweep()
+    if (swept > 0) Log.i(TAG, "bridge swept files=$swept")
+    PlaybackHub.addListener(preemptOnPlay)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // startForegroundService obliges startForeground within seconds, whatever happens next.
     goForeground(queue.snapshot())
-    when (PlaybackCommands.route(intent?.action, PlaybackHub.hasPending(), queue.snapshot().itemId != null)) {
+    when (PlaybackCommands.route(intent?.action, PlaybackHub.hasPending(), queue.snapshot().itemId != null, bridge != null)) {
       Route.START -> PlaybackHub.take()?.let(::begin)
       Route.CONTROL -> handle(intent!!.action!!)
+      Route.BRIDGE -> {
+        if (intent?.action == PlaybackCommands.ACTION_BRIDGE_OFF) Settings(this).bridgeEnabled = false
+        syncBridge()
+        // A play request waiting for the engine counts as an item.
+        val hasItem = queue.snapshot().itemId != null || waiting != null || PlaybackHub.hasPending()
+        if (!ServiceLife.keepAlive(hasItem, bridge != null)) {
+          end()
+          return START_NOT_STICKY
+        }
+      }
       Route.IGNORE -> {}
       Route.STOP -> {
         end()
@@ -102,6 +129,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     stopForeground(STOP_FOREGROUND_REMOVE)
     getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     session.release()
+    PlaybackHub.removeListener(preemptOnPlay)
+    bridge?.close()
+    bridge = null
+    synth?.shutdown()
+    synth = null
+    if (PlaybackHub.bridge.state == "on") PlaybackHub.publishBridge(BridgeStatus.OFF)
     speaker.shutdown()
     super.onDestroy()
   }
@@ -150,6 +183,41 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       true
     }
     else -> false
+  }
+
+  /** R-M12: the bridge runs exactly while Settings says so, on the port Settings names. */
+  private fun syncBridge() {
+    val s = Settings(this)
+    val want = s.bridgeEnabled
+    bridge?.let { running ->
+      if (!want || running.port != s.bridgePort) {
+        running.close()
+        bridge = null
+        synth?.shutdown()
+        synth = null
+        PlaybackHub.publishBridge(BridgeStatus.OFF)
+        Log.i(TAG, "bridge off")
+      }
+    }
+    if (!want || bridge != null) return
+    val sy = TtsSynth(this, s.voice)
+    try {
+      bridge = BridgeServer(
+        s.bridgePort,
+        token = { Settings(this).bridgeToken() },
+        busy = { PlaybackHub.speaking },
+        synth = sy,
+        files = BridgeFiles(cacheDir),
+        log = { Log.i(TAG, it) },
+      )
+      synth = sy
+      PlaybackHub.publishBridge(BridgeStatus("on", s.bridgePort, null))
+      Log.i(TAG, "bridge on port=${s.bridgePort}")
+    } catch (e: IOException) {
+      sy.shutdown()
+      PlaybackHub.publishBridge(BridgeStatus("failed", s.bridgePort, e.javaClass.simpleName))
+      Log.i(TAG, "bridge failed: ${e.javaClass.simpleName}")
+    }
   }
 
   // --- TtsSpeaker.Callbacks ---
@@ -250,8 +318,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   private fun syncForeground(s: PlaybackSnapshot) {
-    if (s.itemId == null) return
-    if (s.playing || PausePolicy.hold(pausedForFocus).foreground) {
+    val bridgeOn = bridge != null
+    if (s.itemId == null && !bridgeOn) return
+    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn)) {
       goForeground(s)
     } else {
       // Paused: the notification stays (with Play) but can be swiped away, and the system may
@@ -281,6 +350,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     waiting = null
     releasePlayingResources(abandon = true)
     session.isActive = false
+    // R-M12: an enabled bridge keeps the service, and its notification, after playback ends.
+    if (bridge != null) {
+      goForeground(queue.snapshot())
+      return
+    }
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
@@ -380,16 +454,21 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     val open = PendingIntent.getActivity(
       this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
     )
-    return b.setSmallIcon(R.drawable.ic_stat_readme)
-      .setContentTitle(title)
-      .setContentText(if (s.playing) "Reading" else "Paused")
+    val bridgeOn = bridge != null
+    val text = ServiceText.of(title, s, bridgeOn)
+    b.setSmallIcon(R.drawable.ic_stat_readme)
+      .setContentTitle(text.title)
+      .setContentText(text.body)
       .setContentIntent(open)
-      .setOngoing(s.playing)
-      .addAction(action(android.R.drawable.ic_media_previous, "Previous", PlaybackCommands.ACTION_PREVIOUS, 1))
-      .addAction(toggle)
-      .addAction(action(android.R.drawable.ic_media_next, "Next", PlaybackCommands.ACTION_NEXT, 3))
-      .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
-      .build()
+      .setOngoing(s.playing || bridgeOn)
+    if (text.media) {
+      b.addAction(action(android.R.drawable.ic_media_previous, "Previous", PlaybackCommands.ACTION_PREVIOUS, 1))
+        .addAction(toggle)
+        .addAction(action(android.R.drawable.ic_media_next, "Next", PlaybackCommands.ACTION_NEXT, 3))
+        .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
+    }
+    if (bridgeOn) b.addAction(action(android.R.drawable.ic_menu_close_clear_cancel, "Turn off bridge", PlaybackCommands.ACTION_BRIDGE_OFF, 4))
+    return b.build()
   }
 
   private fun action(icon: Int, label: String, act: String, code: Int): Notification.Action {
@@ -413,6 +492,22 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       PlaybackHub.offer(request)
       val i = Intent(context, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)
       if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i) else context.startService(i)
+    }
+
+    /**
+     * R-M12: makes the running service match Settings, starting it when the bridge is on. Call
+     * only from the foreground (Settings, MainActivity.onResume): Android 12+ refuses a
+     * foreground-service start from the background.
+     */
+    fun syncBridge(context: Context) {
+      val on = Settings(context).bridgeEnabled
+      val alive = PlaybackHub.controller != null
+      if (!on && !alive) {
+        PlaybackHub.publishBridge(BridgeStatus.OFF)
+        return
+      }
+      val i = Intent(context, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_BRIDGE)
+      if (alive || Build.VERSION.SDK_INT < 26) context.startService(i) else context.startForegroundService(i)
     }
   }
 }

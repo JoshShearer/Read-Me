@@ -16,7 +16,7 @@ LINK_PATH_MARK='safety/lightning'
 TEXT_MARK='Paragraph one of the shared note'
 DEAD='http://127.0.0.1:9/nothing-here'
 
-adb shell pm clear "$PKG" >/dev/null
+device_clear_app
 adb logcat -c
 share() {
   # The text goes on stdin, not the adb argv, which adbd logs (AGENTS.md, SPIKE-01).

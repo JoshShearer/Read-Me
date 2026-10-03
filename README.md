@@ -25,9 +25,9 @@ offline voice and never leave the device. See [The Obsidian bridge](#the-obsidia
 </p>
 
 > **Status:** in development, not yet released. The reader is built and verified on a real
-> phone: share, extract, trim, play in the background, and the four screens. The Obsidian bridge
-> is specified, and spikes on the reference device have shown that it works, but it is not built
-> on `main` yet (Phase 5). The roadmap is in
+> phone: share, extract, trim, play in the background, the four screens, and the Obsidian
+> bridge, called from inside Obsidian on the same phone. The plugin side of the bridge is still
+> in progress (NRL-130). The roadmap is in
 > [`docs/superpowers/plans/2026-10-01-roadmap.md`](docs/superpowers/plans/2026-10-01-roadmap.md).
 
 ---
@@ -86,9 +86,9 @@ says so and links to Android's speech settings.
 
 ## The Obsidian bridge
 
-> **Planned for Phase 5.** The design below is the contract in [`srs.md`](srs.md) (R-M12,
-> "Bridge contract"). Every claim about whether it works comes from spikes run on the reference
-> device, not from the shipped app.
+> **Built in Phase 5.** The design below is the contract in [`srs.md`](srs.md) (R-M12,
+> "Bridge contract"), verified on the reference device by `npm run device:bridge`. The plugin
+> side is still in progress (NRL-130).
 
 ### Why it exists
 
@@ -112,7 +112,10 @@ Read Me Offline  ── BridgeServer, loopback only, its own TextToSpeech instan
 audio/wav  ──►  the plugin's Player plays it and applies your speed
 ```
 
-- **Off until you turn it on** in Settings. While it runs, a foreground notification says so.
+- **Off until you turn it on** in Settings. While it runs, a foreground notification says so,
+  with a button to turn it off. On Android 13 and later it needs the notification permission,
+  and stays off without it. After a restart of the phone it comes back when you next open Read
+  Me Offline.
 - **Loopback only.** It binds `127.0.0.1` explicitly; nothing off the phone can reach it.
 - **Paired by token.** A random 128-bit token is shown in Settings with a Copy button and pasted
   into the plugin. Every route except `GET /health` requires it, and it is never logged or put
@@ -127,13 +130,14 @@ audio/wav  ──►  the plugin's Player plays it and applies your speed
 - **Rate is applied exactly once.** The plugin requests `rate=1.0` and its own Player applies
   your speed. Speeding up both would give 4x where you asked for 2x.
 - **Plays nicely with the reader.** Two speech jobs on one engine slow each other down, so while
-  Read Me Offline is reading aloud the bridge answers `503 busy`, which the plugin handles.
+  Read Me Offline is reading aloud the bridge answers `503 busy`, which the plugin handles. One
+  request speaks at most the `maxChars` that `/health` reports (ADR 0008).
 - **Optional.** The plugin must keep working without Read Me Offline installed; the bridge is
   an extra engine, not a requirement.
 
 | Route | Method | Auth | Response |
 |---|---|---|---|
-| `/health` | GET | none | `{ok, version: 1, ttsReady, engine, voice, port, busy}` |
+| `/health` | GET | none | `{ok, version: 1, ttsReady, engine, voice, port, busy, maxChars}` |
 | `/synthesize?rate=<f>` | POST | Bearer token | `audio/wav`, with `X-Synth-Ms` and `X-Rate` headers; `503 {"error":"busy","reason":"playback"}` while Read Me Offline is playing |
 
 ### What the spikes have shown (reference device, 2026-10-01)
@@ -215,7 +219,7 @@ module, `ReadMeSpeech`.
   (Readability over linkedom), sentence segmentation, trim math, and the four screens.
 - **Kotlin** owns everything that has to keep working when the UI isn't running: the share
   hand-off, the SQLite store, the single network fetch, the playback service and its sentence
-  queue, and (Phase 5) the bridge.
+  queue, and the bridge.
 - Positions are stored as character offsets, never sentence numbers, so a change in how text
   is split can never lose your place.
 
@@ -240,7 +244,7 @@ from `npm run device:screenshots`, and the store listing text lives in
 | 2 | Native store, share target, fetcher, start-up recovery | Done |
 | 3 | Playback service, media session, gapless queue | Done |
 | 4 | List, Trim, Reader and Settings screens | Done |
-| 5 | Obsidian bridge | Next |
+| 5 | Obsidian bridge | Done |
 | 6 | Release: on-device acceptance runs, F-Droid metadata and reproducible build, signed APK | Planned |
 | 7 | Voice and engine picker with preview, sleep timer, Markdown export, bridge deep link | Planned |
 

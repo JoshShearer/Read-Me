@@ -2,9 +2,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- R-M07, ADR 0005: playback (and in Phase 5 the bridge) runs in one mediaPlayback
-         foreground service; the wake lock is held only while speaking. No POST_NOTIFICATIONS:
-         a media-session notification is exempt from the Android 13 notification permission. -->
+    <!-- R-M07, ADR 0005: playback and the R-M12 bridge run in one mediaPlayback foreground
+         service; the wake lock is held only while speaking or synthesizing. Playback's
+         media-session notification is exempt from the Android 13 notification permission; the
+         bridge's is not, so Settings asks for POST_NOTIFICATIONS when the bridge is turned on
+         (R-M12: the notification must say the bridge is on; hidden without it on the reference
+         device, 2026-10-02, build c460f84). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
