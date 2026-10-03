@@ -94,3 +94,8 @@ yarn-error.log
 
 # Phase 1 devcheck generated fixtures
 src/devcheck/fixtures.generated.ts
+
+# REA-26: release outputs and keys (the public fingerprint release/signing-cert.sha256 is committed)
+release/*.apk
+release/SHA256SUMS
+*.jks

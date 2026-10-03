@@ -8,7 +8,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 VENV=.venv-fdroid
-[ -x "$VENV/bin/fdroid" ] || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5; } || exit 1
+{ [ -x "$VENV/bin/fdroid" ] && [ -x "$VENV/bin/apksigcopier" ]; } || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5 apksigcopier==1.1.1; } || exit 1
 fail=0
 SRC=$(mktemp -d); DEPS=$(mktemp)
 trap 'rm -rf "$SRC" "$DEPS"' EXIT
