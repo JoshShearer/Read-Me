@@ -5,6 +5,7 @@
 # (Pride and Prejudice, the gutenberg-1342 fixture). Resets battery and Doze state on exit.
 # Plays 2 minutes by default (about 4 in total), a quick check. R-M07 defines the target over
 # 10 minutes, so only `GAP_MINUTES=10 npm run device:gap` (about 12) is the spec measurement.
+# AIRPLANE=1 adds airplane mode during the measurement (R-M14 run 2), restored on exit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
@@ -33,6 +34,7 @@ want=$(wc -c < "$TXT"); got=$(adb shell wc -c /data/local/tmp/readme-gap.txt | a
 rm -f "$TXT"
 
 restore() {
+  [ "${AIRPLANE:-0}" = 1 ] && { adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true; }
   adb shell dumpsys deviceidle unforce >/dev/null 2>&1 || true
   adb shell dumpsys battery reset >/dev/null 2>&1 || true
   adb shell rm -f /data/local/tmp/readme-gap.txt /sdcard/readme-ui.xml >/dev/null 2>&1 || true
@@ -85,6 +87,12 @@ rlog() { adb logcat -d -s ReadMe:I; }
 for _ in $(seq 20); do device_has "$(rlog)" 'playback start item=1 ' && break; sleep 1; done
 device_has "$(rlog)" 'playback start item=1 ' || { echo "FAIL: playback did not start"; exit 1; }
 
+# R-M14 run 2: AIRPLANE=1 cuts every radio for the measurement. The text is already stored.
+if [ "${AIRPLANE:-0}" = 1 ]; then
+  adb shell cmd connectivity airplane-mode enable
+  [ "$(adb shell cmd connectivity airplane-mode | tr -d '\r')" = enabled ] || { echo "FAIL: airplane mode did not turn on"; exit 1; }
+  echo "airplane mode on"
+fi
 adb shell dumpsys battery unplug
 adb shell input keyevent KEYCODE_SLEEP
 sleep 2
