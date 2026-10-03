@@ -25,6 +25,15 @@ import Native from '../native/NativeReadMeSpeech';
 import { bridgeStatus, formatRate, parsePort, RATE_MAX, RATE_MIN, stepRate, visibleItems } from './model';
 import { ui } from './ui';
 
+// REA-28: Settings keeps one structure from its first frame. It used to add the voice picker
+// and the bridge panel when the engine probe (2.7-5.5 s on the reference device) and the bridge
+// state arrived, while the screen was still mounting; in 2 of 3 device:themes runs Fabric
+// dropped those mutations (react/react-native#58265, see ui.ts): the layout made room for both,
+// nothing was drawn in it, "Checking..." stayed and the bridge heading was drawn over its
+// description (REA-27's blank bridge controls). Now both are there at once, disabled while
+// loading, and only their props change when the data arrives.
+const NO_BRIDGE: Bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
+
 export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const colors = palette(useColorScheme());
   const [engine, setEngine] = useState<Engine | null>(null);
@@ -95,6 +104,8 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       },
     ]);
 
+  const loadingBridge = bridge === null;
+  const shown = bridge ?? NO_BRIDGE;
   return (
     <ScrollView style={ui.screen}>
       <View collapsable={false} style={ui.header}>
@@ -102,9 +113,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       </View>
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Voice</Text>
-      {engine === null ? (
-        <Text tone="secondary" style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
-      ) : engineBlocked(engine.status) ? (
+      {engine !== null && engineBlocked(engine.status) ? (
         <View collapsable={false} style={[ui.card, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
           <Text>No offline text-to-speech voice is available.</Text>
           <Button
@@ -123,8 +132,10 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           <Select
             name="voice"
             title="Voice"
-            options={engine.voices.map(v => ({ value: v.name, label: v.name, detail: v.language }))}
-            value={engine.selected}
+            disabled={engine === null}
+            placeholder="Checking the text-to-speech engine..."
+            options={(engine?.voices ?? []).map(v => ({ value: v.name, label: v.name, detail: v.language }))}
+            value={engine?.selected ?? null}
             onChange={name => {
               setVoice(name).then(loadEngine, () => undefined);
             }}
@@ -150,11 +161,11 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       <Text tone="secondary" style={[ui.row, ui.small]}>
         Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices.
       </Text>
-      {bridge === null ? null : (
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
           <Toggle
             label="Use the bridge"
-            value={bridge.enabled}
+            disabled={loadingBridge}
+            value={shown.enabled}
             onValueChange={on => {
               if (!on) {
                 setBridgeEnabled(false).then(setBridge, () => undefined);
@@ -170,7 +181,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
                 .then(b => b && setBridge(b), () => undefined);
             }}
           />
-          <Text tone="secondary" style={ui.small}>{bridgeStatus(bridge)}</Text>
+          <Text tone="secondary" style={ui.small}>{loadingBridge ? 'Checking the bridge...' : bridgeStatus(shown)}</Text>
           <View collapsable={false} style={ui.field}>
             <Text tone="secondary" style={ui.small}>Port</Text>
             <TextInput
@@ -187,7 +198,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               onSubmitEditing={applyPort}
             />
           </View>
-          {notifyOff && (bridge.enabled || refused) ? (
+          {notifyOff && (shown.enabled || refused) ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>
                 Read Me needs to show a notification while the bridge is on, and notifications are off
@@ -205,11 +216,11 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             </View>
           ) : null}
           {portError ? <Text tone="error" style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
-          {bridge.enabled && bridge.token !== null ? (
+          {shown.enabled && shown.token !== null ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>Pairing token (paste it into the plugin's settings)</Text>
               <Text selectable accessibilityLabel="pairing token">
-                {bridge.token}
+                {shown.token}
               </Text>
               <View collapsable={false} style={ui.actions}>
                 <Button
@@ -225,7 +236,6 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             </View>
           ) : null}
         </View>
-      )}
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Storage</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>{`${items.length} items, ${archived.length} archived`}</Text>

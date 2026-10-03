@@ -234,6 +234,19 @@ async function settings() {
   return r;
 }
 
+test('Settings has its voice picker and bridge switch from the first frame, disabled while loading', async () => {
+  // REA-28: adding them when the data arrived, mid-mount, lost Fabric mutations on the phone.
+  const never = new Promise<never>(() => {});
+  (Native.getEngine as jest.Mock).mockReturnValueOnce(never);
+  (Native.getBridge as jest.Mock).mockReturnValueOnce(never);
+  const r = await settings();
+  const field = r.root.find(n => n.props.accessibilityRole === 'combobox' && typeof n.props.onPress === 'function');
+  expect(field.props.disabled).toBe(true);
+  expect(field.props.accessibilityValue).toBeUndefined();
+  expect(bridgeSwitch(r).props.disabled).toBe(true);
+  expect(strings(r.toJSON()).join('\n')).toContain('Checking the text-to-speech engine...');
+});
+
 test('Settings shows the bridge off, with no token (R-M12)', async () => {
   const out = await render(<SettingsScreen onLicenses={() => {}} />);
   expect(out).toContain('Obsidian bridge');

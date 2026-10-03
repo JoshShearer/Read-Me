@@ -1,5 +1,5 @@
 // REA-28: an on/off row modeled on the web app's Toggle, as a Material 3 switch. The whole row
-// is the target and carries role switch with a checked state, so TalkBack reads "Obsidian
+// is the target and carries role switch with a checked state, so TalkBack reads "Use the
 // bridge, switch, on" and the device scripts read checked= from the dump instead of a label
 // that changes with the state.
 //

@@ -30,6 +30,7 @@ export function Select({
   options,
   value,
   placeholder = 'Choose',
+  disabled = false,
   onChange,
 }: {
   /** Lower-case accessibility name; also the prefix of each option's label. */
@@ -39,6 +40,8 @@ export function Select({
   options: readonly Option[];
   value: string | null;
   placeholder?: string;
+  /** While its options load: the field shows the placeholder, faint, and does not open. */
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   const p = palette(useColorScheme());
@@ -57,12 +60,14 @@ export function Select({
       <Pressable
         accessibilityRole="combobox"
         accessibilityLabel={name}
-        accessibilityValue={{ text: current?.label ?? placeholder }}
-        accessibilityState={{ expanded: open }}
+        // No value while disabled: the device scripts wait for "voice, <name>" to know it is ready.
+        accessibilityValue={disabled ? undefined : { text: current?.label ?? placeholder }}
+        accessibilityState={{ expanded: open, disabled }}
+        disabled={disabled}
         onPress={() => setOpen(true)}
-        style={[s.field, { borderColor: p.outline }]}>
+        style={[s.field, { borderColor: disabled ? p.outlineVariant : p.outline }]}>
         <View collapsable={false} style={s.fieldText}>
-          <Text numberOfLines={1}>{current?.label ?? placeholder}</Text>
+          <Text tone={disabled ? 'secondary' : 'body'} numberOfLines={1}>{current?.label ?? placeholder}</Text>
           {current?.detail ? <Text tone="secondary" style={s.small}>{current.detail}</Text> : null}
         </View>
         <Text tone="secondary" style={s.chevron}>{'▾︎'}</Text>
