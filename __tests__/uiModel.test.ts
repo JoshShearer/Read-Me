@@ -159,3 +159,8 @@ test('bridgeStatus explains a taken port', () => {
     'The bridge could not start (SecurityException).',
   );
 });
+
+test('parseNotices includes native entries with their text', () => {
+  const j = JSON.stringify({npm: [], android: [], native: [{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]});
+  expect(parseNotices(j)).toEqual([{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]);
+});

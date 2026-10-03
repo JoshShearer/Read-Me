@@ -44,6 +44,8 @@ jobs:
       - name: Kotlin unit tests and release build
         working-directory: android
         run: ./gradlew --no-daemon testDebugUnitTest assembleRelease
+      - name: Licenses asset matches the dependencies (R-M13)
+        run: node scripts/make-notices.mjs --check
       - name: No non-free dependencies in the resolved tree
         working-directory: android
         run: |

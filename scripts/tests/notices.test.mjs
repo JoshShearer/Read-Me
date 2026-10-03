@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCoordinates, parsePomLicenses} from '../make-notices.mjs';
+import {parseCoordinates, parsePomLicenses, gradleCache, spdxFor, nativeNotices, androidText} from '../make-notices.mjs';
 
 test('coordinates come from the dependency tree, resolved versions win, deduped', () => {
   const tree = `releaseRuntimeClasspath
@@ -25,4 +25,32 @@ test('licenses are read from a POM', () => {
     {name: 'The Apache Software License, Version 2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0.txt'},
   ]);
   assert.deepEqual(parsePomLicenses('<project/>'), []);
+});
+
+test('the Gradle cache honours GRADLE_USER_HOME', () => {
+  assert.equal(gradleCache({GRADLE_USER_HOME: '/x/gh'}), '/x/gh/caches/modules-2/files-2.1');
+  assert.match(gradleCache({}), /\.gradle\/caches\/modules-2\/files-2\.1$/);
+});
+
+test('POM and npm license names map to a shipped SPDX text', () => {
+  assert.equal(spdxFor('The Apache Software License, Version 2.0'), 'Apache-2.0');
+  assert.equal(spdxFor('APACHE-2'), 'Apache-2.0');
+  assert.equal(spdxFor('Apache-2.0'), 'Apache-2.0');
+  assert.equal(spdxFor('MIT license'), 'MIT');
+  assert.equal(spdxFor('(MIT OR Apache-2.0)'), 'MIT');
+  assert.equal(spdxFor('BSD-3-Clause'), 'BSD-3-Clause');
+  assert.equal(spdxFor('BSD License'), null); // which BSD is unknown: needs a checked override
+  assert.equal(spdxFor('Some Custom License'), null);
+});
+
+test('every native notice carries its license text', () => {
+  const n = nativeNotices();
+  assert.ok(n.length >= 7);
+  for (const e of n) assert.ok(e.text && e.text.length > 200, `${e.name} has no text`);
+});
+
+test('a Maven entry gets the text of its license, or of its checked override', () => {
+  assert.match(androidText('com.x:y', 'The Apache Software License, Version 2.0'), /Apache License/);
+  assert.match(androidText('com.parse.bolts:bolts-tasks', 'BSD License'), /Bolts/);
+  assert.equal(androidText('com.x:y', 'Some Custom License'), undefined);
 });
