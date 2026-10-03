@@ -52,8 +52,8 @@ class BridgeServerTest {
     server?.close()
   }
 
-  private fun start(readTimeoutMs: Int = 2_000, deadlineMs: Long = 180_000, workers: Int = 8): BridgeServer =
-    BridgeServer(0, { currentToken }, { busy }, synth, BridgeFiles(cache), { logs.add(it) }, readTimeoutMs, deadlineMs, workers)
+  private fun start(readTimeoutMs: Int = 2_000, deadlineMs: Long = 180_000, workers: Int = 8, logDelayMs: Long = 0): BridgeServer =
+    BridgeServer(0, { currentToken }, { busy }, synth, BridgeFiles(cache), { logs.add(it); Thread.sleep(logDelayMs) }, readTimeoutMs, deadlineMs, workers)
       .also { server = it }
 
   data class Response(val status: Int, val headers: Map<String, String>, val body: ByteArray) {
@@ -279,14 +279,23 @@ class BridgeServerTest {
   }
 
   @Test fun slowBodyTimesOutAndFreesTheWorker() {
-    val s = start(readTimeoutMs = 300, workers = 1)
+    // The worker closes the socket, then logs, then returns to the pool. A slow log widens that
+    // window, which CI hit once (an empty /health response on a 1-worker server).
+    val s = start(readTimeoutMs = 300, workers = 1, logDelayMs = 300)
     Socket("127.0.0.1", s.port).use { c ->
       c.soTimeout = 3_000
       c.getOutputStream().write("${synthHead(10)}\r\n\r\nhalf".toByteArray())
       // The server gives up on the body and closes; the client sees end of stream, no response.
       assertEquals(-1, c.getInputStream().read())
     }
-    assertEquals(200, call(s.port, "GET /health HTTP/1.1").status)
+    // A connection that arrives before the worker is back is refused (closed, no bytes).
+    val deadline = System.nanoTime() + 2_000_000_000L
+    var health = runCatching { call(s.port, "GET /health HTTP/1.1").status }
+    while (health.getOrNull() != 200 && System.nanoTime() < deadline) {
+      Thread.sleep(50)
+      health = runCatching { call(s.port, "GET /health HTTP/1.1").status }
+    }
+    assertEquals(200, health.getOrThrow())
   }
 
   @Test fun allWorkersBusyRefusesThenRecovers() {
