@@ -4,6 +4,7 @@ import io.loopstring.readme.store.ParagraphRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MarkdownTest {
@@ -124,5 +125,42 @@ class MarkdownTest {
 
   @Test fun crlfAndABomAreHandled() {
     assertEquals(listOf(h("T"), p("a b")), rows("﻿# T\r\n\r\na\r\nb"))
+  }
+
+  // --- REA-30 review F1/F2: hostile input stays linear and never throws ---
+
+  private fun fast(label: String, input: String) {
+    val start = System.nanoTime()
+    Markdown.toNote(input)
+    val ms = (System.nanoTime() - start) / 1_000_000
+    assertTrue("$label took $ms ms", ms < 2_000)
+  }
+
+  @Test fun pathologicalInputsAreLinear() {
+    fast("heading of spaces", "# a" + " ".repeat(40_000) + "b")
+    fast("open brackets", "[".repeat(200_000))
+    fast("open wikilinks", "[[".repeat(100_000))
+    fast("unclosed stars", "*a ".repeat(130_000))
+    fast("unclosed underscores", " _a".repeat(130_000))
+    fast("unclosed strikes", "~~a ".repeat(100_000))
+    fast("item with a line separator", "-" + " ".repeat(200_000) + "\u2028x")
+    fast("open tags", "<a".repeat(200_000))
+    fast("open comments", "<!--".repeat(100_000) + "%%".repeat(100_000))
+    fast("backticks", "`".repeat(200_000) + "a")
+    fast("nested quotes", ">".repeat(200_000))
+    fast("table-ish", "|-".repeat(200_000) + "x")
+  }
+
+  @Test fun hugeRuleLinesDoNotOverflowTheStack() {
+    assertEquals(emptyList<ParagraphRow>(), rows("*".repeat(80_000)))
+    assertEquals(emptyList<ParagraphRow>(), rows("- ".repeat(40_000)))
+  }
+
+  @Test fun linkTargetsWithParenthesesAreReadAsText() {
+    assertEquals("site after", Markdown.inline("[site](https://e.com/a_(b)) after"))
+  }
+
+  @Test fun anEscapedDollarLosesItsBackslash() {
+    assertEquals("costs $5", Markdown.inline("costs \\$5"))
   }
 }

@@ -10,36 +10,35 @@ import io.loopstring.readme.store.ParagraphRow
 object Markdown {
   data class Note(val title: String?, val paragraphs: List<ParagraphRow>)
 
+  // Every pattern is linear: bounded repetition that cannot cross a line or its own delimiter,
+  // so a hostile or huge file costs time in proportion to its size (REA-30 review, F1/F2).
   private val CRLF = Regex("\\r\\n?")
   private val FRONT_MATTER = Regex("\\A---[ \\t]*\\n.*?\\n(?:---|\\.\\.\\.)[ \\t]*(?:\\n|\\z)", RegexOption.DOT_MATCHES_ALL)
-  private val OBSIDIAN_COMMENT = Regex("%%.*?%%", RegexOption.DOT_MATCHES_ALL)
-  private val HTML_COMMENT = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
-  private val FENCE = Regex("^\\s{0,3}(```+|~~~+)")
-  private val ATX = Regex("^\\s{0,3}#{1,6}(?:\\s+(.*?))?\\s*#*\\s*$")
-  private val SETEXT = Regex("^\\s{0,3}(=+|-+)\\s*$")
-  private val RULE = Regex("^\\s{0,3}(?:(?:\\*\\s*){3,}|(?:-\\s*){3,}|(?:_\\s*){3,})$")
-  private val ITEM = Regex("^\\s*(?:[-*+]|\\d{1,9}[.)])\\s+(?:\\[[ xX/-]\\]\\s+)?(.*)$")
-  private val QUOTE = Regex("^\\s{0,3}>\\s?")
-  private val CALLOUT = Regex("^\\[!\\w+][+-]?\\s*")
-  private val TABLE_RULE = Regex("^\\s*\\|?\\s*:?-+:?\\s*(?:\\|\\s*:?-+:?\\s*)*\\|?\\s*$")
-  private val FOOTNOTE_DEF = Regex("^\\[\\^[^\\]]+]:\\s*")
+  private val FENCE = Regex("^ {0,3}(```+|~~~+)")
+  private val ATX = Regex("^ {0,3}#{1,6}(?=[ \\t]|$)")
+  private val SETEXT = Regex("^ {0,3}(?:=+|-+)[ \\t]*$")
+  private val ITEM = Regex("^[ \\t]*(?:[-*+]|\\d{1,9}[.)])[ \\t]+(?:\\[[ xX/-]][ \\t]+)?")
+  private val QUOTE = Regex("^ {0,3}>[ \\t]?")
+  private val CALLOUT = Regex("^\\[!\\w{1,30}][+-]?[ \\t]*")
+  private val FOOTNOTE_DEF = Regex("^\\[\\^[^\\]\\n]{1,100}]:[ \\t]*")
   private val INDENTED = Regex("^(?: {2,}|\\t)\\S")
 
-  private val EMBED = Regex("!\\[\\[[^\\]]*]]|!\\[[^\\]]*]\\([^)]*\\)")
-  private val WIKILINK = Regex("\\[\\[([^\\]|]*)(?:\\|([^\\]]*))?]]")
-  private val LINK = Regex("\\[([^\\]]*)]\\([^)]*\\)")
-  private val REF_LINK = Regex("\\[([^\\]]+)]\\[[^\\]]*]")
-  private val AUTOLINK = Regex("<(https?://[^>\\s]+)>")
-  private val FOOTNOTE_REF = Regex("\\[\\^[^\\]]+]")
-  private val CODE = Regex("`+([^`]*)`+")
-  private val STRONG = Regex("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1")
-  private val EM_STAR = Regex("\\*(?=\\S)(.+?)(?<=\\S)\\*")
-  private val EM_UNDERSCORE = Regex("(?<![\\p{L}\\p{N}_])_(?=\\S)(.+?)(?<=\\S)_(?![\\p{L}\\p{N}_])")
-  private val STRIKE_HIGHLIGHT = Regex("(~~|==)(?=\\S)(.+?)(?<=\\S)\\1")
-  private val TAG = Regex("(?<![\\p{L}\\p{N}_&/])#([\\p{L}_][\\p{L}\\p{N}_/-]*)")
-  private val BLOCK_ID = Regex("\\s\\^[A-Za-z0-9-]+\\s*$")
-  private val HTML_TAG = Regex("</?[A-Za-z][^>]*>")
-  private val ESCAPE = Regex("\\\\([\\\\`*_{}\\[\\]()#+\\-.!|~=<>])")
+  private const val TARGET = "(?:[^()\\n]|\\([^()\\n]{0,200}\\)){0,500}"
+  private val EMBED = Regex("!\\[\\[[^\\[\\]\\n]{0,300}]]|!\\[[^\\[\\]\\n]{0,300}]\\($TARGET\\)")
+  private val WIKILINK = Regex("\\[\\[([^\\[\\]|\\n]{0,200})(?:\\|([^\\[\\]\\n]{0,200}))?]]")
+  private val LINK = Regex("\\[([^\\[\\]\\n]{0,200})]\\($TARGET\\)")
+  private val REF_LINK = Regex("\\[([^\\[\\]\\n]{1,200})]\\[[^\\[\\]\\n]{0,100}]")
+  private val AUTOLINK = Regex("<(https?://[^<>\\s]{1,500})>")
+  private val FOOTNOTE_REF = Regex("\\[\\^[^\\[\\]\\n]{1,100}]")
+  private val CODE = Regex("`{1,3}([^`\\n]{0,300})`{1,3}")
+  private val STRONG = Regex("\\*\\*(?=\\S)([^*\\n]{1,300}?)(?<=\\S)\\*\\*|__(?=\\S)([^_\\n]{1,300}?)(?<=\\S)__")
+  private val EM_STAR = Regex("\\*(?=\\S)([^*\\n]{1,300}?)(?<=\\S)\\*")
+  private val EM_UNDERSCORE = Regex("(?<![\\p{L}\\p{N}_])_(?=\\S)([^_\\n]{1,300}?)(?<=\\S)_(?![\\p{L}\\p{N}_])")
+  private val STRIKE_HIGHLIGHT = Regex("~~(?=\\S)([^~\\n]{1,300}?)(?<=\\S)~~|==(?=\\S)([^=\\n]{1,300}?)(?<=\\S)==")
+  private val TAG = Regex("(?<![\\p{L}\\p{N}_&/])#([\\p{L}_][\\p{L}\\p{N}_/-]{0,100})")
+  private val BLOCK_ID = Regex("\\s\\^[A-Za-z0-9-]{1,40}\\s*$")
+  private val HTML_TAG = Regex("</?[A-Za-z][A-Za-z0-9-]{0,30}(?:\\s[^<>\\n]{0,200})?/?>")
+  private val ESCAPE = Regex("\\\\([\\\\`*_{}\\[\\]()#+\\-.!|~=<>$])")
   private val SPACES = Regex("\\s+")
   private const val PARK = 0xE000
   private val PARKED = Regex("[\\uE000-\\uE07F]")
@@ -47,8 +46,8 @@ object Markdown {
   fun toNote(markdown: String): Note {
     val text = markdown.removePrefix("﻿").replace(CRLF, "\n")
       .replaceFirst(FRONT_MATTER, "")
-      .replace(OBSIDIAN_COMMENT, "")
-      .replace(HTML_COMMENT, "")
+      .let { stripBetween(it, "%%", "%%") }
+      .let { stripBetween(it, "<!--", "-->") }
     val out = mutableListOf<ParagraphRow>()
     val buf = StringBuilder()
     var bufKind = "p"
@@ -82,8 +81,7 @@ object Markdown {
       }
       var line = raw
       if (QUOTE.containsMatchIn(line)) {
-        while (QUOTE.containsMatchIn(line)) line = line.replaceFirst(QUOTE, "")
-        line = line.replaceFirst(CALLOUT, "")
+        line = unquote(line).replaceFirst(CALLOUT, "")
       }
       if (line.isBlank()) {
         flush()
@@ -95,18 +93,18 @@ object Markdown {
         flush()
         continue
       }
-      if (RULE.matches(line)) {
+      if (isRule(line)) {
         flush()
         continue
       }
       val atx = ATX.find(line)
       if (atx != null) {
         flush()
-        append("heading", atx.groupValues[1])
+        append("heading", closeAtx(line.substring(atx.range.last + 1)))
         flush()
         continue
       }
-      if (TABLE_RULE.matches(line) && line.contains('-') && line.contains('|')) continue
+      if (isTableRule(line)) continue
       if (line.trimStart().startsWith("|")) {
         flush()
         append("p", line.trim().trim('|').split('|').joinToString(", ") { it.trim() })
@@ -116,7 +114,7 @@ object Markdown {
       val item = ITEM.find(line)
       if (item != null) {
         flush()
-        append("li", item.groupValues[1])
+        append("li", line.substring(item.range.last + 1))
         continue
       }
       if (bufKind == "li" && INDENTED.containsMatchIn(line)) {
@@ -147,8 +145,8 @@ object Markdown {
     t = CODE.replace(t) { it.groupValues[1] }
     t = HTML_TAG.replace(t, " ")
     repeat(2) {
-      t = STRONG.replace(t) { it.groupValues[2] }
-      t = STRIKE_HIGHLIGHT.replace(t) { it.groupValues[2] }
+      t = STRONG.replace(t) { it.groupValues[1] + it.groupValues[2] }
+      t = STRIKE_HIGHLIGHT.replace(t) { it.groupValues[1] + it.groupValues[2] }
       t = EM_STAR.replace(t) { it.groupValues[1] }
       t = EM_UNDERSCORE.replace(t) { it.groupValues[1] }
     }
@@ -156,5 +154,56 @@ object Markdown {
     t = BLOCK_ID.replace(t, "")
     t = PARKED.replace(t) { (it.value[0].code - PARK).toChar().toString() }
     return t.replace(SPACES, " ").trim()
+  }
+
+  /** Drops every [open]...[close] span; an unclosed one is kept, as Obsidian shows it. */
+  private fun stripBetween(s: String, open: String, close: String): String {
+    val out = StringBuilder(s.length)
+    var i = 0
+    while (true) {
+      val a = s.indexOf(open, i)
+      if (a < 0) break
+      val b = s.indexOf(close, a + open.length)
+      if (b < 0) break
+      out.append(s, i, a)
+      i = b + close.length
+    }
+    return out.append(s, i, s.length).toString()
+  }
+
+  private fun unquote(line: String): String {
+    var i = 0
+    while (true) {
+      var j = i
+      while (j < line.length && j - i < 3 && line[j] == ' ') j++
+      if (j >= line.length || line[j] != '>') return line.substring(i)
+      j++
+      if (j < line.length && (line[j] == ' ' || line[j] == '\t')) j++
+      i = j
+    }
+  }
+
+  /** A thematic break: three or more of one of `*`, `-`, `_`, spaces allowed between. */
+  private fun isRule(line: String): Boolean {
+    val t = line.trim()
+    if (t.isEmpty() || line.length - line.trimStart().length > 3) return false
+    val c = t[0]
+    if (c != '*' && c != '-' && c != '_') return false
+    var n = 0
+    for (ch in t) {
+      if (ch == c) n++ else if (ch != ' ' && ch != '\t') return false
+    }
+    return n >= 3
+  }
+
+  /** A table's `| --- | :-: |` row. */
+  private fun isTableRule(line: String): Boolean =
+    line.contains('|') && line.contains('-') && line.all { it in "|:- \t" }
+
+  /** An ATX heading's text without its optional closing run of `#`. */
+  private fun closeAtx(rest: String): String {
+    val t = rest.trim()
+    val stripped = t.trimEnd('#')
+    return if (stripped.isEmpty() || stripped.endsWith(' ') || stripped.endsWith('\t')) stripped.trim() else t
   }
 }

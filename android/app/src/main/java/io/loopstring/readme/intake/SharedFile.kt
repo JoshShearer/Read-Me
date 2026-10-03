@@ -30,7 +30,9 @@ object SharedFile {
   private val EXTENSION = Regex("\\.[A-Za-z0-9]{1,8}$")
 
   fun read(resolver: ContentResolver, uri: Uri, type: String?): Result {
-    val name = runCatching { displayName(resolver, uri) }.getOrNull() ?: uri.lastPathSegment
+    // A document URI's last segment can be "primary:Notes/Trip.md"; keep only the file name.
+    val name = runCatching { displayName(resolver, uri) }.getOrNull()
+      ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
     val bytes = try {
       resolver.openInputStream(uri)?.use { readCapped(it) } ?: return Result.Unreadable
     } catch (_: TooLarge) {
@@ -39,7 +41,12 @@ object SharedFile {
       return Result.Unreadable
     }
     val markdown = type?.lowercase() in MARKDOWN_TYPES || (name != null && MARKDOWN_NAME.containsMatchIn(name))
-    return parse(decode(bytes), markdown, name?.replace(EXTENSION, ""))
+    // Whatever the file holds, a share must not crash Read Me (a regex StackOverflowError included).
+    return try {
+      parse(decode(bytes), markdown, name?.replace(EXTENSION, ""))
+    } catch (_: Throwable) {
+      Result.Unreadable
+    }
   }
 
   /** Pure: the text of a shared file to an item. [fileTitle] is the name without extension. */
