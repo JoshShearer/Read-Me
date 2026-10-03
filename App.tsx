@@ -61,20 +61,20 @@ function Main() {
     default:
       screen = <ListScreen onOpen={open} onSettings={() => go({ name: 'settings' })} />;
   }
-  // Each screen gets its own unflattened view, keyed by route. Fabric flattens layout-only
-  // views, so screens' children were mounted straight into a shared parent, and swapping List
-  // for Trim intermittently crashed with "addViewAt: failed to insert view ... at index N"
-  // (parent [2] = SafeAreaProvider, then [34] = this wrapper once it was unflattened;
-  // reproduced 2026-10-02 on builds 65ef1b2 and e9574f4, about 4 in 10 taps). With a keyed
-  // view per route a switch removes one native view and inserts a new one.
+  // The screen is keyed by route, with no wrapper view: each screen's own root View
+  // (collapsable={false}) is the one native view a switch removes and inserts. Phase 4 keyed a
+  // wrapper View instead (an unkeyed shared parent crashed List-to-Trim with "addViewAt: failed
+  // to insert view", 2026-10-02). But that wrapper is created empty while the next screen loads
+  // (screens render null until their data arrives), and Fabric then lost it before the screen
+  // was inserted ("Unable to find viewState for tag ... for addViewAt", a blank screen): Trim's
+  // Done on a long article blanked the Reader in 4-5 of 10 runs, 10 of 10 with view
+  // preallocation off. Keyed screens: 0 of 20 (REA-26, 2026-10-03; npm run device:screens).
   const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
   // REA-22, REA-24: the status bar sits on this surface, so its icons follow the mode too.
   return (
     <View collapsable={false} style={[ui.screen, { paddingTop: insets.top, backgroundColor: palette(scheme).surface }]}>
       <StatusBar barStyle={statusBarStyle(scheme)} />
-      <View key={key} collapsable={false} style={ui.screen}>
-        {screen}
-      </View>
+      <React.Fragment key={key}>{screen}</React.Fragment>
     </View>
   );
 }

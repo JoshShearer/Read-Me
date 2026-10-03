@@ -23,6 +23,7 @@
     "device:devcheck": "scripts/devcheck.sh",
     "device:intake": "bash scripts/device-intake-e2e.sh",
     "device:playback": "bash scripts/device-playback-e2e.sh",
+    "device:screens": "bash scripts/device-screens.sh",
     "device:accept-share": "bash scripts/device-accept-share.sh",
     "device:gap": "bash scripts/device-gap.sh",
     "notices": "node scripts/make-notices.mjs",
