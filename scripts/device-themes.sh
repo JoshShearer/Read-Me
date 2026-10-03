@@ -31,11 +31,14 @@ demo -e command battery -e level 100 -e plugged false
 demo -e command network -e wifi show -e level 4 -e mobile hide
 demo -e command notifications -e visible false
 
+# Long enough that playback cannot reach the end before Pause: finishing archives the item
+# (R-M11), which took Pause off the screen and the item off the list for the dark pass (REA-28,
+# twice on 2026-10-03 once the Reader dumped more slowly).
 FIRST='Light and dark both have to read well.
 
 This second paragraph gets cut in Trim, so its faint style is measured too.
 
-The last paragraph is plain text again, long enough to wrap onto a second line on the phone.'
+The last paragraph is plain text again, long enough to wrap onto a second line on the phone. It goes on for a while, because reading it to the end archives the item, and the dark pass opens it again. A few more sentences keep it playing while the screen is captured and Pause is pressed. The playback stops well before here.'
 SECOND='A second item keeps the list from looking empty. It has one paragraph.'
 
 device_clear_app
