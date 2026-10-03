@@ -27,6 +27,8 @@ type Roles = {
   outlineVariant: string;
   surfaceContainerLow: string;
   surfaceContainerHigh: string;
+  // Behind a bottom sheet: Material 3's black scrim at 32%, as #rrggbbaa.
+  scrim: string;
 };
 
 export type Palette = Roles & {
@@ -69,6 +71,7 @@ const LIGHT = withAliases({
   outlineVariant: '#ccc4ce',
   surfaceContainerLow: '#f7f2fc',
   surfaceContainerHigh: '#ede7f7',
+  scrim: '#00000052',
 });
 
 const DARK = withAliases({
@@ -91,6 +94,7 @@ const DARK = withAliases({
   outlineVariant: '#4a444e',
   surfaceContainerLow: '#262228',
   surfaceContainerHigh: '#342e38',
+  scrim: '#00000052',
 });
 
 /**
