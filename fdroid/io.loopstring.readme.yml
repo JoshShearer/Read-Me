@@ -1,0 +1,54 @@
+Categories:
+  - Reading
+  - Text to Speech
+License: MIT
+AuthorName: Josh Shearer
+SourceCode: https://github.com/JoshShearer/Read-Me
+IssueTracker: https://github.com/JoshShearer/Read-Me/issues
+Changelog: https://github.com/JoshShearer/Read-Me/releases
+
+AutoName: Read Me
+
+RepoType: git
+Repo: https://github.com/JoshShearer/Read-Me.git
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0
+    subdir: android/app
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake ninja-build libicu-dev
+      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
+      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
+        | sha256sum -c -
+      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+      - ln -sf /opt/node/bin/node /opt/node/bin/npm /usr/local/bin/
+    init: cd ../.. && npm ci --ignore-scripts
+    gradle:
+      - yes
+    srclibs:
+      - hermes@hermes-v250829098.0.17
+    prebuild:
+      - cd ../.. && HERMES_SRC=$$hermes$$ bash scripts/build-hermesc.sh $$hermes$$/out
+      # fdroidserver joins prebuild entries with "; " into one shell, so this runs at the repo
+      # root (the cd above). gradle.properties has no final newline: start with one.
+      - printf '\nreadmeHermesc=%s\n' "$$hermes$$/out/build/bin/hermesc" >> android/gradle.properties
+    scanignore:
+      # Publishing config for building React Native itself; this app uses the released AARs.
+      - node_modules/react-native/ReactAndroid/publish.gradle
+      # A local directory repo inside node_modules, not a remote one.
+      - node_modules/react-native-safe-area-context/android/build.gradle
+    scandelete:
+      # Prebuilt compilers: hermesc is rebuilt from source in prebuild (scripts/build-hermesc.sh).
+      - node_modules/hermes-compiler/hermesc
+      # The dotslash launcher and iOS-only language packs; neither is used by the Android build.
+      - node_modules/fb-dotslash/bin
+      - node_modules/react-native/React/I18n/strings
+    ndk: r27b
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 1.0.0
+CurrentVersionCode: 1

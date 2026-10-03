@@ -43,9 +43,15 @@ npm run device:playback   # shares a text, plays it, pauses/resumes by tap and b
 npm run device:lifecycle  # REA-25: a paused session survives 75 s in the background and headset Play resumes it (ADR 0009); a force-stopped TTS engine is rebound and reading resumes (clears app data; about 3 min)
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): once, before a release (Phase 6b acceptance). Branches that touch queue timing run the 2-min default
+AIRPLANE=1 GAP_MINUTES=10 npm run device:gap   # R-M14 run 2 (the release run): the 10-min measurement in airplane mode, restored on exit
+npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, trims, plays at 2.0x, locks 60 s, waits for the owner's unlock, checks the position held and resumes after a kill (needs network; clears app data)
+npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
+npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's way; must print repro: SAME (about 4 min)
+npm run release:keystore  # the owner, once: creates the release key interactively (docs/release.md)
+npm run release:apk -- release/tested-<sha>.apk  # the signed APK, checked against release/signing-cert.sha256 and the tested build; SHA256SUMS
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
 npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
                             # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
@@ -194,10 +200,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `device:ui` and the `device:screenshots` retake are still to do.
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
-  R-M13 is partial: Licenses lists npm packages (with their license text where the package
-  ships one) and Maven artifacts (license name and URL only); native components compiled
-  into `libreactnative.so` (folly, glog, double-conversion, fast_float) and the NDK's
-  `libc++_shared.so` are not listed yet. Phase 6 completes it.
+  App keys the screen element itself, not a wrapper View: a keyed wrapper created empty while
+  the next screen loaded was lost by Fabric before the screen went into it, blanking the
+  Reader after Trim's Done on a real article in 4-5 of 10 runs (REA-26; `npm run device:screens`).
+  The Settings bridge section once rendered blank the same way (REA-27, open).
 - **Bridge (Phase 5, REA-20):** `BridgeServer` (Kotlin, plain JVM) on explicit 127.0.0.1:8787
   (configurable), hosted by PlaybackService while Settings has it on; contract v1 plus ADR 0008
   (one synthesis at most `maxChars`). The bridge turns on only with POST_NOTIFICATIONS, which
@@ -220,6 +226,28 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   let Read Me restart it from the background (Android bound iFlytek instead), so reading
   through the bridge stops there until Read Me is opened; battery exemptions do not help and
   Google TTS has no entry in EMUI's App launch list. Not run on the reference device.
+- **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven (including the
+  substituted react-android and hermes-android), the native libraries in `libreactnative.so`
+  (folly, glog, double-conversion, fast_float, fmt, boost), libjpeg-turbo 2.1.5.1 inside Fresco's
+  `libnative-imagetranscoder.so` (its BSD and IJG notices), and the NDK's libc++, every entry
+  with its license text (a `strings` sweep of every `.so` for bundled copyright lines, 2026-10-03). Signing from the owner's Gradle
+  properties only, checked against `release/signing-cert.sha256`. F-Droid: `scripts/fdroid-scan.sh`
+  CLEAN including the post-`npm ci` tree with the recipe's deletions, `fdroid lint` clean,
+  `npm run repro -- <tested apk>` SAME and equal to the tested APK (two clones running the recipe's
+  own prebuild, 2026-10-03, this machine only); hermesc
+  built from source gives a byte-identical bundle. R-M14 on the reference device, 2026-10-03,
+  build 647128c (`device:bridge`, `device:ui`, `device:intake`, `device:screens`) and baa9ad8
+  (byte-identical APK; `device:accept-share`, `device:playback`, `AIRPLANE=1 GAP_MINUTES=10
+  device:gap`): run 1 reading advanced while locked and resumed at sentence 13 after a kill,
+  the list showing 2% read; run 2 n=92 p50=12 p95=19 max=26 ms, stalls 0, errors 0, airplane
+  mode, battery, forced Doze, screen off; run 4 (hostile input, the service survives) by
+  `device:bridge`. Run 3 only by a stand-in: `device:bridge` calls the bridge from JS injected
+  into Obsidian's WebView over CDP, not through the plugin. The plugin's bridge engine shipped
+  (NRL-130, note-reader-local 5b3f963, `ReadMeBridgeEngine`) and was measured on the Huawei
+  MatePad only; a plugin read on the reference device is not established, so run 3 is open.
+  Run 1's share is the intent a browser sends, sent by adb.
+  `device:playback` gaps n=26 p50=12 p95=17. Not established: an F-Droid build server run,
+  and whether F-Droid accepts the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

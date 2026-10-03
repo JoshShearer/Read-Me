@@ -7,6 +7,8 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    // REA-26: F-Droid builds hermesc from source (scripts/build-hermesc.sh) and passes it here.
+    if (findProperty('readmeHermesc')) hermesCommand = findProperty('readmeHermesc')
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
@@ -91,7 +93,15 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
+        // REA-26: reproducible native libraries. The GNU build ID hashes the unstripped library,
+        // whose debug info holds the checkout's path, so two clones (ours, F-Droid's) differed
+        // only in it. RN adds its own CMake arguments without replacing this one.
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--build-id=none"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -100,15 +110,32 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // REA-26: the owner's key, read from ~/.gradle/gradle.properties or ORG_GRADLE_PROJECT_*
+            // env; nothing secret is in this repo. Used only with -PreadmeSign=release.
+            if (findProperty('readmeSign') == 'release') {
+                def need = ['READ_ME_STORE_FILE', 'READ_ME_STORE_PASSWORD', 'READ_ME_KEY_ALIAS', 'READ_ME_KEY_PASSWORD']
+                def missing = need.findAll { !findProperty(it) }
+                if (missing) throw new GradleException("release signing needs Gradle properties: ${missing.join(', ')}")
+                storeFile file(findProperty('READ_ME_STORE_FILE'))
+                storePassword findProperty('READ_ME_STORE_PASSWORD')
+                keyAlias findProperty('READ_ME_KEY_ALIAS')
+                keyPassword findProperty('READ_ME_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
+            // Debug-signed by default so device scripts and CI keep working; npm run release:apk
+            // signs with the owner's key and checks the content equals the tested build.
+            // One plain assignment per line: F-Droid's remove_signing_keys strips only that form.
             signingConfig signingConfigs.debug
+            if (findProperty('readmeSign') == 'release') {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

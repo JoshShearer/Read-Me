@@ -1,0 +1,10 @@
+[
+  {"name": "folly", "version": "2024.11.18.00", "license": "Apache-2.0", "text": "texts/folly-LICENSE.txt"},
+  {"name": "glog", "version": "0.3.5", "license": "BSD-3-Clause", "text": "texts/glog-COPYING.txt"},
+  {"name": "double-conversion", "version": "1.1.6", "license": "BSD-3-Clause", "text": "texts/double-conversion-LICENSE.txt"},
+  {"name": "fast_float", "version": "8.0.0", "license": "Apache-2.0 OR MIT OR BSL-1.0", "text": "texts/fast_float-LICENSE-MIT.txt"},
+  {"name": "fmt", "version": "12.1.0", "license": "MIT", "text": "texts/fmt-LICENSE.txt"},
+  {"name": "boost", "version": "1.83.0", "license": "BSL-1.0", "text": "texts/boost-LICENSE_1_0.txt"},
+  {"name": "LLVM libc++ (NDK)", "version": "27.1.12297006", "license": "Apache-2.0 WITH LLVM-exception", "text": "texts/libcxx-LICENSE.TXT"},
+  {"name": "libjpeg-turbo", "version": "2.1.5.1", "license": "IJG AND BSD-3-Clause AND Zlib", "text": "texts/libjpeg-turbo-LICENSE.txt"}
+]

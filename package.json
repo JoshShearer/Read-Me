@@ -1,6 +1,6 @@
 {
   "name": "io.loopstring.readme",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -12,7 +12,10 @@
     "build:release": "scripts/build-release.sh",
     "device:install": "scripts/device-install.sh",
     "device:smoke": "scripts/device-smoke.sh",
-    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh",
+    "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh && bash scripts/tests/release-lib.test.sh && bash scripts/tests/recipe.test.sh",
+    "release:keystore": "bash scripts/release-keystore.sh",
+    "release:apk": "bash scripts/release-apk.sh",
+    "repro": "bash scripts/repro-check.sh",
     "devcheck:fixtures": "node scripts/make-devcheck-fixtures.mjs",
     "postinstall": "node scripts/make-devcheck-fixtures.mjs",
     "pretest": "node scripts/make-devcheck-fixtures.mjs",
@@ -20,6 +23,8 @@
     "device:devcheck": "scripts/devcheck.sh",
     "device:intake": "bash scripts/device-intake-e2e.sh",
     "device:playback": "bash scripts/device-playback-e2e.sh",
+    "device:screens": "bash scripts/device-screens.sh",
+    "device:accept-share": "bash scripts/device-accept-share.sh",
     "device:gap": "bash scripts/device-gap.sh",
     "notices": "node scripts/make-notices.mjs",
     "device:ui": "bash scripts/device-ui-e2e.sh",
@@ -56,6 +61,7 @@
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
+    "license-checker-rseidelsohn": "5.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
     "typescript": "^6.0.3"

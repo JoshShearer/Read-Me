@@ -1,0 +1,5 @@
+First release.
+
+Share an article link or any text to Read Me and it reads it aloud with your phone's own offline voice. Trim what you don't want first, then listen with the screen off; your place is kept. Controls work from headphones, the lock screen and the notification. No network voices, no tracking, no account.
+
+Also serves your offline voice to the Obsidian Local TTS Reader plugin on the same phone.

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# R-M13 / AGENTS.md 14: F-Droid-style checks. Runs all four and exits 0 only if all pass.
+# R-M13 / AGENTS.md 14: F-Droid-style checks. Runs all five and exits 0 only if all pass.
 #   1. fdroidserver source scan of a clean export of HEAD (what F-Droid's builder sees).
 #   2. fdroidserver binary scan of the release APK (known non-free classes).
 #   3. No Play Services / Firebase / Crashlytics in the resolved release runtime classpath.
 #   4. Production npm licenses (scripts/check-licenses.mjs, ADR 0002).
+#   5. fdroidserver source scan of the tree after npm ci, with the recipe's deletions.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 VENV=.venv-fdroid
-[ -x "$VENV/bin/fdroid" ] || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5; } || exit 1
+{ [ -x "$VENV/bin/fdroid" ] && [ -x "$VENV/bin/apksigcopier" ]; } || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5 apksigcopier==1.1.1; } || exit 1
 fail=0
 SRC=$(mktemp -d); DEPS=$(mktemp)
 trap 'rm -rf "$SRC" "$DEPS"' EXIT
@@ -46,6 +47,33 @@ else echo "none"; fi
 
 echo "== 4. npm production licenses"
 node scripts/check-licenses.mjs || fail=1
+
+echo "== 5. source scan after npm ci, with the recipe's scandelete and scanignore"
+# SPIKE-04: a git export misses node_modules, which F-Droid's builder has after the recipe's
+# init. Apply the recipe's own deletions so the scan and the recipe cannot drift apart.
+TREE=$(mktemp -d)
+if ! { git archive HEAD | tar -x -C "$TREE" && ( cd "$TREE" && npm ci --ignore-scripts --silent ); }; then
+  echo "npm ci in the export failed; scan not run"; fail=1
+else "$VENV/bin/python" - fdroid/io.loopstring.readme.yml "$TREE" <<'PY' || fail=1
+import sys, glob, os, shutil, yaml, logging, argparse
+logging.basicConfig(level=logging.ERROR, format="%(levelname)s %(message)s")
+from fdroidserver import common, metadata, scanner
+# The scanner logs each problem only when its options say verbose.
+common.get_options = lambda: argparse.Namespace(verbose=True, json=False)
+recipe, tree = sys.argv[1], sys.argv[2]
+raw = yaml.safe_load(open(recipe))["Builds"][-1]
+for pat in raw.get("scandelete", []):
+    for p in glob.glob(os.path.join(tree, pat)):
+        shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+build = metadata.Build()
+build.scanignore = raw.get("scanignore", [])
+common.get_config()
+n = scanner.scan_source(tree, build)
+print("source problems after npm ci:", n)
+sys.exit(1 if n else 0)
+PY
+fi
+rm -rf "$TREE"
 
 echo "== result: $([ $fail -eq 0 ] && echo CLEAN || echo PROBLEMS)"
 exit $fail

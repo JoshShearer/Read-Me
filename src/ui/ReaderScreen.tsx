@@ -82,7 +82,7 @@ export function ReaderScreen({
   }, [currentAt, sentenceStart, lineY]);
 
   // Nothing, not an empty View, while loading: an empty layout-only View followed by the
-  // full screen inside App's keyed screen view made Fabric add children to a view it had not
+  // full screen inside App's former keyed wrapper view made Fabric add children to a view it had not
   // created ("Unable to find viewState ... for addViewAt"), leaving a blank screen on about
   // half of List-to-Trim taps (repro loop, 2026-10-02); with null it opened 10 of 10.
   if (detail === undefined) return null;

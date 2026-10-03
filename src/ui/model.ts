@@ -120,8 +120,8 @@ export type Notice = { name: string; version: string; license: string; url?: str
 
 export function parseNotices(json: string): Notice[] {
   try {
-    const d = JSON.parse(json) as { npm?: Notice[]; android?: Notice[] };
-    return [...(d.npm ?? []), ...(d.android ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+    const d = JSON.parse(json) as { npm?: Notice[]; android?: Notice[]; native?: Notice[] };
+    return [...(d.npm ?? []), ...(d.android ?? []), ...(d.native ?? [])].sort((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];
   }
