@@ -74,13 +74,18 @@ class TtsSynthTest {
     s.shutdown()
   }
 
-  @Test fun aSecondLossSoonAfterARebindFailsWithoutRebindingAgain() {
+  @Test fun aFailedRebindIsNotRetriedInsideTheGapButIsAfterIt() {
     val s = readySynth()
     kill(ShadowTextToSpeech.getLastTextToSpeechInstance())
-    nextEngineDies = true // the rebuilt engine dies too
+    // The rebound engine comes up unusable (no voice to pin), decided before it initialises so
+    // the worker thread cannot race the harness.
+    ShadowTextToSpeech.reset()
+    instances.clear()
+    instances += placeholder
     assertEquals(SynthResult.FAILED, run(s) { true })
     val rebuilt = ShadowTextToSpeech.getLastTextToSpeechInstance()
-    assertFalse("a lost engine is not reported ready", s.ready)
+    assertNotSame(placeholder, rebuilt)
+    assertFalse("a failed rebind is not reported ready", s.ready)
 
     clock += TtsSynth.REBIND_GAP_MS - 1
     assertFalse(s.ready)
@@ -89,10 +94,10 @@ class TtsSynthTest {
 
     // Past the gap it is ready again and the next request rebinds: never stuck for good.
     clock += 1
-    nextEngineDies = false
+    ShadowTextToSpeech.addVoice(voice("en-us-x-test-local"))
     assertTrue(s.ready)
     assertEquals(SynthResult.OK, run(s) { true })
-    assertEquals(3, instances.size)
+    assertNotSame(rebuilt, ShadowTextToSpeech.getLastTextToSpeechInstance())
     s.shutdown()
   }
 
@@ -164,7 +169,6 @@ class TtsSynthTest {
   // --- harness ---
 
   private val instances = mutableListOf<TextToSpeech>()
-  private var nextEngineDies = false
 
   private fun readySynth(): TtsSynth {
     ShadowTextToSpeech.addVoice(voice("en-us-x-test-local"))
@@ -201,7 +205,6 @@ class TtsSynthTest {
       if (!first) shadowOf(last).simulateSynthesizeToFileResult(TextToSpeech.SUCCESS)
       shadowOf(last).onInitListener.onInit(TextToSpeech.SUCCESS)
       main.idle()
-      if (!first && nextEngineDies) kill(last)
     }
   }
 
