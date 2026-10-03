@@ -218,18 +218,25 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   (playback code unchanged since). After a reboot or process death the
   bridge returns when Read Me is next opened (no boot receiver). Not established: Android
   14-16, the real plugin (NRL-130), screen-off use from Obsidian.
-- **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven and the native
-  libraries in `libreactnative.so` (folly, glog, double-conversion, fast_float, fmt, boost) plus
-  the NDK's libc++, every entry with its license text. Signing from the owner's Gradle
+- **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven (including the
+  substituted react-android and hermes-android), the native libraries in `libreactnative.so`
+  (folly, glog, double-conversion, fast_float, fmt, boost), libjpeg-turbo 2.1.5.1 inside Fresco's
+  `libnative-imagetranscoder.so` (its BSD and IJG notices), and the NDK's libc++, every entry
+  with its license text (a `strings` sweep of every `.so` for bundled copyright lines, 2026-10-03). Signing from the owner's Gradle
   properties only, checked against `release/signing-cert.sha256`. F-Droid: `scripts/fdroid-scan.sh`
   CLEAN including the post-`npm ci` tree with the recipe's deletions, `fdroid lint` clean,
-  `npm run repro` SAME (55296043 bytes, two clones, 2026-10-03, this machine only); hermesc
+  `npm run repro -- <tested apk>` SAME and equal to the tested APK (two clones running the recipe's
+  own prebuild, 2026-10-03, this machine only); hermesc
   built from source gives a byte-identical bundle. R-M14 on the reference device, 2026-10-03,
   build 647128c (`device:bridge`, `device:ui`, `device:intake`, `device:screens`) and baa9ad8
   (byte-identical APK; `device:accept-share`, `device:playback`, `AIRPLANE=1 GAP_MINUTES=10
   device:gap`): run 1 reading advanced while locked and resumed at sentence 13 after a kill,
   the list showing 2% read; run 2 n=92 p50=12 p95=19 max=26 ms, stalls 0, errors 0, airplane
-  mode, battery, forced Doze, screen off; runs 3 and 4 by `device:bridge` with Obsidian.
+  mode, battery, forced Doze, screen off; run 4 (hostile input, the service survives) by
+  `device:bridge`. Run 3 only by a stand-in: `device:bridge` calls the bridge from JS injected
+  into Obsidian's WebView over CDP, not from the plugin, whose bridge client (NRL-130) does not
+  exist yet; run 3 itself is not established. Run 1's share is the intent a browser sends,
+  sent by adb.
   `device:playback` gaps n=26 p50=12 p95=17. Not established: an F-Droid build server run,
   and whether F-Droid accepts the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code

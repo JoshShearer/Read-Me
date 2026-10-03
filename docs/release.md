@@ -37,7 +37,9 @@ nothing for day-to-day builds, device scripts or CI.
    scripts/fdroid-scan.sh             # == result: CLEAN
    npm run repro -- release/tested-<sha>.apk   # repro: SAME, and the recipe's build equals ours
    ```
-   Record the results in `AGENTS.md` Known state (date, device, build).
+   Write the results down (date, device, build); they go into `AGENTS.md` Known state by a PR
+   after the release. `release:apk` refuses a dirty tree, and a commit now would move HEAD off
+   the tested commit.
 2. `npm run release:apk -- release/tested-<sha>.apk`. It builds with your key, refuses any
    other signer, checks the signed APK's content equals the tested one (apksigcopier), and
    writes `release/read-me-<version>.apk` and `release/SHA256SUMS`.
@@ -55,7 +57,8 @@ nothing for day-to-day builds, device scripts or CI.
 ## Publish (yours)
 
 1. The draft release: `gh release view v<version>` shows the APK, `SHA256SUMS` and the notes.
-   Publishing creates the tag on `main`: `gh release edit v<version> --draft=false`.
+   Publishing creates the tag at the commit the draft names (`--target`, the tested commit):
+   `gh release edit v<version> --draft=false`.
 2. Make the repository public (F-Droid builds from public source). First check the history
    holds nothing private: read what `git log -p --all | grep -iE '^\+.*(password|BEGIN .*PRIVATE)'`
    prints. On 2026-10-03 the hits were comments, script messages and the debug keystore's

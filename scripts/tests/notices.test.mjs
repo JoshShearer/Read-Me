@@ -65,3 +65,10 @@ test('substituted and versionless coordinates resolve to what Gradle picked', ()
     'com.facebook.react:react-android:0.87.1',
   ]);
 });
+
+test('libjpeg-turbo, compiled into Fresco\'s imagetranscoder, ships its BSD and IJG notices', () => {
+  const j = nativeNotices().find(n => n.name === 'libjpeg-turbo');
+  assert.ok(j, 'no libjpeg-turbo notice');
+  assert.match(j.text, /Independent JPEG Group/);
+  assert.match(j.text, /Redistribution and use in source and binary forms/);
+});

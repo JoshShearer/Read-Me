@@ -131,7 +131,11 @@ android {
         release {
             // Debug-signed by default so device scripts and CI keep working; npm run release:apk
             // signs with the owner's key and checks the content equals the tested build.
-            signingConfig findProperty('readmeSign') == 'release' ? signingConfigs.release : signingConfigs.debug
+            // One plain assignment per line: F-Droid's remove_signing_keys strips only that form.
+            signingConfig signingConfigs.debug
+            if (findProperty('readmeSign') == 'release') {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

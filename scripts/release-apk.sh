@@ -12,10 +12,10 @@ TESTED=${1:?usage: npm run release:apk -- <the debug-signed APK the acceptance r
 [ -x .venv-fdroid/bin/apksigcopier ] || { echo "refused: no .venv-fdroid/bin/apksigcopier; run scripts/fdroid-scan.sh once"; exit 1; }
 VER=$(node -p "require('./package.json').version")
 node scripts/make-notices.mjs --check
+# From here the build output is release-signed: whatever happens, never leave it under the
+# stamped debug build's name for a device script (or a hand upload) to pick up.
+trap 'rm -f android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/app-release.apk.stamp' EXIT
 ( cd android && ./gradlew --quiet assembleRelease -PreadmeSign=release )
 OUT=release/read-me-$VER.apk
 publish_checked android/app/build/outputs/apk/release/app-release.apk release "$VER" "$TESTED"
-# The release-signed build replaced the stamped debug one; drop the stamp so device scripts
-# rebuild rather than try to install this over the debug-signed app.
-rm -f android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/app-release.apk.stamp
 echo "ready: $OUT sha256 $(cut -c1-16 release/SHA256SUMS)..., signer $(cert_sha256 "$OUT" | cut -c1-16)..."

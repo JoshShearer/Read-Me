@@ -14,6 +14,10 @@ mkdir -p "$OUT"
 if [ ! -d "$SRC" ]; then
   git clone -q --depth 1 --branch "hermes-v$V" https://github.com/facebook/hermes.git "$SRC" >&2
 fi
+# A checkout at another tag would compile the bundle with a different Hermes than the
+# runtime ships (an RN upgrade that forgot the recipe's srclib pin).
+at=$(git -C "$SRC" describe --tags --exact-match 2>/dev/null || echo "an untagged commit")
+[ "$at" = "hermes-v$V" ] || { echo "refused: $SRC is at $at, not hermes-v$V (hermes-compiler's version)" >&2; exit 1; }
 # The SDK's CMake ships Ninja; F-Droid's recipe installs both from Debian instead.
 CMAKE_BIN=${ANDROID_HOME:-$HOME/Android/Sdk}/cmake/3.22.1/bin
 [ -d "$CMAKE_BIN" ] && PATH="$CMAKE_BIN:$PATH"
