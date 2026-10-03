@@ -113,3 +113,13 @@ object ServiceText {
     return Text(itemTitle, if (bridgeOn) "$state · Obsidian bridge on" else state, true)
   }
 }
+
+/**
+ * REA-18: when playback's engine dies (its process killed or crashed), TextToSpeech does not
+ * rebind by itself. The service rebinds once and resumes; a second loss before the user presses
+ * Play again leaves playback paused at the saved position.
+ */
+object RecoveryPolicy {
+  const val MAX_REBINDS = 1
+  fun rebind(rebindsSinceUserPlay: Int, rebinding: Boolean) = !rebinding && rebindsSinceUserPlay < MAX_REBINDS
+}
