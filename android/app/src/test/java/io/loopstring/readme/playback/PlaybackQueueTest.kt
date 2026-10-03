@@ -20,7 +20,10 @@ class PlaybackQueueTest {
     val saves = mutableListOf<Triple<Long, Int, Int>>()
     val finished = mutableListOf<Long>()
     val snapshots = mutableListOf<PlaybackSnapshot>()
+    var failSaves = false
     override fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int) {
+      // Stands in for SQLiteDiskIOException, a RuntimeException that Store.savePosition rethrows.
+      if (failSaves) throw RuntimeException("disk I/O")
       saves += Triple(itemId, paragraphIndex, charOffset)
     }
     override fun finished(itemId: Long) { finished += itemId }
@@ -233,5 +236,19 @@ class PlaybackQueueTest {
     assertTrue(queue.snapshot().playing)
     assertEquals(7L, queue.snapshot().itemId)
     assertTrue(queue.load(9, rows, 0, 2.0f))
+  }
+
+  @Test fun aFailedSaveStillQueuesTheNextSentenceAndIsCounted() {
+    // REA-18: Store.savePosition rethrows anything but a constraint error; a throw before the
+    // top-up left the queue playing with nothing queued.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    sink.failSaves = true
+    queue.onDone("$g:0")
+    assertEquals("$g:3", lastId())
+    assertTrue(queue.snapshot().playing)
+    assertTrue(queue.pause())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(2, queue.takeStats().saveErrors)
   }
 }

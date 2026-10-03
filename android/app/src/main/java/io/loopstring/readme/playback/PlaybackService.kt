@@ -362,8 +362,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun logStats() {
     val st = queue.takeStats()
     val g = st.gaps
-    if (g.count == 0 && st.errors == 0) return
-    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors}")
+    if (g.count == 0 && st.errors == 0 && st.saveErrors == 0) return
+    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors} saveErrors=${st.saveErrors}")
   }
 
   // --- focus, noisy, session, notification ---

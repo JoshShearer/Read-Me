@@ -2,7 +2,7 @@ package io.loopstring.readme.playback
 
 import io.loopstring.readme.store.Rate
 
-data class QueueStats(val gaps: GapSummary, val errors: Int)
+data class QueueStats(val gaps: GapSummary, val errors: Int, val saveErrors: Int)
 
 /**
  * R-M07 and srs.md "Playback": the sentence queue the native service owns (AGENTS.md 11).
@@ -27,6 +27,7 @@ class PlaybackQueue(
   private var lastDoneAt = -1L
   private val gaps = ArrayList<Long>()
   private var errors = 0
+  private var saveErrors = 0
   // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
   private val deleted = HashSet<Long>()
 
@@ -131,9 +132,10 @@ class PlaybackQueue(
   fun snapshot(): PlaybackSnapshot = synchronized(lock) { snapshotLocked() }
 
   fun takeStats(): QueueStats = synchronized(lock) {
-    val s = QueueStats(GapStats.summarize(gaps), errors)
+    val s = QueueStats(GapStats.summarize(gaps), errors, saveErrors)
     gaps.clear()
     errors = 0
+    saveErrors = 0
     s
   }
 
@@ -148,7 +150,7 @@ class PlaybackQueue(
       return
     }
     current = next
-    sink.savePosition(id, rows[next].paragraphIndex, rows[next].start)
+    saveRowLocked(id, rows[next])
     topUpLocked()
   }
 
@@ -187,7 +189,16 @@ class PlaybackQueue(
   private fun saveLocked() {
     val id = itemId ?: return
     val r = rows.getOrNull(current) ?: return
-    sink.savePosition(id, r.paragraphIndex, r.start)
+    saveRowLocked(id, r)
+  }
+
+  /** R-M11 asks for a save per sentence; a failed save must not stop the reading. */
+  private fun saveRowLocked(id: Long, r: SentenceRow) {
+    try {
+      sink.savePosition(id, r.paragraphIndex, r.start)
+    } catch (e: RuntimeException) {
+      saveErrors++
+    }
   }
 
   private fun clearLocked() {
