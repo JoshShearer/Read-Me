@@ -211,7 +211,15 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   absent from logcat) and `npm run device:ui`; `npm run device:playback` on build 7c2c04a
   (playback code unchanged since). After a reboot or process death the
   bridge returns when Read Me is next opened (no boot receiver). Not established: Android
-  14-16, the real plugin (NRL-130), screen-off use from Obsidian.
+  14-16, the real plugin (NRL-130), screen-off use from Obsidian on the reference device.
+  Engine death (REA-29, PR #18): the bridge rebinds a dead engine and retries once, at most
+  one rebind per 10 s, `ttsReady:false` meanwhile; a rebind must return the same voice, so
+  Android's silent fallback to another engine is refused (owner decision: a stop, not a
+  different voice). On the Huawei VRD-W09 tablet (secondary, EMUI 12, build 5bda92a,
+  2026-10-03, real plugin) EMUI kills Google TTS within minutes of screen off and will not
+  let Read Me restart it from the background (Android bound iFlytek instead), so reading
+  through the bridge stops there until Read Me is opened; battery exemptions do not help and
+  Google TTS has no entry in EMUI's App launch list. Not run on the reference device.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
