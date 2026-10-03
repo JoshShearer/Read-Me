@@ -1,6 +1,6 @@
 {
   "name": "io.loopstring.readme",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -15,6 +15,7 @@
     "test:scripts": "node --test 'scripts/tests/*.test.mjs' && bash scripts/tests/device-lib.test.sh && bash scripts/tests/release-lib.test.sh",
     "release:keystore": "bash scripts/release-keystore.sh",
     "release:apk": "bash scripts/release-apk.sh",
+    "repro": "bash scripts/repro-check.sh",
     "devcheck:fixtures": "node scripts/make-devcheck-fixtures.mjs",
     "postinstall": "node scripts/make-devcheck-fixtures.mjs",
     "pretest": "node scripts/make-devcheck-fixtures.mjs",

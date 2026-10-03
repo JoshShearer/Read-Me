@@ -93,7 +93,15 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
+        // REA-26: reproducible native libraries. The GNU build ID hashes the unstripped library,
+        // whose debug info holds the checkout's path, so two clones (ours, F-Droid's) differed
+        // only in it. RN adds its own CMake arguments without replacing this one.
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--build-id=none"
+            }
+        }
     }
     signingConfigs {
         debug {
