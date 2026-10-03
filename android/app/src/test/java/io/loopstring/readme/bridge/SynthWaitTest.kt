@@ -37,4 +37,20 @@ class SynthWaitTest {
     assertEquals(SynthResult.FAILED, w.await(1_000))
     assertFalse(w.cancel())
   }
+
+  @Test fun anEngineThatDiesMidSynthesisEndsTheWaitAsLost() {
+    val w = SynthWait()
+    w.begin("b1")
+    var checks = 0
+    val start = System.nanoTime()
+    assertEquals(SynthResult.LOST, w.await(60_000, 20) { ++checks < 3 })
+    assertEquals(3, checks)
+    assertTrue("did not wait out the timeout", System.nanoTime() - start < 5_000_000_000L)
+  }
+
+  @Test fun aLiveEngineIsWaitedOutToTheTimeout() {
+    val w = SynthWait()
+    w.begin("b1")
+    assertEquals(SynthResult.TIMEOUT, w.await(100, 20) { true })
+  }
 }
