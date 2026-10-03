@@ -41,7 +41,7 @@ wait_log() {
   echo "FAIL: no '$1' within $2 s"; return 1
 }
 session_state() {
-  adb shell dumpsys media_session | grep -A14 "package=$PKG" | grep -oE 'state=[A-Z]+' | head -1
+  adb shell dumpsys media_session | grep -A14 "package=$PKG" | grep -oE '\{state=[A-Z]+' | head -1 | tr -d '{'
 }
 
 fail=0

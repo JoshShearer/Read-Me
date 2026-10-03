@@ -109,6 +109,8 @@ if device_has "$all" "$MARK|heron|Paragraph [0-9] begins"; then
   echo "FAIL: a log line carries the shared text"; fail=1
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+# REA-25: a cold engine (8 s to first audio) must not be taken for a dead one.
+if logs | grep -q 'engine lost'; then echo "FAIL: a stall was declared during normal playback"; fail=1; fi
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then
   echo "FAIL: crash logged"; fail=1
 fi
