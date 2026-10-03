@@ -1,7 +1,9 @@
 // R-M01 Settings: voice (R-M06: offline voices only), default rate, storage, Licenses (R-M13).
 // R-M12: the Obsidian bridge row (on/off, port, pairing token with Copy).
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
+import { Text } from './Text';
+import { palette } from './theme';
 import {
   copyBridgeToken,
   ensureNotifications,
@@ -20,6 +22,7 @@ import { bridgeStatus, formatRate, parsePort, stepRate, visibleItems } from './m
 import { ui } from './ui';
 
 export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
+  const colors = palette(useColorScheme());
   const [engine, setEngine] = useState<Engine | null>(null);
   const [rate, setRateState] = useState(2);
   const [items, setItems] = useState<Item[]>([]);
@@ -98,7 +101,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       {engine === null ? (
         <Text style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
       ) : engineBlocked(engine.status) ? (
-        <View collapsable={false} style={ui.card}>
+        <View collapsable={false} style={[ui.card, { borderColor: colors.border }]}>
           <Text>No offline text-to-speech voice is available.</Text>
           <Pressable
             style={ui.button}
@@ -167,6 +170,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             <Text style={ui.small}>Port</Text>
             <TextInput
               accessibilityLabel="bridge port"
+              style={{ color: colors.text }}
               keyboardType="number-pad"
               value={portText}
               onChangeText={setPortText}

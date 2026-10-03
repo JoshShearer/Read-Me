@@ -1,6 +1,7 @@
 // R-M01 List: unread items or the Archive; R-M10 states with their actions. Never logs.
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, View } from 'react-native';
+import { Text } from './Text';
 import {
   deleteItem,
   drainFetched,

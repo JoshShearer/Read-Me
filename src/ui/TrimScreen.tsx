@@ -1,7 +1,8 @@
 // R-M05 Trim: tap cuts or restores a paragraph; a long press offers "Cut everything after
 // this" and "Start here". Cuts are a separate set; text is never changed (AGENTS.md 12).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, View } from 'react-native';
+import { Text } from './Text';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import { applyCuts } from '../library/playback';
 import { cutAfter, startHere, toggleCut } from '../trim/cuts';
