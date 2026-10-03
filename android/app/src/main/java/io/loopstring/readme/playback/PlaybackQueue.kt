@@ -28,6 +28,8 @@ class PlaybackQueue(
   private val gaps = ArrayList<Long>()
   private var errors = 0
   private var saveErrors = 0
+  private var consecutiveErrors = 0
+  private var firstErrorIndex = -1
   // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
   private val deleted = HashSet<Long>()
 
@@ -110,6 +112,7 @@ class PlaybackQueue(
 
   fun onStart(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    consecutiveErrors = 0
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
     current = i
@@ -118,6 +121,7 @@ class PlaybackQueue(
 
   fun onDone(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    consecutiveErrors = 0
     lastDoneAt = clock()
     advanceLocked(i)
   }
@@ -126,7 +130,23 @@ class PlaybackQueue(
     val i = indexOf(id) ?: return
     errors++
     lastDoneAt = -1
+    if (consecutiveErrors == 0) firstErrorIndex = i
+    consecutiveErrors++
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      pauseAtLocked(firstErrorIndex)
+      return
+    }
     advanceLocked(i)
+  }
+
+  /** Stops at [index] and saves it, so the user resumes where the engine started failing. */
+  private fun pauseAtLocked(index: Int) {
+    flushLocked()
+    playing = false
+    current = index
+    consecutiveErrors = 0
+    saveLocked()
+    publishLocked()
   }
 
   fun snapshot(): PlaybackSnapshot = synchronized(lock) { snapshotLocked() }
@@ -143,6 +163,11 @@ class PlaybackQueue(
     val id = itemId ?: return
     val next = i + 1
     if (next >= rows.size) {
+      if (consecutiveErrors > 0) {
+        // The last sentences failed: that is not reading to the end (R-M11 archives only then).
+        pauseAtLocked(firstErrorIndex)
+        return
+      }
       flushLocked()
       playing = false
       sink.finished(id)
@@ -225,5 +250,6 @@ class PlaybackQueue(
 
   companion object {
     const val AHEAD = 3
+    const val MAX_CONSECUTIVE_ERRORS = 3
   }
 }

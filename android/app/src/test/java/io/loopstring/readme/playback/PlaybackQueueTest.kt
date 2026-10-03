@@ -251,4 +251,36 @@ class PlaybackQueueTest {
     assertFalse(queue.snapshot().playing)
     assertEquals(2, queue.takeStats().saveErrors)
   }
+
+  @Test fun threeErrorsInARowPauseAtTheFirstFailedSentence() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onError("$g:1")
+    queue.onError("$g:2")
+    assertFalse(queue.snapshot().playing)
+    assertEquals(7L, queue.snapshot().itemId)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last()) // sentence 0 starts paragraph 0 at 0
+    assertTrue(sink.finished.isEmpty())
+  }
+
+  @Test fun anErrorBetweenGoodSentencesStillAdvances() {
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:0")
+    queue.onStart("$g:1")
+    queue.onDone("$g:1")
+    queue.onError("$g:2")
+    assertTrue(queue.snapshot().playing)
+  }
+
+  @Test fun errorsAtTheEndPauseInsteadOfArchiving() {
+    queue.load(7, rows, 4, 2.0f)
+    val g = gen(lastId())
+    queue.onDone("$g:4")
+    queue.onError("$g:5")
+    assertTrue(sink.finished.isEmpty())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 3, 5), sink.saves.last()) // sentence 5 is paragraph 3 offset 5
+  }
 }
