@@ -14,13 +14,8 @@ VER=$(node -p "require('./package.json').version")
 node scripts/make-notices.mjs --check
 ( cd android && ./gradlew --quiet assembleRelease -PreadmeSign=release )
 OUT=release/read-me-$VER.apk
-cp android/app/build/outputs/apk/release/app-release.apk "$OUT"
-require_release_cert "$OUT"
-# apksigcopier copies the release signature onto the tested APK; it verifies only if every
-# byte outside the signature is the same.
-if ! PATH="$BT:$PATH" .venv-fdroid/bin/apksigcopier compare "$OUT" "$TESTED"; then
-  rm -f "$OUT"
-  echo "refused: the signed APK's content differs from the tested build"; exit 1
-fi
-( cd release && sha256sum "read-me-$VER.apk" > SHA256SUMS )
+publish_checked android/app/build/outputs/apk/release/app-release.apk release "$VER" "$TESTED"
+# The release-signed build replaced the stamped debug one; drop the stamp so device scripts
+# rebuild rather than try to install this over the debug-signed app.
+rm -f android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/app-release.apk.stamp
 echo "ready: $OUT sha256 $(cut -c1-16 release/SHA256SUMS)..., signer $(cert_sha256 "$OUT" | cut -c1-16)..."
