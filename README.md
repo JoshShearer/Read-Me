@@ -246,3 +246,8 @@ from `npm run device:screenshots`, and the store listing text lives in
 
 Later, after v1: save items to an Obsidian vault, per-site trim rules, shared files (`.txt`,
 `.md`, `.html`, `.epub`), and possibly iOS.
+
+## License
+
+[MIT](LICENSE). Third-party components keep their own licenses, which the app lists under
+Settings > Licenses.
