@@ -234,9 +234,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   the list showing 2% read; run 2 n=92 p50=12 p95=19 max=26 ms, stalls 0, errors 0, airplane
   mode, battery, forced Doze, screen off; run 4 (hostile input, the service survives) by
   `device:bridge`. Run 3 only by a stand-in: `device:bridge` calls the bridge from JS injected
-  into Obsidian's WebView over CDP, not from the plugin, whose bridge client (NRL-130) does not
-  exist yet; run 3 itself is not established. Run 1's share is the intent a browser sends,
-  sent by adb.
+  into Obsidian's WebView over CDP, not through the plugin. The plugin's bridge engine shipped
+  (NRL-130, note-reader-local 5b3f963, `ReadMeBridgeEngine`) and was measured on the Huawei
+  MatePad only; a plugin read on the reference device is not established, so run 3 is open.
+  Run 1's share is the intent a browser sends, sent by adb.
   `device:playback` gaps n=26 p50=12 p95=17. Not established: an F-Droid build server run,
   and whether F-Droid accepts the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code

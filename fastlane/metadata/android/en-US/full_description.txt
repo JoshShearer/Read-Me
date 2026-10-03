@@ -17,6 +17,6 @@ Read Me Offline reads articles and text aloud with the text-to-speech voice alre
 </ul>
 
 <b>A voice for Obsidian on Android</b>
-Obsidian on Android gives plugins no way to use the phone's speech engine. Read Me Offline can run a small speech service, reachable only from the phone itself, so that an Obsidian plugin can read your notes aloud with the same on-device voices. Support in the local-tts-reader plugin is in development. The service is off until you turn it on in Settings.
+Obsidian on Android gives plugins no way to use the phone's speech engine. Read Me Offline can run a small speech service, reachable only from the phone itself, that the local-tts-reader Obsidian plugin uses to read your notes aloud with the same on-device voices. It is off until you turn it on in Settings.
 
 Read Me Offline needs a text-to-speech engine with at least one offline voice. Most phones have one; if yours doesn't, the app tells you and links to Android's speech settings.
