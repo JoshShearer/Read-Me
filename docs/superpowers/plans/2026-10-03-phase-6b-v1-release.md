@@ -371,7 +371,7 @@ echo "$OUT/build/bin/hermesc"
 
 **Files:**
 - Create:
-  - `LICENSE` (MIT, `Copyright (c) 2026 Josh Shearer`, matching `package.json`'s `"license": "MIT"`)
+  - `LICENSE`: already added (MIT, owner-confirmed 2026-10-03, commit before Task 1)
   - `fastlane/metadata/android/en-US/changelogs/1.txt`
   - `fdroid/io.loopstring.readme.yml`
   - `scripts/repro-check.sh`
