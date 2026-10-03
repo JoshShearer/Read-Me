@@ -79,10 +79,10 @@ export function ListScreen({
           style={ui.button}
           accessibilityLabel={archive ? 'unread' : 'archive'}
           onPress={() => setArchive(a => !a)}>
-          <Text style={ui.buttonText}>{archive ? 'Unread' : 'Archive'}</Text>
+          <Text tone="action" style={ui.buttonText}>{archive ? 'Unread' : 'Archive'}</Text>
         </Pressable>
         <Pressable style={ui.button} accessibilityLabel="settings" onPress={onSettings}>
-          <Text style={ui.buttonText}>Settings</Text>
+          <Text tone="action" style={ui.buttonText}>Settings</Text>
         </Pressable>
       </View>
       <FlatList
@@ -105,10 +105,10 @@ export function ListScreen({
                 if (acts.includes('open')) onOpen(item);
               }}>
               <Text style={ui.title}>{item.title}</Text>
-              {sub ? <Text style={ui.small}>{sub}</Text> : null}
-              <Text style={ui.small}>{badge(item)}</Text>
-              {mark && mark !== 'archived' ? <Text style={ui.small}>{mark}</Text> : null}
-              {help ? <Text style={ui.small}>{help}</Text> : null}
+              {sub ? <Text tone="secondary" style={ui.small}>{sub}</Text> : null}
+              <Text tone="secondary" style={ui.small}>{badge(item)}</Text>
+              {mark && mark !== 'archived' ? <Text tone="secondary" style={ui.small}>{mark}</Text> : null}
+              {help ? <Text tone="secondary" style={ui.small}>{help}</Text> : null}
               <View collapsable={false} style={ui.actions}>
                 {acts
                   .filter(a => a !== 'open' || item.state === 'extract-poor' || archive)
@@ -118,7 +118,7 @@ export function ListScreen({
                       style={ui.button}
                       accessibilityLabel={`${a} ${item.title}`}
                       onPress={() => run(a, item)}>
-                      <Text style={ui.buttonText}>
+                      <Text tone="action" style={ui.buttonText}>
                         {a === 'open' && item.state === 'extract-poor' ? 'Read anyway' : ACTION_LABEL[a]}
                       </Text>
                     </Pressable>

@@ -68,9 +68,9 @@ function Main() {
   // reproduced 2026-10-02 on builds 65ef1b2 and e9574f4, about 4 in 10 taps). With a keyed
   // view per route a switch removes one native view and inserts a new one.
   const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
-  // REA-22: the status bar sits on this background, so its icons follow the mode too.
+  // REA-22, REA-24: the status bar sits on this surface, so its icons follow the mode too.
   return (
-    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top, backgroundColor: palette(scheme).bg }]}>
+    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top, backgroundColor: palette(scheme).surface }]}>
       <StatusBar barStyle={statusBarStyle(scheme)} />
       <View key={key} collapsable={false} style={ui.screen}>
         {screen}

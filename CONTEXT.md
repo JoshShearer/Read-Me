@@ -80,8 +80,9 @@ src/native/                  NativeReadMeSpeech.ts: the TurboModule spec (codege
 src/library/                 TS facade over ReadMeSpeech: items, actions, fetched drain, change events;
                              playback.ts: R-M07/R-M11 play plan (start sentence from the saved offset), controls, playback events
 src/ui/                      R-M01 screens: model.ts (routes, R-M10 actions, list rows, reader
-                             spans; pure), List, Trim, Reader, Settings, Licenses; theme.ts (light
-                             and dark palette) and Text.tsx (the themed Text every screen uses)
+                             spans; pure), List, Trim, Reader, Settings, Licenses; theme.ts (the
+                             LoopString Material 3 palette, light and dark, and the type scale)
+                             and Text.tsx (the themed Text every screen uses, with a tone)
 src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
                              (fixtures.generated.ts is gitignored, written by make-devcheck-fixtures.mjs)

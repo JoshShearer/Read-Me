@@ -1,8 +1,10 @@
 import { StyleSheet } from 'react-native';
-import { FAINT, MUTED, palette } from './theme';
+import { type } from './theme';
 
-// One small style sheet for every screen. Layout only: colours come from theme.ts per system
-// mode (REA-22), applied by ./Text and by each screen's background and borders.
+// One small style sheet for every screen. Layout and type only: colours come from theme.ts per
+// system mode (REA-22, REA-24), applied by ./Text's tone and by each screen's backgrounds and
+// borders. Nothing here sets opacity: faint and secondary text get their colour from the tone,
+// and opacity on top would cut the contrast the tone was picked for.
 //
 // Every View in the screens is collapsable={false}. Fabric flattens layout-only Views and
 // unflattens them when their props change; under a screen switch that churn drops a view's
@@ -19,19 +21,18 @@ export const ui = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
   },
-  headerTitle: { flex: 1, fontSize: 20, fontWeight: '600' },
+  headerTitle: { flex: 1, ...type.xl, fontWeight: '600' },
   button: { paddingHorizontal: 10, paddingVertical: 8 },
-  buttonText: { fontSize: 15, textDecorationLine: 'underline' },
-  disabled: { opacity: FAINT },
+  // Buttons read as buttons by the primary colour and weight, not an underline.
+  buttonText: { ...type.base, fontWeight: '500' },
   row: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { fontSize: 16 },
-  small: { fontSize: 13, opacity: MUTED },
+  title: type.base,
+  small: type.sm,
   actions: { flexDirection: 'row', gap: 4, marginTop: 4 },
   empty: { padding: 24 },
-  card: { margin: 16, padding: 16, borderWidth: 1, borderRadius: 8, gap: 8 },
-  paragraph: { fontSize: 17, lineHeight: 26, paddingHorizontal: 16, paddingVertical: 6 },
-  cut: { opacity: FAINT, textDecorationLine: 'line-through' },
-  highlight: { backgroundColor: palette('light').highlight, color: palette('light').highlightText },
+  card: { margin: 16, padding: 16, borderWidth: 1, borderRadius: 12, gap: 8 },
+  paragraph: { ...type.lg, paddingHorizontal: 16, paddingVertical: 6 },
+  cut: { textDecorationLine: 'line-through' },
   transport: {
     flexDirection: 'row',
     justifyContent: 'space-around',

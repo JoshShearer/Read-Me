@@ -44,7 +44,7 @@ export function TrimScreen({
       <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
         <Pressable style={ui.button} onPress={onGone}>
-          <Text style={ui.buttonText}>Back to the list</Text>
+          <Text tone="action" style={ui.buttonText}>Back to the list</Text>
         </Pressable>
       </View>
     );
@@ -70,10 +70,10 @@ export function TrimScreen({
       <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Trim</Text>
         <Pressable style={ui.button} accessibilityLabel="trim done" onPress={onDone}>
-          <Text style={ui.buttonText}>Done</Text>
+          <Text tone="action" style={ui.buttonText}>Done</Text>
         </Pressable>
       </View>
-      <Text style={[ui.small, ui.row]}>
+      <Text tone="secondary" style={[ui.small, ui.row]}>
         {`${count - shown.size} of ${count} paragraphs kept. Tap to cut or restore; hold for more.`}
       </Text>
       <FlatList
@@ -86,8 +86,10 @@ export function TrimScreen({
               accessibilityLabel={`paragraph ${p.index + 1}${isCut ? ' cut' : ''}`}
               onPress={() => apply(toggleCut(current(), p.index, count))}
               onLongPress={() => menu(p.index)}>
-              <Text style={[ui.paragraph, isCut ? ui.cut : null]}>{p.text}</Text>
-              {isCut ? <Text style={[ui.small, ui.row]}>cut</Text> : null}
+              <Text tone={isCut ? 'disabled' : 'body'} style={[ui.paragraph, isCut ? ui.cut : null]}>
+                {p.text}
+              </Text>
+              {isCut ? <Text tone="secondary" style={[ui.small, ui.row]}>cut</Text> : null}
             </Pressable>
           );
         }}

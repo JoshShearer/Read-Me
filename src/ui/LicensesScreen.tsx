@@ -28,8 +28,8 @@ export function LicensesScreen() {
           return (
             <Pressable style={ui.row} onPress={() => setOpen(o => (o === key ? null : key))}>
               <Text>{`${n.name} ${n.version}`}</Text>
-              <Text style={ui.small}>{n.license}</Text>
-              {open === key ? <Text style={ui.small}>{n.text ?? n.url ?? ''}</Text> : null}
+              <Text tone="secondary" style={ui.small}>{n.license}</Text>
+              {open === key ? <Text tone="secondary" style={ui.small}>{n.text ?? n.url ?? ''}</Text> : null}
             </Pressable>
           );
         }}

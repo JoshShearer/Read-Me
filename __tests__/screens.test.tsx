@@ -276,3 +276,107 @@ test('notifications off with the bridge off shows no bridge warning', async () =
   expect(out).not.toContain('Read Me needs to show a notification');
   spy.mockRestore();
 });
+
+// REA-24: the Material 3 palette on the rendered screens, in dark mode (light is the default
+// the tests above already render in).
+describe('theme on the screens (REA-24)', () => {
+  const RN = require('react-native') as typeof import('react-native');
+  const { blend, FAINT, palette } = require('../src/ui/theme') as typeof import('../src/ui/theme');
+  const p = palette('dark');
+  let scheme: jest.SpyInstance;
+  beforeEach(() => {
+    scheme = jest.spyOn(RN, 'useColorScheme').mockReturnValue('dark');
+  });
+  afterEach(() => scheme.mockRestore());
+
+  async function create(el: React.ReactElement) {
+    let r!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      r = ReactTestRenderer.create(el);
+    });
+    mounted.push(r);
+    return r;
+  }
+  const flat = (s: unknown) => RN.StyleSheet.flatten(s as never) ?? {};
+  // The host Text inside the Pressable with this label.
+  const labelStyle = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    flat(
+      r.root
+        .find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function')
+        .findAll(n => n.type === RN.Text)[0].props.style,
+    );
+  const texts = (r: ReactTestRenderer.ReactTestRenderer) => r.root.findAll(n => n.type === RN.Text);
+
+  test('every Text on List, Trim, Reader and Settings takes a palette colour', async () => {
+    const roles = [p.onSurface, p.onSurfaceVariant, p.primary, p.error, p.onPrimaryContainer, blend(p.onSurface, p.surface, FAINT)];
+    mockState.items = [{ ...base, state: 'fetch-failed', failReason: 'offline', title: 'example.com' }];
+    mockState.detail = text(['One.', 'Two.'], [1]);
+    mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+    for (const el of [
+      <ListScreen onOpen={() => {}} onSettings={() => {}} />,
+      <TrimScreen id={1} onDone={() => {}} onGone={() => {}} />,
+      <ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />,
+      <SettingsScreen onLicenses={() => {}} />,
+    ]) {
+      const r = await create(el);
+      for (const t of texts(r)) expect(roles).toContain(flat(t.props.style).color);
+    }
+  });
+
+  test('buttons are primary with no underline; disabled ones are onSurface at FAINT', async () => {
+    mockState.detail = text(['One.']);
+    const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(labelStyle(r, 'play')).toMatchObject({ color: p.primary });
+    expect(labelStyle(r, 'play').textDecorationLine).toBeUndefined();
+    expect(labelStyle(r, 'trim')).toMatchObject({ color: p.primary });
+    expect(labelStyle(r, 'next sentence')).toMatchObject({ color: blend(p.onSurface, p.surface, FAINT) });
+    expect(labelStyle(r, 'next sentence').opacity).toBeUndefined();
+  });
+
+  test('the Reader highlights the current sentence in primaryContainer', async () => {
+    mockState.detail = text(['One two. Three four.']);
+    (Native.getPlayback as jest.Mock).mockResolvedValueOnce({
+      itemId: 1, playing: true, paragraphIndex: 0, start: 0, end: 8, rate: 2, engine: 'ready',
+    });
+    const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    const hl = texts(r).map(t => flat(t.props.style)).find(s => s.backgroundColor !== undefined);
+    expect(hl).toMatchObject({ backgroundColor: p.primaryContainer, color: p.onPrimaryContainer });
+  });
+
+  test('a cut Trim paragraph is onSurface at FAINT and struck through', async () => {
+    mockState.detail = text(['Kept.', 'Gone.'], [1]);
+    const r = await create(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    const cut = flat(r.root.find(n => n.props.accessibilityLabel === 'paragraph 2 cut' && typeof n.props.onPress === 'function')
+      .findAll(n => n.type === RN.Text)[0].props.style);
+    expect(cut).toMatchObject({ color: blend(p.onSurface, p.surface, FAINT), textDecorationLine: 'line-through' });
+    expect(cut.opacity).toBeUndefined();
+  });
+
+  test('cards and the bridge row sit on surfaceContainerLow with an outlineVariant border', async () => {
+    mockState.detail = text(['One.']);
+    mockState.engine = { status: 'no-voice', voices: [], selected: null };
+    const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    const card = r.root.findAll(n => n.type === RN.View && flat(n.props.style).borderWidth === 1)[0];
+    expect(flat(card.props.style)).toMatchObject({ backgroundColor: p.surfaceContainerLow, borderColor: p.outlineVariant });
+
+    mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+    const s = await create(<SettingsScreen onLicenses={() => {}} />);
+    // The innermost screen View (collapsable={false}, not the Pressable's own) that holds the
+    // bridge's on/off button.
+    const rows = s.root.findAll(
+      n => n.type === RN.View && n.props.collapsable === false && n.props.accessibilityLabel === undefined && n.findAll(m => m.props.accessibilityLabel === 'bridge off').length > 0,
+    );
+    expect(flat(rows[rows.length - 1].props.style)).toMatchObject({ backgroundColor: p.surfaceContainerLow });
+  });
+
+  test('the port field follows the palette', async () => {
+    const s = await create(<SettingsScreen onLicenses={() => {}} />);
+    await ReactTestRenderer.act(async () => {
+      s.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+    });
+    const input = s.root.find(n => n.type === RN.TextInput);
+    expect(flat(input.props.style)).toMatchObject({ color: p.onSurface });
+    expect(input.props.placeholderTextColor).toBe(p.onSurfaceVariant);
+    expect(input.props.selectionColor).toBe(p.primary);
+  });
+});

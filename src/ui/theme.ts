@@ -1,11 +1,36 @@
-// R-M01 (REA-22): the app follows the system light or dark mode. The window background
-// follows it natively (AppTheme is DayNight), but React Native draws text black in either
-// mode, so every screen takes its colours from here. Contrast targets, checked by
-// __tests__/theme.test.tsx and on the phone by `npm run device:themes`: 4.5:1 for text, 3:1
-// for text drawn faint on purpose (a cut paragraph, a disabled control).
+// R-M01 (REA-22, REA-24): the app follows the system light or dark mode. React Native draws
+// text black in either mode, so every screen takes its colours from here. The colours are the
+// LoopString web app's Material 3 tokens (its tailwind.config.cjs), so Read Me looks like the
+// rest of LoopString. Contrast targets, checked by __tests__/theme.test.tsx and on the phone by
+// `npm run device:themes`: 4.5:1 for text, 3:1 for text drawn faint on purpose (a cut
+// paragraph, a disabled control). The window background behind the first frame is the same
+// surface colour, from android/app/src/main/res/values*/colors.xml.
 import type { ColorSchemeName } from 'react-native';
 
-export type Palette = {
+type Roles = {
+  primary: string;
+  onPrimary: string;
+  primaryContainer: string;
+  onPrimaryContainer: string;
+  secondary: string;
+  onSecondary: string;
+  secondaryContainer: string;
+  onSecondaryContainer: string;
+  tertiary: string;
+  error: string;
+  onError: string;
+  surface: string;
+  onSurface: string;
+  surfaceVariant: string;
+  onSurfaceVariant: string;
+  outline: string;
+  outlineVariant: string;
+  surfaceContainerLow: string;
+  surfaceContainerHigh: string;
+};
+
+export type Palette = Roles & {
+  // REA-22 names, kept as aliases of the roles above.
   bg: string;
   text: string;
   border: string;
@@ -13,26 +38,77 @@ export type Palette = {
   highlightText: string;
 };
 
-const LIGHT: Palette = {
-  bg: '#fafafa',
-  text: '#111111',
-  border: '#b0b0b0',
-  highlight: '#ffe680',
-  highlightText: '#000000',
-};
+function withAliases(r: Roles): Palette {
+  return {
+    ...r,
+    bg: r.surface,
+    text: r.onSurface,
+    border: r.outlineVariant,
+    highlight: r.primaryContainer,
+    highlightText: r.onPrimaryContainer,
+  };
+}
 
-const DARK: Palette = {
-  bg: '#121212',
-  text: '#e6e6e6',
-  border: '#5a5a5a',
-  highlight: '#ffe680',
-  highlightText: '#000000',
-};
+const LIGHT = withAliases({
+  primary: '#7343bc',
+  onPrimary: '#ffffff',
+  primaryContainer: '#ecdcff',
+  onPrimaryContainer: '#420099',
+  secondary: '#645b70',
+  onSecondary: '#ffffff',
+  secondaryContainer: '#e8ddf8',
+  onSecondaryContainer: '#1e192b',
+  tertiary: '#7f525c',
+  error: '#ba1a1a',
+  onError: '#ffffff',
+  surface: '#fffbff',
+  onSurface: '#1d1b1e',
+  surfaceVariant: '#e9dfeb',
+  onSurfaceVariant: '#4a444e',
+  outline: '#7c757e',
+  outlineVariant: '#ccc4ce',
+  surfaceContainerLow: '#f7f2fc',
+  surfaceContainerHigh: '#ede7f7',
+});
 
-/** Opacity of secondary text (site, word count, state). */
-export const MUTED = 0.7;
-/** Opacity of a cut paragraph and a disabled control: faint, but still 3:1. */
+const DARK = withAliases({
+  primary: '#d5baff',
+  onPrimary: '#3e008d',
+  primaryContainer: '#5a27a3',
+  onPrimaryContainer: '#ecdcff',
+  secondary: '#ccc2db',
+  onSecondary: '#322b3d',
+  secondaryContainer: '#484054',
+  onSecondaryContainer: '#e8ddf8',
+  tertiary: '#f0b7c4',
+  error: '#ffb4ab',
+  onError: '#690005',
+  surface: '#1d1b1e',
+  onSurface: '#e6e1e6',
+  surfaceVariant: '#4a444e',
+  onSurfaceVariant: '#ccc4ce',
+  outline: '#968e98',
+  outlineVariant: '#4a444e',
+  surfaceContainerLow: '#262228',
+  surfaceContainerHigh: '#342e38',
+});
+
+/**
+ * How far a cut paragraph or a disabled control is blended from onSurface toward the surface:
+ * faint, but still 3:1. Primary at this strength is 2.26:1 on the light surface, so disabled
+ * controls fade from onSurface, not from primary.
+ */
 export const FAINT = 0.5;
+
+/** The web app's type scale (Tailwind xs..2xl, rem at 16 px), in dp. System sans, no font asset. */
+export const type = {
+  xs: { fontSize: 12, lineHeight: 16 },
+  sm: { fontSize: 14, lineHeight: 20 },
+  base: { fontSize: 16, lineHeight: 24 },
+  lg: { fontSize: 18, lineHeight: 28 },
+  xl: { fontSize: 20, lineHeight: 28 },
+  '2xl': { fontSize: 24, lineHeight: 32 },
+} as const;
 
 export function palette(scheme: ColorSchemeName | null | undefined): Palette {
   return scheme === 'dark' ? DARK : LIGHT;
@@ -52,6 +128,11 @@ export function blend(fg: string, bg: string, opacity: number): string {
   const b = rgb(bg);
   const c = f.map((v, i) => Math.round(v * opacity + b[i] * (1 - opacity)));
   return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+/** The colour of a cut paragraph or a disabled control. */
+export function faint(p: Palette): string {
+  return blend(p.onSurface, p.surface, FAINT);
 }
 
 function luminance(hex: string): number {

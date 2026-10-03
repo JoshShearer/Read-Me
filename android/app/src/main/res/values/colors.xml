@@ -1,0 +1,8 @@
+<resources>
+    <!-- REA-24: the light surface of src/ui/theme.ts (the LoopString web app's Material 3
+         tokens). The window draws it before React Native's first frame, so a launch or a
+         rotation shows no white or black flash in either mode. Keep in step with theme.ts. -->
+    <color name="readme_surface">#fffbff</color>
+    <!-- Dark icons on the light surface until JS sets the status bar style. -->
+    <bool name="light_system_bars">true</bool>
+</resources>

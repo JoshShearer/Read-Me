@@ -73,6 +73,7 @@ a WCAG contrast of 4.5:1 or better against its background, text drawn faint on p
 cut paragraph, a disabled control) at 3:1 or better, and the status bar icons visible
 (amended 2026-10-03, REA-22: React Native drew black text in dark mode and the light status
 bar hid its icons; `npm run device:themes` measures both modes on the phone).
+The colours are the LoopString web app's Material 3 palette (amended 2026-10-03, REA-24).
 
 ### R-M02 - Share-sheet intake
 

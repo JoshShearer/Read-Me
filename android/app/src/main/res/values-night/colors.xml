@@ -1,0 +1,5 @@
+<resources>
+    <!-- REA-24: the dark surface of src/ui/theme.ts. Keep in step with theme.ts. -->
+    <color name="readme_surface">#1d1b1e</color>
+    <bool name="light_system_bars">false</bool>
+</resources>

@@ -171,10 +171,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   Light and dark mode (REA-22): colours come from `src/ui/theme.ts` through `src/ui/Text.tsx`;
   `npm run device:themes` on build ef0fbc6 (2026-10-03): every text node 6.9:1 or better in
   light mode and 7.7:1 in dark, cut and disabled text 3.54 and 4.49, status bar 20.1 and 18.7,
-  highlight 16.9 (before, on 01eeefa: dark text 1.2-1.6, light status bar 1.04). One
+  the old yellow highlight 16.9 (before, on 01eeefa: dark text 1.2-1.6, light status bar 1.04). One
   `device:ui` run in six on ef0fbc6 logged a Read Me crash at Settings > Licenses that 30
   targeted loops did not reproduce; its log was lost, and `device:ui` now keeps the crash
   buffer (`.claude/scratch/device-ui-crash.log`).
+  Material 3 palette (REA-24): the LoopString web app's light and dark tokens in `theme.ts`, a
+  `tone` on `Text`, the highlight primaryContainer/onPrimaryContainer, the window background
+  from `res/values*/colors.xml`. Computed from the tokens: highlight 9.60 light and 7.21 dark,
+  faint text 3.28 and 4.28. On device only partly measured: on the Huawei VRD-W09 tablet
+  (secondary, not reference evidence; uncommitted build on a293b71, 2026-10-03) the List read
+  10.0:1 or better with status bar 13.96, but EMUI ignored `cmd uimode night no`, so the
+  "light" pass drew dark, and the run then stopped at Trim. Reference-device `device:themes`,
+  `device:ui` and the `device:screenshots` retake are still to do.
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
   R-M13 is partial: Licenses lists npm packages (with their license text where the package

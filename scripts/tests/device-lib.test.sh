@@ -44,6 +44,30 @@ rm -rf "$L"
 check "a free slot is taken" "$(take)" 0
 check "and released on exit" "$([ -d "$L" ] && echo kept || echo released)" released
 
+# device_require_unlocked: Android 13+ prints isKeyguardShowing in `dumpsys window`; Android 10
+# (the Huawei VRD-W09 tablet, 2026-10-03) prints only KeyguardStateMonitor's mIsShowing.
+mkdir -p "$T/kg"
+cat > "$T/kg/adb" <<'STUB'
+#!/bin/sh
+case "$*" in
+  "shell dumpsys power") echo "  mWakefulness=Awake" ;;
+  "shell dumpsys window") printf '%b\n' "$STUB_WINDOW" ;;
+esac
+STUB
+chmod +x "$T/kg/adb"
+unlocked() { STUB_WINDOW="$1" PATH="$T/kg:$PATH" bash -c '. scripts/lib/device.sh; device_require_unlocked' >/dev/null 2>&1; echo $?; }
+check "unlocked on Android 13+" "$(unlocked '    isKeyguardShowing=false')" 0
+check "locked on Android 13+" "$(unlocked '    isKeyguardShowing=true\n        mIsShowing=false')" 5
+check "unlocked on Android 10 (mIsShowing only)" "$(unlocked '      KeyguardStateMonitor\n        mIsShowing=false')" 0
+check "locked on Android 10" "$(unlocked '      KeyguardStateMonitor\n        mIsShowing=true')" 5
+check "neither line is locked" "$(unlocked 'nothing')" 5
+# A locked phone must never read as unlocked: only the keyguard's own line counts, and any
+# "showing" line that says true wins over one that says false.
+check "isKeyguardShowing true beside false is locked" "$(unlocked '    isKeyguardShowing=false\n    isKeyguardShowing=true')" 5
+check "an unrelated mIsShowing=false after the keyguard's true is locked" "$(unlocked '      KeyguardStateMonitor\n        mIsShowing=true\n      SomeDialog\n        mIsShowing=false')" 5
+check "an unrelated mIsShowing=false before the keyguard's true is locked" "$(unlocked '      SomeDialog\n        mIsShowing=false\n      KeyguardStateMonitor\n        mIsShowing=true')" 5
+check "an mIsShowing=false with no KeyguardStateMonitor is locked" "$(unlocked '      SomeDialog\n        mIsShowing=false')" 5
+
 # device_crash_seen <pid>: reads logcat on stdin. Real formats: the native libc line carries
 # /proc/self/comm, which ART truncates to the LAST 15 chars of the package ("opstring.readme"),
 # so the package name never appears on it; debuggerd prints ">>> <package> <<<"; Java crashes
