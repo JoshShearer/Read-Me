@@ -1,7 +1,7 @@
 // R-M01: four screens, opening on the list. A route stack plus the hardware back button;
 // four routes do not need a navigation library (AGENTS.md 14 keeps dependencies minimal).
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, StatusBar, View } from 'react-native';
+import { BackHandler, StatusBar, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markOpened, type Item } from './src/library/library';
 import { LicensesScreen } from './src/ui/LicensesScreen';
@@ -10,10 +10,12 @@ import { ReaderScreen } from './src/ui/ReaderScreen';
 import { SettingsScreen } from './src/ui/SettingsScreen';
 import { TrimScreen } from './src/ui/TrimScreen';
 import { back, openRoute, push, trimDone, type Route } from './src/ui/model';
+import { palette, statusBarStyle } from './src/ui/theme';
 import { ui } from './src/ui/ui';
 
 function Main() {
   const insets = useSafeAreaInsets();
+  const scheme = useColorScheme();
   const [stack, setStack] = useState<Route[]>([{ name: 'list' }]);
   const top = stack[stack.length - 1];
 
@@ -66,8 +68,10 @@ function Main() {
   // reproduced 2026-10-02 on builds 65ef1b2 and e9574f4, about 4 in 10 taps). With a keyed
   // view per route a switch removes one native view and inserts a new one.
   const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
+  // REA-22: the status bar sits on this background, so its icons follow the mode too.
   return (
-    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top }]}>
+    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top, backgroundColor: palette(scheme).bg }]}>
+      <StatusBar barStyle={statusBarStyle(scheme)} />
       <View key={key} collapsable={false} style={ui.screen}>
         {screen}
       </View>
@@ -78,7 +82,6 @@ function Main() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="default" />
       <Main />
     </SafeAreaProvider>
   );

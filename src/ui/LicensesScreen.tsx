@@ -1,6 +1,7 @@
 // R-M13: Settings > Licenses. Reads the generated asset on open; tap a row for its text.
 import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, View } from 'react-native';
+import { Text } from './Text';
 import { getNotices } from '../library/playback';
 import { parseNotices, type Notice } from './model';
 import { ui } from './ui';

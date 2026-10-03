@@ -117,6 +117,9 @@ device_crash_seen() {
 # ... remove task", reference device, 2026-10-02, build 5695d8b, after device:bridge left
 # tasks open). Waits at most 10 s.
 device_clear_app() {
+  # From the home screen: clearing an app that is on screen relaunched it into a new task
+  # (2026-10-03, after device:bridge left Settings open), so the wait below never ended.
+  adb shell input keyevent KEYCODE_HOME
   adb shell pm clear "$PKG" >/dev/null
   for _ in $(seq 20); do
     adb shell dumpsys activity activities | grep -qE "A=[0-9]+:$PKG\b" || return 0

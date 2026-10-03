@@ -3,7 +3,9 @@
 // highlight follows the service's events. R-M10: a blocking card when there is no engine or
 // no offline voice, checked on open rather than after a failed play (REA-18).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Linking, Pressable, Text, View } from 'react-native';
+import { FlatList, Linking, Pressable, useColorScheme, View } from 'react-native';
+import { Text } from './Text';
+import { palette } from './theme';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import {
   backParagraph,
@@ -33,6 +35,7 @@ export function ReaderScreen({
   onTrim: () => void;
   onGone: () => void;
 }) {
+  const colors = palette(useColorScheme());
   const [detail, setDetail] = useState<ItemDetail | null | undefined>(undefined);
   const [playback, setPlayback] = useState<Playback | null>(null);
   const [engine, setEngine] = useState<string | undefined>(undefined);
@@ -109,7 +112,7 @@ export function ReaderScreen({
     return (
       <View collapsable={false} style={ui.screen}>
         {header}
-        <View collapsable={false} style={ui.card}>
+        <View collapsable={false} style={[ui.card, { borderColor: colors.border }]}>
           <Text>
             This phone has no offline text-to-speech voice Read Me can use, so it cannot read aloud.
             Install or enable an offline voice in Android's text-to-speech settings.
@@ -185,7 +188,7 @@ export function ReaderScreen({
           )
         }
       />
-      <View collapsable={false} style={ui.transport}>
+      <View collapsable={false} style={[ui.transport, { borderTopColor: colors.border }]}>
         {/* Sentence controls act on whatever the service holds, so they work only for this
             item; they stay in place, disabled, so Play/Pause never moves. */}
         {button('¶◀', 'back paragraph', control(backParagraph), !mine)}

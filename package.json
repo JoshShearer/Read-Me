@@ -25,7 +25,8 @@
     "device:ui": "bash scripts/device-ui-e2e.sh",
     "device:bridge": "bash scripts/device-bridge-e2e.sh",
     "brand": "python3 scripts/gen-brand.py",
-    "device:screenshots": "bash scripts/device-screenshots.sh"
+    "device:screenshots": "bash scripts/device-screenshots.sh",
+    "device:themes": "bash scripts/device-themes.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

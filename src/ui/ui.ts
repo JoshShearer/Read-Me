@@ -1,6 +1,8 @@
 import { StyleSheet } from 'react-native';
+import { FAINT, MUTED, palette } from './theme';
 
-// One small style sheet for every screen: R-M01 asks for a light interface, not a theme.
+// One small style sheet for every screen. Layout only: colours come from theme.ts per system
+// mode (REA-22), applied by ./Text and by each screen's background and borders.
 //
 // Every View in the screens is collapsable={false}. Fabric flattens layout-only Views and
 // unflattens them when their props change; under a screen switch that churn drops a view's
@@ -20,16 +22,16 @@ export const ui = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 20, fontWeight: '600' },
   button: { paddingHorizontal: 10, paddingVertical: 8 },
   buttonText: { fontSize: 15, textDecorationLine: 'underline' },
-  disabled: { opacity: 0.3 },
+  disabled: { opacity: FAINT },
   row: { paddingHorizontal: 16, paddingVertical: 12 },
   title: { fontSize: 16 },
-  small: { fontSize: 13, opacity: 0.7 },
+  small: { fontSize: 13, opacity: MUTED },
   actions: { flexDirection: 'row', gap: 4, marginTop: 4 },
   empty: { padding: 24 },
   card: { margin: 16, padding: 16, borderWidth: 1, borderRadius: 8, gap: 8 },
   paragraph: { fontSize: 17, lineHeight: 26, paddingHorizontal: 16, paddingVertical: 6 },
-  cut: { opacity: 0.35, textDecorationLine: 'line-through' },
-  highlight: { backgroundColor: '#ffe680', color: '#000' },
+  cut: { opacity: FAINT, textDecorationLine: 'line-through' },
+  highlight: { backgroundColor: palette('light').highlight, color: palette('light').highlightText },
   transport: {
     flexDirection: 'row',
     justifyContent: 'space-around',

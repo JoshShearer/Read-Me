@@ -68,6 +68,12 @@ The app MUST open to the reading list. The UI MUST be limited to four screens in
 
 There MUST be no account, sign-in, onboarding carousel, feed, or recommendations.
 
+Every screen MUST follow the system light or dark mode and stay legible in both: text at
+a WCAG contrast of 4.5:1 or better against its background, text drawn faint on purpose (a
+cut paragraph, a disabled control) at 3:1 or better, and the status bar icons visible
+(amended 2026-10-03, REA-22: React Native drew black text in dark mode and the light status
+bar hid its icons; `npm run device:themes` measures both modes on the phone).
+
 ### R-M02 - Share-sheet intake
 
 The app MUST register as an `ACTION_SEND` target for `text/plain`.
