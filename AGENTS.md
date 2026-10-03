@@ -175,12 +175,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   (one synthesis at most `maxChars`). The bridge turns on only with POST_NOTIFICATIONS, which
   Settings asks for: Android 13+ hid the bridge-only foreground notification without it (build
   c460f84), and R-M12 requires it to say the bridge is on.
-  Verified 2026-10-02 on the reference device, build 7c2c04a: `npm run device:bridge` (rate 2.0
-  WAV 1.29 s against 2.58 s at 1.0; 401, 400, 413, 431 and a silent client; 503 busy while
-  playing; from Obsidian's WebView with Read Me in the background: fetch and CapacitorHttp 200
-  at rate 1.0, a 64 KiB POST read as 401 without the token and as 503 while playing; the
-  bridge stays on after playback ends; token absent from logcat) and `npm run device:playback`;
-  `npm run device:ui` on build 678c8a9 (same app code). After a reboot or process death the
+  Verified 2026-10-02 on the reference device, build bbcf3cb: `npm run device:bridge` (refusing
+  the notification permission leaves the bridge off; rate 2.0 WAV 1.29 s against 2.58 s at 1.0;
+  401, 400, 413, 431 and a silent client; 503 busy while playing; from Obsidian's WebView with
+  Read Me in the background: fetch and CapacitorHttp 200 at rate 1.0, a 64 KiB POST read as 401
+  without the token and as 503 while playing; the bridge stays on after playback ends; token
+  absent from logcat) and `npm run device:ui`; `npm run device:playback` on build 7c2c04a
+  (playback code unchanged since). After a reboot or process death the
   bridge returns when Read Me is next opened (no boot receiver). Not established: Android
   14-16, the real plugin (NRL-130), screen-off use from Obsidian.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
