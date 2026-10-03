@@ -10,7 +10,8 @@ the code changes the architecture, not for bug fixes.
 ```text
 TypeScript (Hermes)                       Kotlin: one native module, ReadMeSpeech
 -----------------------------------       ------------------------------------------
-intake    classify shared text, item      ShareReceiver  ACTION_SEND text/plain hand-off
+intake    classify shared text, item      ShareReceiver  ACTION_SEND text/plain hand-off;
+                                                         R-C04 .md/.txt via VIEW or EXTRA_STREAM
                                           Store          SQLite (android.database.sqlite)
 extract   HTML -> title/paragraphs        Fetcher        the only network call
 segment   paragraphs -> sentences         PlaybackService foreground service, MediaSession,
@@ -90,7 +91,8 @@ __tests__/                   Jest tests; fixtures/pages (real public-domain page
 android/app/src/main/java/io/loopstring/readme/   Kotlin:
   MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
-  intake/ (classify and split shared text), store/ (SQLite items, paragraphs, cuts, positions;
+  intake/ (classify and split shared text; SharedFile and Markdown: a shared .md or .txt read
+  off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions;
   lifecycle per ADR 0007; Settings: the rate, voice and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
   wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; EngineProbe: engine and offline voices before any play;

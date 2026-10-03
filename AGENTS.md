@@ -204,6 +204,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   the next screen loaded was lost by Fabric before the screen went into it, blanking the
   Reader after Trim's Done on a real article in 4-5 of 10 runs (REA-26; `npm run device:screens`).
   The Settings bridge section once rendered blank the same way (REA-27, open).
+- **Shared files (R-C04 partial, REA-30, PR #21):** `.md` and `.txt`. Obsidian's file Share
+  sends `ACTION_VIEW` of a `content://` URI (typed `text/markdown` once and `*/*` once), not
+  SEND. ShareActivity reads it on a worker (5 MB cap while reading, 20 s timeout) and Kotlin's
+  `intake/Markdown` turns it into prose; a shared file is never fetched. Verified 2026-10-03
+  on the Huawei VRD-W09 (secondary), build cf432e0: shared from Obsidian 1.13.8, read as prose,
+  no file name, URI or text in logcat. Not run on the reference device. `.html` and `.epub`
+  remain open.
 - **Bridge (Phase 5, REA-20):** `BridgeServer` (Kotlin, plain JVM) on explicit 127.0.0.1:8787
   (configurable), hosted by PlaybackService while Settings has it on; contract v1 plus ADR 0008
   (one synthesis at most `maxChars`). The bridge turns on only with POST_NOTIFICATIONS, which
