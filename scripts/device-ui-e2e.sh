@@ -174,7 +174,9 @@ if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|nothing-here';
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then
-  echo "FAIL: crash logged"; fail=1
+  # Kept for diagnosis in the gitignored scratch dir; never pasted into a ticket (AGENTS.md 1).
+  mkdir -p .claude/scratch && adb logcat -d -b crash,main > .claude/scratch/device-ui-crash.log
+  echo "FAIL: crash logged (.claude/scratch/device-ui-crash.log)"; fail=1
 fi
 adb shell rm -f /sdcard/readme-ui.xml
 echo "device:ui $([ $fail -eq 0 ] && echo PASS || echo FAIL)"

@@ -44,6 +44,7 @@ npm run device:gap        # gap check: 2 min at 2x on battery (simulated), force
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): only when the queue, TtsSpeaker or PlaybackService timing changes, and before a release
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
+npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
 npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
                             # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
@@ -167,6 +168,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   reference device, build 3b86e03: `npm run device:ui` (including the highlight kept in view
   deep in an 80-sentence paragraph) and `npm run device:playback` (through Trim and the
   Reader); `npm run device:intake` on c870f28. The bridge is Phase 5 (below).
+  Light and dark mode (REA-22): colours come from `src/ui/theme.ts` through `src/ui/Text.tsx`;
+  `npm run device:themes` on build ef0fbc6 (2026-10-03): every text node 6.9:1 or better in
+  light mode and 7.7:1 in dark, cut and disabled text 3.54 and 4.49, status bar 20.1 and 18.7,
+  highlight 16.9 (before, on 01eeefa: dark text 1.2-1.6, light status bar 1.04). One
+  `device:ui` run in six on ef0fbc6 logged a Read Me crash at Settings > Licenses that 30
+  targeted loops did not reproduce; its log was lost, and `device:ui` now keeps the crash
+  buffer (`.claude/scratch/device-ui-crash.log`).
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
   R-M13 is partial: Licenses lists npm packages (with their license text where the package
