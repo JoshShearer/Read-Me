@@ -54,3 +54,14 @@ test('a Maven entry gets the text of its license, or of its checked override', (
   assert.match(androidText('com.parse.bolts:bolts-tasks', 'BSD License'), /Bolts/);
   assert.equal(androidText('com.x:y', 'Some Custom License'), undefined);
 });
+
+test('substituted and versionless coordinates resolve to what Gradle picked', () => {
+  const tree = `releaseRuntimeClasspath
+|    +--- com.facebook.react:react-native:+ -> com.facebook.react:react-android:0.87.1
++--- com.facebook.react:react-android -> 0.87.1 (*)
+\\--- com.facebook.react:hermes-android -> com.facebook.hermes:hermes-android:250829098.0.17`;
+  assert.deepEqual(parseCoordinates(tree), [
+    'com.facebook.hermes:hermes-android:250829098.0.17',
+    'com.facebook.react:react-android:0.87.1',
+  ]);
+});
