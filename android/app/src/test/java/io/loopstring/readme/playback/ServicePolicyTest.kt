@@ -20,8 +20,13 @@ class ServicePolicyTest {
     assertTrue(ServiceLife.foreground(playing = false, pausedForFocus = false, bridgeOn = true))
     assertFalse(ServiceLife.foreground(playing = false, pausedForFocus = false, bridgeOn = false))
     assertTrue(ServiceLife.foreground(playing = true, pausedForFocus = false, bridgeOn = false))
+    assertTrue(ServiceLife.foreground(playing = false, pausedForFocus = false, bridgeOn = false, pauseHeld = true))
     assertTrue(ServiceLife.keepAlive(hasItem = false, bridgeOn = true))
     assertFalse(ServiceLife.keepAlive(hasItem = false, bridgeOn = false))
+  }
+
+  @Test fun aFocusPauseIsHeldWhateverTheWindow() {
+    assertTrue(ServiceLife.foreground(playing = false, pausedForFocus = true, bridgeOn = false, pauseHeld = false))
   }
 
   @Test fun theNotificationSaysWhenTheBridgeIsOn() {

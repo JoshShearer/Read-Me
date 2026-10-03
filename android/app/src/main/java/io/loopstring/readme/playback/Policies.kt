@@ -95,12 +95,24 @@ object PausePolicy {
   fun hold(pausedForFocus: Boolean) = PauseHold(pausedForFocus, pausedForFocus, pausedForFocus)
 }
 
-/** R-M12, ADR 0005: the bridge needs the foreground service whether or not anything plays. */
+/**
+ * R-M12, ADR 0005: the bridge needs the foreground service whether or not anything plays.
+ * ADR 0009: a user pause holds it for PauseWindow.HOLD_MS.
+ */
 object ServiceLife {
-  fun foreground(playing: Boolean, pausedForFocus: Boolean, bridgeOn: Boolean) =
-    playing || PausePolicy.hold(pausedForFocus).foreground || bridgeOn
+  fun foreground(playing: Boolean, pausedForFocus: Boolean, bridgeOn: Boolean, pauseHeld: Boolean = false) =
+    playing || PausePolicy.hold(pausedForFocus).foreground || pauseHeld || bridgeOn
 
   fun keepAlive(hasItem: Boolean, bridgeOn: Boolean) = hasItem || bridgeOn
+}
+
+/**
+ * ADR 0009: how long a user-paused session stays in the foreground, so lock-screen,
+ * notification and headset Play keep working. [pausedAt] is elapsedRealtime, or -1.
+ */
+object PauseWindow {
+  const val HOLD_MS = 30 * 60 * 1000L
+  fun held(pausedAt: Long, now: Long) = pausedAt >= 0 && now - pausedAt < HOLD_MS
 }
 
 /** R-M12: "its foreground notification MUST say so". */

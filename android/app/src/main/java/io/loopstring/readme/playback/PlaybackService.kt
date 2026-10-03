@@ -54,6 +54,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private var noisyRegistered = false
   private var waiting: PlaybackHub.Request? = null
   private var rebinding = false
+  private var pausedAt = -1L
+  private val pauseExpired = Runnable { if (!destroyed) syncForeground(queue.snapshot()) }
   private var rebinds = 0
   private val stallTick = object : Runnable {
     override fun run() {
@@ -306,6 +308,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       logStats()
       val hold = PausePolicy.hold(pausedForFocus)
       releasePlayingResources(abandon = !hold.focus, keepNoisy = hold.noisy)
+      if (!pausedForFocus) {
+        pausedAt = SystemClock.elapsedRealtime()
+        main.removeCallbacks(pauseExpired)
+        main.postDelayed(pauseExpired, PauseWindow.HOLD_MS)
+      }
     }
     updateSession(s)
     syncForeground(s)
@@ -327,6 +334,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
 
   /** False when playback could not be granted focus or the foreground, and was paused. */
   private fun startPlaying(): Boolean {
+    pausedAt = -1L
+    main.removeCallbacks(pauseExpired)
     pausedForFocus = false
     if (!requestFocus()) {
       queue.pause()
@@ -370,11 +379,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun syncForeground(s: PlaybackSnapshot) {
     val bridgeOn = bridge != null
     if (s.itemId == null && !bridgeOn) return
-    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn)) {
+    val held = PauseWindow.held(pausedAt, SystemClock.elapsedRealtime())
+    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn, held)) {
       goForeground(s)
     } else {
-      // Paused: the notification stays (with Play) but can be swiped away, and the system may
-      // stop the service; the position is already saved.
+      // Paused for longer than ADR 0009's window: the notification stays (with Play) but can be
+      // swiped away, and the system may stop the service; the position is already saved.
       stopForeground(STOP_FOREGROUND_DETACH)
       getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
     }
@@ -397,6 +407,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   private fun end() {
+    main.removeCallbacks(pauseExpired)
+    pausedAt = -1L
     waiting = null
     releasePlayingResources(abandon = true)
     session.isActive = false
