@@ -60,6 +60,22 @@
             <category android:name="android.intent.category.DEFAULT" />
             <data android:mimeType="text/plain" />
         </intent-filter>
+        <!-- R-C04: a markdown file sent as EXTRA_STREAM (text/plain files arrive above). -->
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="text/markdown" />
+            <data android:mimeType="text/x-markdown" />
+        </intent-filter>
+        <!-- R-C04: Obsidian opens a note as ACTION_VIEW of a content URI typed text/markdown. -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:scheme="content" />
+            <data android:mimeType="text/markdown" />
+            <data android:mimeType="text/x-markdown" />
+            <data android:mimeType="text/plain" />
+        </intent-filter>
       </activity>
       <service
         android:name=".playback.PlaybackService"

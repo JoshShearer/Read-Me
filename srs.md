@@ -365,6 +365,14 @@ WKWebView normally exposes `speechSynthesis`; unverified inside Obsidian for iOS
 ### R-C04 - Shared files
 Accept shared `.txt`, `.md`, `.html` and `.epub` files.
 
+*Partly done (REA-30, 2026-10-03):* `.md` and `.txt` are accepted. Obsidian opens a note as
+`ACTION_VIEW` of a `content://` URI typed `text/markdown` (observed on the Huawei VRD-W09 with
+Obsidian 1.13.8); other apps send `ACTION_SEND` with `EXTRA_STREAM`. The file is read once
+through the sender's grant (5 MB cap while reading), becomes a text item, and is never fetched,
+even when it holds only a link. Markdown is read as prose (front matter, code and comments
+dropped; headings and list items kept as paragraph kinds; links and wikilinks read as their
+text). `.html` and `.epub` remain open.
+
 ## Won't Have - v1
 
 - Cloud or neural TTS of any kind.

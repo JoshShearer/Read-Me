@@ -115,7 +115,12 @@ class Store private constructor(context: Context) :
     return id
   }
 
-  fun insertText(title: String, paragraphs: List<String>, now: Long): Long {
+  fun insertText(title: String, paragraphs: List<String>, now: Long): Long =
+    insertText(title, paragraphs.map { ParagraphRow("p", it) }, now)
+
+  /** R-C04: a shared file keeps its headings and list items. */
+  @JvmName("insertTextRows")
+  fun insertText(title: String, paragraphs: List<ParagraphRow>, now: Long): Long {
     val db = writableDatabase
     val id: Long
     db.beginTransaction()
@@ -130,7 +135,7 @@ class Store private constructor(context: Context) :
           put("state", States.READY)
         },
       )
-      writeParagraphs(db, id, paragraphs.map { ParagraphRow("p", it) })
+      writeParagraphs(db, id, paragraphs)
       db.setTransactionSuccessful()
     } finally {
       db.endTransaction()

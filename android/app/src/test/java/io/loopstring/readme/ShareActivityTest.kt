@@ -2,13 +2,16 @@ package io.loopstring.readme
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import io.loopstring.readme.fetch.FetchWorker
+import io.loopstring.readme.intake.SharedFile
 import io.loopstring.readme.store.States
 import io.loopstring.readme.store.Store
+import java.io.ByteArrayInputStream
 import java.util.concurrent.Executor
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -18,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
 // Workers never run here: the queued request stays queued, and no test reaches the network.
 private val NEVER = Executor { }
@@ -74,6 +78,68 @@ class ShareActivityTest {
 
   @Test fun aShareWithNoTextStoresNothing() {
     share(null)
+    assertTrue(Store.get(ctx).items().isEmpty())
+  }
+
+  // --- R-C04: shared files ---
+
+  private fun open(uri: Uri, bytes: ByteArray?, action: String, type: String): ShareActivity {
+    if (bytes != null) shadowOf(ctx.contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
+    val intent = Intent(action).setType(type)
+    if (action == Intent.ACTION_VIEW) intent.setDataAndType(uri, type) else intent.putExtra(Intent.EXTRA_STREAM, uri)
+    return Robolectric.buildActivity(ShareActivity::class.java, intent).create().get()
+  }
+
+  @Test fun anObsidianNoteOpenedWithViewIsAReadyTextItemReadAsProse() {
+    val note = "---\ntags: x\n---\n# Trip plan\n\nPack **boots** and see [[Maps|the map]].\n\n- tent\n- stove\n"
+    val activity = open(
+      Uri.parse("content://md.obsidian.fileprovider/root/Trip.md"),
+      note.toByteArray(),
+      Intent.ACTION_VIEW,
+      "text/markdown",
+    )
+    val store = Store.get(ctx)
+    val item = store.items().single()
+    assertEquals("text", item.kind)
+    assertEquals(States.READY, item.state)
+    assertEquals("Trip plan", item.title)
+    assertEquals(
+      listOf("heading" to "Trip plan", "p" to "Pack boots and see the map.", "li" to "tent", "li" to "stove"),
+      store.paragraphs(item.id).map { it.kind to it.text },
+    )
+    assertTrue(activity.isFinishing)
+  }
+
+  @Test fun aTextFileSentAsAStreamIsTitledByItsName() {
+    open(Uri.parse("content://files/doc/Notes%20today.txt"), "One.\n\nTwo.".toByteArray(), Intent.ACTION_SEND, "text/plain")
+    val store = Store.get(ctx)
+    val item = store.items().single()
+    assertEquals("Notes today", item.title)
+    assertEquals(listOf("One.", "Two."), store.paragraphs(item.id).map { it.text })
+  }
+
+  @Test fun aNoteThatIsOnlyALinkIsNeverFetched() {
+    open(Uri.parse("content://x/y/Link.md"), "https://example.com/story".toByteArray(), Intent.ACTION_VIEW, "text/markdown")
+    val item = Store.get(ctx).items().single()
+    assertEquals("text", item.kind)
+    assertEquals(States.READY, item.state)
+    assertEquals(0, WorkManager.getInstance(ctx).getWorkInfosForUniqueWork(FetchWorker.uniqueName(item.id)).get().size)
+  }
+
+  @Test fun aFileOverTheCapStoresNothing() {
+    val big = ByteArray((SharedFile.CAP_BYTES + 1).toInt()) { 'a'.code.toByte() }
+    open(Uri.parse("content://x/y/Big.txt"), big, Intent.ACTION_SEND, "text/plain")
+    assertTrue(Store.get(ctx).items().isEmpty())
+  }
+
+  @Test fun anUnreadableFileStoresNothingAndDoesNotCrash() {
+    val activity = open(Uri.parse("content://x/y/Gone.md"), null, Intent.ACTION_VIEW, "text/markdown")
+    assertTrue(Store.get(ctx).items().isEmpty())
+    assertTrue(activity.isFinishing)
+  }
+
+  @Test fun aFileUriIsRefused() {
+    open(Uri.parse("file:///sdcard/Notes.md"), null, Intent.ACTION_VIEW, "text/markdown")
     assertTrue(Store.get(ctx).items().isEmpty())
   }
 }
