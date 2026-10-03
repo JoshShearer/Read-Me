@@ -1,5 +1,8 @@
 # Release signing checks (REA-26). Public data only: certificate fingerprints, never passwords.
-BT="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0"
+SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
+# 37.0.0 here; CI runners have other versions, any recent apksigner reads certificates the same.
+BT="$SDK/build-tools/37.0.0"
+[ -x "$BT/apksigner" ] || BT=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
 cert_sha256() {
   "$BT/apksigner" verify --print-certs "$1" 2>/dev/null \
     | sed -n 's/^.*[Ss]igner.* certificate SHA-256 digest: //p' | head -1

@@ -5,10 +5,11 @@ cd "$(dirname "$0")/../.."
 source scripts/lib/release.sh
 fail=0
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-BT="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0"
+JAR=$(ls -d "$SDK"/platforms/*/android.jar 2>/dev/null | sort -V | tail -1)
+if [ ! -x "${BT:-}/apksigner" ] || [ -z "$JAR" ]; then echo "SKIP: no Android build-tools or platform here"; exit 0; fi
 # A minimal APK: apksigner needs a binary manifest, which aapt2 writes.
 printf '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="x.fixture"><uses-sdk android:minSdkVersion="24"/></manifest>' > "$T/M.xml"
-"$BT/aapt2" link -o "$T/u.zip" -I "${ANDROID_HOME:-$HOME/Android/Sdk}/platforms/android-37.0/android.jar" --manifest "$T/M.xml" || { echo "FAIL: aapt2 could not build the fixture"; exit 1; }
+"$BT/aapt2" link -o "$T/u.zip" -I "$JAR" --manifest "$T/M.xml" || { echo "FAIL: aapt2 could not build the fixture"; exit 1; }
 # The debug keystore's passwords are public ("android"), so argv is acceptable here only.
 # The grep below skips the debug config's public 'android' password the same way.
 "$BT/apksigner" sign --ks android/app/debug.keystore --ks-pass pass:android --out "$T/d.apk" "$T/u.zip" || { echo "FAIL: could not sign the fixture"; exit 1; }

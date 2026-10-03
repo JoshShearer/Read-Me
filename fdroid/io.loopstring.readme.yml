@@ -32,7 +32,9 @@ Builds:
       - hermes@hermes-v250829098.0.17
     prebuild:
       - cd ../.. && HERMES_SRC=$$hermes$$ bash scripts/build-hermesc.sh $$hermes$$/out
-      - echo "readmeHermesc=$$hermes$$/out/build/bin/hermesc" >> ../gradle.properties
+      # fdroidserver joins prebuild entries with "; " into one shell, so this runs at the repo
+      # root (the cd above). gradle.properties has no final newline: start with one.
+      - printf '\nreadmeHermesc=%s\n' "$$hermes$$/out/build/bin/hermesc" >> android/gradle.properties
     scanignore:
       # Publishing config for building React Native itself; this app uses the released AARs.
       - node_modules/react-native/ReactAndroid/publish.gradle
