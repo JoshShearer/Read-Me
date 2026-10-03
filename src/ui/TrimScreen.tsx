@@ -2,6 +2,7 @@
 // this" and "Start here". Cuts are a separate set; text is never changed (AGENTS.md 12).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, View } from 'react-native';
+import { Button } from './Button';
 import { Text } from './Text';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import { applyCuts } from '../library/playback';
@@ -43,9 +44,7 @@ export function TrimScreen({
     return (
       <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
-        <Pressable style={ui.button} onPress={onGone}>
-          <Text tone="action" style={ui.buttonText}>Back to the list</Text>
-        </Pressable>
+        <Button label="Back to the list" style={ui.start} onPress={onGone} />
       </View>
     );
   }
@@ -69,9 +68,7 @@ export function TrimScreen({
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Trim</Text>
-        <Pressable style={ui.button} accessibilityLabel="trim done" onPress={onDone}>
-          <Text tone="action" style={ui.buttonText}>Done</Text>
-        </Pressable>
+        <Button appearance="filled" label="Done" accessibilityLabel="trim done" onPress={onDone} />
       </View>
       <Text tone="secondary" style={[ui.small, ui.row]}>
         {`${count - shown.size} of ${count} paragraphs kept. Tap to cut or restore; hold for more.`}

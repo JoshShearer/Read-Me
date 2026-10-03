@@ -1,6 +1,7 @@
 // R-M01 List: unread items or the Archive; R-M10 states with their actions. Never logs.
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, View } from 'react-native';
+import { Button } from './Button';
 import { Text } from './Text';
 import {
   deleteItem,
@@ -75,15 +76,12 @@ export function ListScreen({
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>{archive ? 'Archive' : 'Read Me'}</Text>
-        <Pressable
-          style={ui.button}
+        <Button
+          label={archive ? 'Unread' : 'Archive'}
           accessibilityLabel={archive ? 'unread' : 'archive'}
-          onPress={() => setArchive(a => !a)}>
-          <Text tone="action" style={ui.buttonText}>{archive ? 'Unread' : 'Archive'}</Text>
-        </Pressable>
-        <Pressable style={ui.button} accessibilityLabel="settings" onPress={onSettings}>
-          <Text tone="action" style={ui.buttonText}>Settings</Text>
-        </Pressable>
+          onPress={() => setArchive(a => !a)}
+        />
+        <Button label="Settings" accessibilityLabel="settings" onPress={onSettings} />
       </View>
       <FlatList
         data={shown}
@@ -113,15 +111,14 @@ export function ListScreen({
                 {acts
                   .filter(a => a !== 'open' || item.state === 'extract-poor' || archive)
                   .map(a => (
-                    <Pressable
+                    <Button
                       key={a}
-                      style={ui.button}
+                      appearance={a === 'delete' ? 'text' : 'tonal'}
+                      destructive={a === 'delete'}
+                      label={a === 'open' && item.state === 'extract-poor' ? 'Read anyway' : ACTION_LABEL[a]}
                       accessibilityLabel={`${a} ${item.title}`}
-                      onPress={() => run(a, item)}>
-                      <Text tone="action" style={ui.buttonText}>
-                        {a === 'open' && item.state === 'extract-poor' ? 'Read anyway' : ACTION_LABEL[a]}
-                      </Text>
-                    </Pressable>
+                      onPress={() => run(a, item)}
+                    />
                   ))}
               </View>
             </Pressable>

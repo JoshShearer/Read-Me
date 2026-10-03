@@ -22,13 +22,17 @@ export const ui = StyleSheet.create({
     gap: 12,
   },
   headerTitle: { flex: 1, ...type.xl, fontWeight: '600' },
-  button: { paddingHorizontal: 10, paddingVertical: 8 },
-  // Buttons read as buttons by the primary colour and weight, not an underline.
-  buttonText: { ...type.base, fontWeight: '500' },
+  // Buttons are ./Button (REA-28): they read as buttons by shape and the primary colour.
   row: { paddingHorizontal: 16, paddingVertical: 12 },
   title: type.base,
   small: type.sm,
-  actions: { flexDirection: 'row', gap: 4, marginTop: 4 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  // A control on its own line keeps its own width rather than stretching across the row.
+  start: { alignSelf: 'flex-start' },
+  // A control under a section title, on the row's left edge.
+  inset: { paddingHorizontal: 16, paddingVertical: 4 },
+  stack: { gap: 8 },
+  play: { minWidth: 96 },
   empty: { padding: 24 },
   card: { margin: 16, padding: 16, borderWidth: 1, borderRadius: 12, gap: 8 },
   paragraph: { ...type.lg, paddingHorizontal: 16, paddingVertical: 6 },

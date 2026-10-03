@@ -136,16 +136,18 @@ describe('screens', () => {
   const path = require('path') as typeof import('path');
   const dir = path.join(__dirname, '..', 'src', 'ui');
   const screens = fs.readdirSync(dir).filter(f => f.endsWith('Screen.tsx'));
+  // REA-28: the shared controls draw text and colour too.
+  const controls = ['Button.tsx', 'Select.tsx', 'Stepper.tsx', 'Toggle.tsx'];
   const read = (f: string) => fs.readFileSync(path.join(dir, f), 'utf8');
 
-  test.each(screens)('%s takes Text from ./Text, not react-native', f => {
+  test.each([...screens, ...controls])('%s takes Text from ./Text, not react-native', f => {
     const src = read(f);
     const rn = src.match(/import \{([^}]*)\} from 'react-native'/);
     expect(rn?.[1].split(',').map(s => s.trim())).not.toContain('Text');
-    expect(src).toMatch(/import \{ Text \} from '\.\/Text'/);
+    expect(src).toMatch(/import \{ Text(, type Tone)? \} from '\.\/Text'/);
   });
 
-  test.each([...screens.map(f => path.join(dir, f)), path.join(dir, 'ui.ts'), path.join(dir, 'Text.tsx'), path.join(__dirname, '..', 'App.tsx')])(
+  test.each([...[...screens, ...controls].map(f => path.join(dir, f)), path.join(dir, 'ui.ts'), path.join(dir, 'Text.tsx'), path.join(__dirname, '..', 'App.tsx')])(
     'no colour literal outside theme.ts: %s',
     f => {
       const src = fs.readFileSync(f, 'utf8');
@@ -156,14 +158,17 @@ describe('screens', () => {
 
   // Every Text that is a button label or secondary text names its tone, so buttons are primary
   // and secondary text is onSurfaceVariant rather than the body colour.
-  test.each(screens)('%s gives buttons and small text a tone', f => {
-    const tags = read(f).match(/<Text\b[^>]*>/g) ?? [];
-    for (const t of tags.filter(x => /ui\.(buttonText|small)\b/.test(x))) expect(t).toMatch(/\btone=/);
+  test.each(screens)('%s gives small text a tone and draws buttons with ./Button', f => {
+    const src = read(f);
+    const tags = src.match(/<Text\b[^>]*>/g) ?? [];
+    for (const t of tags.filter(x => /ui\.small\b/.test(x))) expect(t).toMatch(/\btone=/);
+    // REA-28: a Text in the action tone is a hand-made button; Button draws those.
+    expect(src).not.toMatch(/tone="action"/);
   });
 
   test('ui.ts is layout only: no underline, no opacity, no highlight colour', () => {
     const { ui } = require('../src/ui/ui');
-    expect(ui.buttonText.textDecorationLine).toBeUndefined();
+    expect(ui.buttonText).toBeUndefined();
     // Colour alone carries faint and secondary text; opacity on top would halve the contrast
     // the tone already sets.
     expect(ui.small.opacity).toBeUndefined();

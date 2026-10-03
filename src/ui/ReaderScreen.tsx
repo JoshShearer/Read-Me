@@ -3,7 +3,9 @@
 // highlight follows the service's events. R-M10: a blocking card when there is no engine or
 // no offline voice, checked on open rather than after a failed play (REA-18).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Linking, Pressable, useColorScheme, View } from 'react-native';
+import { FlatList, Linking, useColorScheme, View } from 'react-native';
+import { Button, IconButton } from './Button';
+import { Stepper } from './Stepper';
 import { Text } from './Text';
 import { palette } from './theme';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
@@ -20,7 +22,7 @@ import {
   type Playback,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { formatRate, lineTop, readerParagraphs, stepRate, type ReaderParagraph } from './model';
+import { formatRate, lineTop, RATE_MAX, RATE_MIN, readerParagraphs, stepRate, type ReaderParagraph } from './model';
 import { ui } from './ui';
 
 /** Space kept above the highlighted line when scrolling to it, in dp. */
@@ -90,9 +92,7 @@ export function ReaderScreen({
     return (
       <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
-        <Pressable style={ui.button} onPress={onGone}>
-          <Text tone="action" style={ui.buttonText}>Back to the list</Text>
-        </Pressable>
+        <Button label="Back to the list" style={ui.start} onPress={onGone} />
       </View>
     );
   }
@@ -102,9 +102,7 @@ export function ReaderScreen({
       <Text style={ui.headerTitle} numberOfLines={1}>
         {detail.item.title}
       </Text>
-      <Pressable style={ui.button} accessibilityLabel="trim" onPress={onTrim}>
-        <Text tone="action" style={ui.buttonText}>Trim</Text>
-      </Pressable>
+      <Button label="Trim" accessibilityLabel="trim" onPress={onTrim} />
     </View>
   );
 
@@ -117,14 +115,15 @@ export function ReaderScreen({
             This phone has no offline text-to-speech voice Read Me can use, so it cannot read aloud.
             Install or enable an offline voice in Android's text-to-speech settings.
           </Text>
-          <Pressable
-            style={ui.button}
+          <Button
+            appearance="filled"
+            label="Open text-to-speech settings"
             accessibilityLabel="open tts settings"
+            style={ui.start}
             onPress={() => {
               Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(() => undefined);
-            }}>
-            <Text tone="action" style={ui.buttonText}>Open text-to-speech settings</Text>
-          </Pressable>
+            }}
+          />
         </View>
       </View>
     );
@@ -145,18 +144,6 @@ export function ReaderScreen({
   const control = (fn: () => Promise<unknown>) => () => {
     fn().catch(() => undefined);
   };
-  const button = (label: string, a11y: string, onPress: () => void, disabled = false) => (
-    <Pressable
-      style={ui.button}
-      accessibilityLabel={a11y}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}>
-      <Text tone={disabled ? 'disabled' : 'action'} style={ui.buttonText}>
-        {label}
-      </Text>
-    </Pressable>
-  );
 
   return (
     <View collapsable={false} style={ui.screen}>
@@ -193,13 +180,26 @@ export function ReaderScreen({
       <View collapsable={false} style={[ui.transport, { borderTopColor: colors.outlineVariant }]}>
         {/* Sentence controls act on whatever the service holds, so they work only for this
             item; they stay in place, disabled, so Play/Pause never moves. */}
-        {button('¶◀', 'back paragraph', control(backParagraph), !mine)}
-        {button('◀', 'previous sentence', control(previous), !mine)}
-        {button(mine?.playing ? 'Pause' : 'Play', mine?.playing ? 'pause' : 'play', control(() => toggle(id, playback)))}
-        {button('▶', 'next sentence', control(next), !mine)}
-        {button('−', 'slower', () => changeRate(-1))}
-        <Text>{formatRate(rate)}</Text>
-        {button('+', 'faster', () => changeRate(1))}
+        <IconButton glyph="¶◀" accessibilityLabel="back paragraph" disabled={!mine} onPress={control(backParagraph)} />
+        <IconButton glyph="◀" accessibilityLabel="previous sentence" disabled={!mine} onPress={control(previous)} />
+        {/* Wide enough for "Pause", so the buttons beside it do not move when it changes. */}
+        <Button
+          appearance="filled"
+          label={mine?.playing ? 'Pause' : 'Play'}
+          accessibilityLabel={mine?.playing ? 'pause' : 'play'}
+          style={ui.play}
+          onPress={control(() => toggle(id, playback))}
+        />
+        <IconButton glyph="▶" accessibilityLabel="next sentence" disabled={!mine} onPress={control(next)} />
+        <Stepper
+          value={rate}
+          min={RATE_MIN}
+          max={RATE_MAX}
+          format={formatRate}
+          onStep={changeRate}
+          decreaseLabel="slower"
+          increaseLabel="faster"
+        />
       </View>
     </View>
   );
