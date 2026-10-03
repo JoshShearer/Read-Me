@@ -71,8 +71,12 @@ function Main() {
   // preallocation off. Keyed screens: 0 of 20 (REA-26, 2026-10-03; npm run device:screens).
   const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
   // REA-22, REA-24: the status bar sits on this surface, so its icons follow the mode too.
+  // REA-28: the bottom inset too, or the Reader's transport sits under the gesture bar (Play's
+  // 48 dp target reached y 2962 of 2992 on the reference device, the home indicator across it).
   return (
-    <View collapsable={false} style={[ui.screen, { paddingTop: insets.top, backgroundColor: palette(scheme).surface }]}>
+    <View
+      collapsable={false}
+      style={[ui.screen, { paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: palette(scheme).surface }]}>
       <StatusBar barStyle={statusBarStyle(scheme)} />
       <React.Fragment key={key}>{screen}</React.Fragment>
     </View>

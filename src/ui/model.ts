@@ -96,9 +96,12 @@ export function readerParagraphs(
 }
 
 /** R-M07: 0.5x to 4.0x in 0.1x steps. */
+export const RATE_MIN = 0.5;
+export const RATE_MAX = 4;
+
 export function stepRate(rate: number, dir: 1 | -1): number {
   const next = Math.round(rate * 10 + dir) / 10;
-  return Math.min(4, Math.max(0.5, next));
+  return Math.min(RATE_MAX, Math.max(RATE_MIN, next));
 }
 
 /**

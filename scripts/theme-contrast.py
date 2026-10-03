@@ -130,11 +130,16 @@ def main(d):
     m = os.environ.get('SCREENSHOT_MASK')
     mask = tuple(int(v) for v in m.split(',')) if m else None
     masked = 0
+    # One phone, one status bar: its height is the smallest any screen's dump gives. A bottom
+    # sheet's dump starts at its scrim (top 0) and then the sheet, far down the screen, which
+    # alone would measure dimmed content as the status bar (REA-28).
+    dumps = [p.with_suffix('.xml') for p in d.glob('*.png') if p.with_suffix('.xml').exists()]
+    bar = min((status_bar_px(x.read_text(errors='replace')) for x in dumps), default=STATUS_BAR_PX)
     for png in sorted(d.glob('*.png')):
         xml = png.with_suffix('.xml')
         img = Image.open(png)
         dump = xml.read_text(errors='replace') if xml.exists() else ''
-        top = status_bar_px(dump)
+        top = bar
         sb, bg, fg = contrast(img, (0, 0, img.width, top))
         ok = sb >= 3.0
         bad += not ok

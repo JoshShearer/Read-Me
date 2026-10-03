@@ -2,7 +2,11 @@
 // R-M12: the Obsidian bridge row (on/off, port, pairing token with Copy).
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
+import { Button } from './Button';
+import { Select } from './Select';
+import { Stepper } from './Stepper';
 import { Text } from './Text';
+import { Toggle } from './Toggle';
 import { palette } from './theme';
 import {
   copyBridgeToken,
@@ -18,8 +22,17 @@ import {
 import { deleteItem, listItems, onItemsChanged, type Item } from '../library/library';
 import { engineBlocked, getEngine, setRate, setVoice, type Engine } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { bridgeStatus, formatRate, parsePort, stepRate, visibleItems } from './model';
+import { bridgeStatus, formatRate, parsePort, RATE_MAX, RATE_MIN, stepRate, visibleItems } from './model';
 import { ui } from './ui';
+
+// REA-28: Settings keeps one structure from its first frame. It used to add the voice picker
+// and the bridge panel when the engine probe (2.7-5.5 s on the reference device) and the bridge
+// state arrived, while the screen was still mounting; in 2 of 3 device:themes runs Fabric
+// dropped those mutations (react/react-native#58265, see ui.ts): the layout made room for both,
+// nothing was drawn in it, "Checking..." stayed and the bridge heading was drawn over its
+// description (REA-27's blank bridge controls). Now both are there at once, disabled while
+// loading, and only their props change when the data arrives.
+const NO_BRIDGE: Bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
 
 export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const colors = palette(useColorScheme());
@@ -91,66 +104,69 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       },
     ]);
 
+  const loadingBridge = bridge === null;
+  const shown = bridge ?? NO_BRIDGE;
   return (
     <ScrollView style={ui.screen}>
       <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>Settings</Text>
       </View>
 
-      <Text style={[ui.row, ui.title]}>Voice</Text>
-      {engine === null ? (
-        <Text tone="secondary" style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
-      ) : engineBlocked(engine.status) ? (
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Voice</Text>
+      {engine !== null && engineBlocked(engine.status) ? (
         <View collapsable={false} style={[ui.card, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
           <Text>No offline text-to-speech voice is available.</Text>
-          <Pressable
-            style={ui.button}
+          <Button
+            appearance="filled"
+            label="Open text-to-speech settings"
             accessibilityLabel="open tts settings"
+            style={ui.start}
             onPress={() => {
               Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(() => undefined);
-            }}>
-            <Text tone="action" style={ui.buttonText}>Open text-to-speech settings</Text>
-          </Pressable>
+            }}
+          />
         </View>
       ) : (
-        engine.voices.map(v => (
-          <Pressable
-            key={v.name}
-            style={ui.row}
-            accessibilityLabel={`voice ${v.name}`}
-            onPress={() => {
-              setVoice(v.name).then(loadEngine, () => undefined);
-            }}>
-            <Text>{`${v.name === engine.selected ? '● ' : '○ '}${v.name}`}</Text>
-            <Text tone="secondary" style={ui.small}>{v.language}</Text>
-          </Pressable>
-        ))
+        // R-M06: engine.voices holds offline voices only; the native side filters them.
+        <View collapsable={false} style={ui.row}>
+          <Select
+            name="voice"
+            title="Voice"
+            disabled={engine === null}
+            placeholder="Checking the text-to-speech engine..."
+            options={(engine?.voices ?? []).map(v => ({ value: v.name, label: v.name, detail: v.language }))}
+            value={engine?.selected ?? null}
+            onChange={name => {
+              setVoice(name).then(loadEngine, () => undefined);
+            }}
+          />
+        </View>
       )}
       <Text tone="secondary" style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
 
-      <Text style={[ui.row, ui.title]}>Default rate</Text>
-      <View collapsable={false} style={[ui.actions, ui.row]}>
-        <Pressable style={ui.button} accessibilityLabel="default slower" onPress={() => changeRate(-1)}>
-          <Text tone="action" style={ui.buttonText}>−</Text>
-        </Pressable>
-        <Text>{formatRate(rate)}</Text>
-        <Pressable style={ui.button} accessibilityLabel="default faster" onPress={() => changeRate(1)}>
-          <Text tone="action" style={ui.buttonText}>+</Text>
-        </Pressable>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Default rate</Text>
+      <View collapsable={false} style={ui.inset}>
+        <Stepper
+          value={rate}
+          min={RATE_MIN}
+          max={RATE_MAX}
+          format={formatRate}
+          onStep={changeRate}
+          decreaseLabel="default slower"
+          increaseLabel="default faster"
+        />
       </View>
 
-      <Text style={[ui.row, ui.title]}>Obsidian bridge</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Obsidian bridge</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>
         Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices.
       </Text>
-      {bridge === null ? null : (
-        <View collapsable={false} style={[ui.row, { backgroundColor: colors.surfaceContainerLow }]}>
-          <Text>{bridgeStatus(bridge)}</Text>
-          <Pressable
-            style={ui.button}
-            accessibilityLabel={bridge.enabled ? 'bridge off' : 'bridge on'}
-            onPress={() => {
-              const on = !bridge.enabled;
+        <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
+          <Toggle
+            label="Use the bridge"
+            disabled={loadingBridge}
+            value={shown.enabled}
+            onValueChange={on => {
               if (!on) {
                 setBridgeEnabled(false).then(setBridge, () => undefined);
                 return;
@@ -163,10 +179,10 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
                   return granted ? setBridgeEnabled(true) : null;
                 })
                 .then(b => b && setBridge(b), () => undefined);
-            }}>
-            <Text tone="action" style={ui.buttonText}>{bridge.enabled ? 'Turn off' : 'Turn on'}</Text>
-          </Pressable>
-          <View collapsable={false} style={ui.actions}>
+            }}
+          />
+          <Text tone="secondary" style={ui.small}>{loadingBridge ? 'Checking the bridge...' : bridgeStatus(shown)}</Text>
+          <View collapsable={false} style={ui.field}>
             <Text tone="secondary" style={ui.small}>Port</Text>
             <TextInput
               accessibilityLabel="bridge port"
@@ -182,59 +198,72 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               onSubmitEditing={applyPort}
             />
           </View>
-          {notifyOff && (bridge.enabled || refused) ? (
+          {notifyOff && (shown.enabled || refused) ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>
                 Read Me needs to show a notification while the bridge is on, and notifications are off
                 for Read Me. Allow them in Android settings, then turn the bridge on.
               </Text>
-              <Pressable
-                style={ui.button}
+              <Button
+                appearance="tonal"
+                label="Open Read Me's settings"
                 accessibilityLabel="open app settings"
+                style={ui.start}
                 onPress={() => {
                   Linking.openSettings().catch(() => undefined);
-                }}>
-                <Text tone="action" style={ui.buttonText}>Open Read Me's settings</Text>
-              </Pressable>
+                }}
+              />
             </View>
           ) : null}
           {portError ? <Text tone="error" style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
-          {bridge.enabled && bridge.token !== null ? (
+          {shown.enabled && shown.token !== null ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>Pairing token (paste it into the plugin's settings)</Text>
               <Text selectable accessibilityLabel="pairing token">
-                {bridge.token}
+                {shown.token}
               </Text>
               <View collapsable={false} style={ui.actions}>
-                <Pressable
-                  style={ui.button}
+                <Button
+                  appearance="tonal"
+                  label={copied ? 'Copied' : 'Copy'}
                   accessibilityLabel="copy token"
                   onPress={() => {
                     copyBridgeToken().then(() => setCopied(true), () => undefined);
-                  }}>
-                  <Text tone="action" style={ui.buttonText}>{copied ? 'Copied' : 'Copy'}</Text>
-                </Pressable>
-                <Pressable style={ui.button} accessibilityLabel="new token" onPress={newToken}>
-                  <Text tone="action" style={ui.buttonText}>New token</Text>
-                </Pressable>
+                  }}
+                />
+                <Button label="New token" accessibilityLabel="new token" onPress={newToken} />
               </View>
             </View>
           ) : null}
         </View>
-      )}
 
-      <Text style={[ui.row, ui.title]}>Storage</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Storage</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>{`${items.length} items, ${archived.length} archived`}</Text>
       {archived.length > 0 ? (
-        <Pressable style={[ui.button, ui.row]} accessibilityLabel="delete archived" onPress={deleteArchived}>
-          <Text tone="action" style={ui.buttonText}>Delete archived items</Text>
-        </Pressable>
+        <View collapsable={false} style={ui.inset}>
+          <Button
+            appearance="outlined"
+            destructive
+            label="Delete archived items"
+            accessibilityLabel="delete archived"
+            style={ui.start}
+            onPress={deleteArchived}
+          />
+        </View>
       ) : null}
 
-      <Pressable style={ui.row} accessibilityLabel="licenses" onPress={onLicenses}>
-        <Text style={ui.title}>Licenses</Text>
-        <Text tone="secondary" style={ui.small}>Third-party software in Read Me</Text>
+      <Pressable
+        style={[ui.row, ui.link]}
+        accessibilityRole="button"
+        accessibilityLabel="licenses"
+        onPress={onLicenses}>
+        <View collapsable={false} style={ui.grow}>
+          <Text style={ui.title}>Licenses</Text>
+          <Text tone="secondary" style={ui.small}>Third-party software in Read Me</Text>
+        </View>
+        <Text tone="secondary" style={ui.chevron}>{'›'}</Text>
       </Pressable>
+      <View collapsable={false} style={ui.end} />
     </ScrollView>
   );
 }

@@ -1,6 +1,7 @@
 // R-M01 List: unread items or the Archive; R-M10 states with their actions. Never logs.
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, View } from 'react-native';
+import { Alert, FlatList, Pressable, useColorScheme, View } from 'react-native';
+import { Button } from './Button';
 import { Text } from './Text';
 import {
   deleteItem,
@@ -21,7 +22,15 @@ import {
   visibleItems,
   type Action,
 } from './model';
+import { palette } from './theme';
 import { ui } from './ui';
+
+// A hairline between items. Defined once, outside ListScreen: a component created during
+// render remounts on every render, the view churn react/react-native#58265 punishes (ui.ts).
+function Divider() {
+  const colors = palette(useColorScheme());
+  return <View collapsable={false} style={[ui.divider, { backgroundColor: colors.outlineVariant }]} />;
+}
 
 export function ListScreen({
   onOpen,
@@ -30,6 +39,7 @@ export function ListScreen({
   onOpen: (item: Item) => void;
   onSettings: () => void;
 }) {
+  const colors = palette(useColorScheme());
   const [items, setItems] = useState<Item[]>([]);
   const [archive, setArchive] = useState(false);
   const [playback, setPlayback] = useState<Playback | null>(null);
@@ -75,19 +85,17 @@ export function ListScreen({
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
         <Text style={ui.headerTitle}>{archive ? 'Archive' : 'Read Me'}</Text>
-        <Pressable
-          style={ui.button}
+        <Button
+          label={archive ? 'Unread' : 'Archive'}
           accessibilityLabel={archive ? 'unread' : 'archive'}
-          onPress={() => setArchive(a => !a)}>
-          <Text tone="action" style={ui.buttonText}>{archive ? 'Unread' : 'Archive'}</Text>
-        </Pressable>
-        <Pressable style={ui.button} accessibilityLabel="settings" onPress={onSettings}>
-          <Text tone="action" style={ui.buttonText}>Settings</Text>
-        </Pressable>
+          onPress={() => setArchive(a => !a)}
+        />
+        <Button label="Settings" accessibilityLabel="settings" onPress={onSettings} />
       </View>
       <FlatList
         data={shown}
         keyExtractor={item => String(item.id)}
+        ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <Text style={ui.empty}>
             {archive ? 'Nothing archived yet.' : 'Share a link or text to Read Me.'}
@@ -100,28 +108,38 @@ export function ListScreen({
           const help = guidance(item);
           return (
             <Pressable
-              style={ui.row}
+              style={ui.entry}
               onPress={() => {
                 if (acts.includes('open')) onOpen(item);
               }}>
-              <Text style={ui.title}>{item.title}</Text>
-              {sub ? <Text tone="secondary" style={ui.small}>{sub}</Text> : null}
-              <Text tone="secondary" style={ui.small}>{badge(item)}</Text>
-              {mark && mark !== 'archived' ? <Text tone="secondary" style={ui.small}>{mark}</Text> : null}
+              <Text style={ui.entryTitle} numberOfLines={3}>{item.title}</Text>
+              {sub ? <Text tone="secondary" style={ui.meta}>{sub}</Text> : null}
+              <Text tone={item.state === 'fetch-failed' ? 'error' : 'secondary'} style={ui.meta}>{badge(item)}</Text>
+              {mark && mark !== 'archived' ? <Text tone="secondary" style={ui.meta}>{mark}</Text> : null}
               {help ? <Text tone="secondary" style={ui.small}>{help}</Text> : null}
+              {item.progress > 0 && item.progress < 1 ? (
+                <View
+                  collapsable={false}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={[ui.track, { backgroundColor: colors.surfaceVariant }]}>
+                  <View
+                    collapsable={false}
+                    style={[ui.fill, { width: `${Math.round(item.progress * 100)}%`, backgroundColor: colors.primary }]}
+                  />
+                </View>
+              ) : null}
               <View collapsable={false} style={ui.actions}>
                 {acts
                   .filter(a => a !== 'open' || item.state === 'extract-poor' || archive)
                   .map(a => (
-                    <Pressable
+                    <Button
                       key={a}
-                      style={ui.button}
+                      appearance={a === 'delete' ? 'quiet' : 'tonal'}
+                      label={a === 'open' && item.state === 'extract-poor' ? 'Read anyway' : ACTION_LABEL[a]}
                       accessibilityLabel={`${a} ${item.title}`}
-                      onPress={() => run(a, item)}>
-                      <Text tone="action" style={ui.buttonText}>
-                        {a === 'open' && item.state === 'extract-poor' ? 'Read anyway' : ACTION_LABEL[a]}
-                      </Text>
-                    </Pressable>
+                      onPress={() => run(a, item)}
+                    />
                   ))}
               </View>
             </Pressable>

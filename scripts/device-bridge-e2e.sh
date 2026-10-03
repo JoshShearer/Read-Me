@@ -63,6 +63,9 @@ tap_text() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 on_screen() { for _ in $(seq 15); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
+# REA-28: the bridge is a switch labelled "Use the bridge"; its state is the node's checked=.
+BRIDGE='Use the bridge'
+bridge_is() { on_screen "content-desc=\"$BRIDGE\"[^>]*checked=\"$1\""; }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done; return 1; }
 
@@ -76,16 +79,18 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 echo "== Settings: turn the bridge on"
 tap_desc settings
 # R-M12: no notification permission, no bridge. Refuse once, then allow (Android 13+ dialog).
-tap_desc 'bridge on'
+scroll_to_desc "$BRIDGE"
+check "the bridge switch starts off" "bridge_is false"
+tap_desc "$BRIDGE"
 tap_text 'Don.t allow'
 check "refused: Settings explains and the bridge stays off" \
-  "on_screen 'Read Me needs to show a notification while the bridge is on' && on_screen 'content-desc=\"bridge on\"'"
+  "on_screen 'Read Me needs to show a notification while the bridge is on' && bridge_is false"
 adb forward tcp:$PORT tcp:$PORT >/dev/null
 check "refused: nothing listens on the port" \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$PORT/health)\" = 000 ]"
-tap_desc 'bridge on'
+tap_desc "$BRIDGE"
 tap_text 'Allow'
-check "Settings says the bridge is on" "on_screen 'On at 127\.0\.0\.1:$PORT'"
+check "Settings says the bridge is on" "on_screen 'On at 127\.0\.0\.1:$PORT' && bridge_is true"
 TOK=$(ui | grep -oE 'text="[0-9a-f]{32}"' | head -1 | grep -oE '[0-9a-f]{32}' || true)
 [ -n "$TOK" ] || { echo "FAIL: no pairing token on screen"; exit 1; }
 printf 'Authorization: Bearer %s\n' "$TOK" > "$HDR"
@@ -172,9 +177,11 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 # The Reader is still open: back to the List, then Settings.
 adb shell input keyevent KEYCODE_BACK
 tap_desc settings
-scroll_to_desc 'bridge off'
-tap_desc 'bridge off'
+scroll_to_desc "$BRIDGE"
+check "the bridge switch is still on" "bridge_is true"
+tap_desc "$BRIDGE"
 sleep 2
+check "the bridge switch is off" "bridge_is false"
 check "the bridge is gone" "[ \"\$(code --max-time 3 $B/health)\" = 000 ]"
 
 echo "== privacy"

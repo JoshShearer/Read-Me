@@ -101,7 +101,7 @@ shot 3
 tap_node content-desc 'pause'
 adb shell input keyevent KEYCODE_BACK
 tap_node content-desc 'settings'
-wait_for 'content-desc="voice [^"]+"'
+wait_for 'content-desc="voice, [^"]+"'
 shot 4
 
 python3 scripts/tidy-screenshots.py "$RAW" "$OUT"

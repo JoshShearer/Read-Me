@@ -40,6 +40,11 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
   },
 }));
 
+// Select's bottom sheet pads for the navigation bar; App provides the insets on the phone.
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 import Native from '../src/native/NativeReadMeSpeech';
 import { ListScreen } from '../src/ui/ListScreen';
 import { TrimScreen } from '../src/ui/TrimScreen';
@@ -209,17 +214,45 @@ test('Settings lists offline voices, the default rate and storage', async () => 
   mockState.items = [base, { ...base, id: 2, archivedAt: 3 }];
   const out = await render(<SettingsScreen onLicenses={() => {}} />);
   expect(out).toContain('en-us-x-a-local');
+  // REA-28: the voice is a Select, not one row per voice.
+  expect(out).toContain('"voice"');
   expect(out).toContain('2.0x');
   expect(out).toContain('2 items, 1 archived');
   expect(out).toContain('Licenses');
+});
+
+// REA-28: the bridge is a switch whose label stays "Use the bridge"; its state is checked.
+const bridgeSwitch = (r: ReactTestRenderer.ReactTestRenderer) =>
+  r.root.find(n => n.props.accessibilityRole === 'switch' && n.props.accessibilityLabel === 'Use the bridge');
+
+async function settings() {
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<SettingsScreen onLicenses={() => {}} />);
+  });
+  mounted.push(r);
+  return r;
+}
+
+test('Settings has its voice picker and bridge switch from the first frame, disabled while loading', async () => {
+  // REA-28: adding them when the data arrived, mid-mount, lost Fabric mutations on the phone.
+  const never = new Promise<never>(() => {});
+  (Native.getEngine as jest.Mock).mockReturnValueOnce(never);
+  (Native.getBridge as jest.Mock).mockReturnValueOnce(never);
+  const r = await settings();
+  const field = r.root.find(n => n.props.accessibilityRole === 'combobox' && typeof n.props.onPress === 'function');
+  expect(field.props.disabled).toBe(true);
+  expect(field.props.accessibilityValue).toBeUndefined();
+  expect(bridgeSwitch(r).props.disabled).toBe(true);
+  expect(strings(r.toJSON()).join('\n')).toContain('Checking the text-to-speech engine...');
 });
 
 test('Settings shows the bridge off, with no token (R-M12)', async () => {
   const out = await render(<SettingsScreen onLicenses={() => {}} />);
   expect(out).toContain('Obsidian bridge');
   expect(out).toContain('Off');
-  expect(out).toContain('"bridge on"');
   expect(out).not.toContain('pairing token');
+  expect(bridgeSwitch(await settings()).props.accessibilityState).toMatchObject({ checked: false });
 });
 
 test('Settings shows the token with Copy and New token while the bridge is on', async () => {
@@ -229,7 +262,7 @@ test('Settings shows the token with Copy and New token while the bridge is on', 
   expect(out).toContain('0123456789abcdef0123456789abcdef');
   expect(out).toContain('"copy token"');
   expect(out).toContain('"new token"');
-  expect(out).toContain('"bridge off"');
+  expect(bridgeSwitch(await settings()).props.accessibilityState).toMatchObject({ checked: true });
 });
 
 test('turning the bridge on goes through the module', async () => {
@@ -239,7 +272,7 @@ test('turning the bridge on goes through the module', async () => {
   });
   mounted.push(r);
   await ReactTestRenderer.act(async () => {
-    r.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+    bridgeSwitch(r).props.onPress();
   });
   expect(Native.setBridgeEnabled).toHaveBeenCalledWith(true);
   expect(strings(r.toJSON()).join('\n')).toContain('0123456789abcdef0123456789abcdef');
@@ -254,7 +287,7 @@ test('the bridge does not turn on while notifications are refused (R-M12)', asyn
   });
   mounted.push(r);
   await ReactTestRenderer.act(async () => {
-    r.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+    bridgeSwitch(r).props.onPress();
   });
   expect(spy).toHaveBeenCalled();
   expect(Native.setBridgeEnabled).not.toHaveBeenCalled();
@@ -308,7 +341,11 @@ describe('theme on the screens (REA-24)', () => {
   const texts = (r: ReactTestRenderer.ReactTestRenderer) => r.root.findAll(n => n.type === RN.Text);
 
   test('every Text on List, Trim, Reader and Settings takes a palette colour', async () => {
-    const roles = [p.onSurface, p.onSurfaceVariant, p.primary, p.error, p.onPrimaryContainer, blend(p.onSurface, p.surface, FAINT)];
+    const roles = [
+      p.onSurface, p.onSurfaceVariant, p.primary, p.error, p.onPrimaryContainer, blend(p.onSurface, p.surface, FAINT),
+      // REA-28: labels on filled and tonal buttons, and the selected option in a Select.
+      p.onPrimary, p.onSecondaryContainer,
+    ];
     mockState.items = [{ ...base, state: 'fetch-failed', failReason: 'offline', title: 'example.com' }];
     mockState.detail = text(['One.', 'Two.'], [1]);
     mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
@@ -326,7 +363,8 @@ describe('theme on the screens (REA-24)', () => {
   test('buttons are primary with no underline; disabled ones are onSurface at FAINT', async () => {
     mockState.detail = text(['One.']);
     const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
-    expect(labelStyle(r, 'play')).toMatchObject({ color: p.primary });
+    // REA-28: Play is a filled button, onPrimary on primary.
+    expect(labelStyle(r, 'play')).toMatchObject({ color: p.onPrimary });
     expect(labelStyle(r, 'play').textDecorationLine).toBeUndefined();
     expect(labelStyle(r, 'trim')).toMatchObject({ color: p.primary });
     expect(labelStyle(r, 'next sentence')).toMatchObject({ color: blend(p.onSurface, p.surface, FAINT) });
@@ -362,9 +400,9 @@ describe('theme on the screens (REA-24)', () => {
     mockState.bridge = { enabled: true, state: 'on', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
     const s = await create(<SettingsScreen onLicenses={() => {}} />);
     // The innermost screen View (collapsable={false}, not the Pressable's own) that holds the
-    // bridge's on/off button.
+    // bridge's switch.
     const rows = s.root.findAll(
-      n => n.type === RN.View && n.props.collapsable === false && n.props.accessibilityLabel === undefined && n.findAll(m => m.props.accessibilityLabel === 'bridge off').length > 0,
+      n => n.type === RN.View && n.props.collapsable === false && n.props.accessibilityLabel === undefined && n.findAll(m => m.props.accessibilityRole === 'switch').length > 0,
     );
     expect(flat(rows[rows.length - 1].props.style)).toMatchObject({ backgroundColor: p.surfaceContainerLow });
   });
@@ -372,7 +410,7 @@ describe('theme on the screens (REA-24)', () => {
   test('the port field follows the palette', async () => {
     const s = await create(<SettingsScreen onLicenses={() => {}} />);
     await ReactTestRenderer.act(async () => {
-      s.root.find(n => n.props.accessibilityLabel === 'bridge on' && typeof n.props.onPress === 'function').props.onPress();
+      bridgeSwitch(s).props.onPress();
     });
     const input = s.root.find(n => n.type === RN.TextInput);
     expect(flat(input.props.style)).toMatchObject({ color: p.onSurface });

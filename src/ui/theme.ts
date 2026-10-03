@@ -27,6 +27,8 @@ type Roles = {
   outlineVariant: string;
   surfaceContainerLow: string;
   surfaceContainerHigh: string;
+  // Behind a bottom sheet: Material 3's black scrim at 32%, as #rrggbbaa.
+  scrim: string;
 };
 
 export type Palette = Roles & {
@@ -69,6 +71,7 @@ const LIGHT = withAliases({
   outlineVariant: '#ccc4ce',
   surfaceContainerLow: '#f7f2fc',
   surfaceContainerHigh: '#ede7f7',
+  scrim: '#00000052',
 });
 
 const DARK = withAliases({
@@ -91,6 +94,7 @@ const DARK = withAliases({
   outlineVariant: '#4a444e',
   surfaceContainerLow: '#262228',
   surfaceContainerHigh: '#342e38',
+  scrim: '#00000052',
 });
 
 /**
@@ -108,6 +112,19 @@ export const type = {
   lg: { fontSize: 18, lineHeight: 28 },
   xl: { fontSize: 20, lineHeight: 28 },
   '2xl': { fontSize: 24, lineHeight: 32 },
+} as const;
+
+/**
+ * REA-28: the article's own words (item titles, paragraphs, screen titles) are set in Android's
+ * system serif, Noto Serif on the reference device; the controls around them stay in the
+ * system sans. The split says which is content and which is tool. A system face means no font
+ * asset to bundle, license or reproduce (AGENTS.md 14). Serif gets looser leading than the
+ * sans scale above, and the reading measure stays near 40 characters on the reference device.
+ */
+export const read = {
+  body: { fontFamily: 'serif', fontSize: 19, lineHeight: 30 },
+  title: { fontFamily: 'serif', fontSize: 20, lineHeight: 27 },
+  display: { fontFamily: 'serif', fontSize: 28, lineHeight: 34 },
 } as const;
 
 export function palette(scheme: ColorSchemeName | null | undefined): Palette {

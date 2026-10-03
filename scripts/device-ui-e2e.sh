@@ -134,10 +134,51 @@ tap_node text '(Delete|DELETE)'
 for _ in $(seq 10); do device_has "$(ui)" 'fetch-failed: offline' || break; sleep 1; done
 device_has "$(ui)" 'fetch-failed: offline' && { echo "FAIL: the dead link was not deleted"; fail=1; }
 
-# Settings: a voice, then Licenses (R-M01, R-M13)
+# Settings: the voice Select (REA-28), then Licenses (R-M01, R-M13). The field is a combobox
+# labelled "voice" whose value is the current voice, dumped as "voice, <name>"; its sheet lists
+# each offline voice as a radio labelled "voice <name>" with checked=.
+FIELD='voice, [^"]+'
 tap_node content-desc 'settings'
-on_screen 'content-desc="voice [^"]+"' || fail=1
+on_screen "content-desc=\"$FIELD\"" || fail=1
 on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
+# Nothing above touches the rate, so it is still the 2.0x default. Twice on 2026-10-03 it read
+# 1.7x after a scripted run (three presses of "slower" no script sends); this catches a repeat.
+on_screen 'text="2\.0x"' || { echo "FAIL: the default rate moved without a press"; fail=1; }
+tap_node content-desc "$FIELD"
+sheet=""
+for _ in $(seq 10); do sheet=$(ui); device_has "$sheet" 'content-desc="close voice"' && break; sleep 1; done
+radios=$(grep -oE 'content-desc="voice [^",]+"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' <<<"$sheet" || true)
+voices=$(sed -E 's/content-desc="voice ([^"]+)".*/\1/' <<<"$radios")
+was=$(grep -E 'checked="true"' <<<"$radios" | head -1 | sed -E 's/content-desc="voice ([^"]+)".*/\1/' || true)
+n=$(grep -c . <<<"$voices" || true)
+echo "voice sheet: $n voices on screen, one checked: ${was:+yes}"
+[ "$n" -ge 1 ] && [ -n "$was" ] || { echo "FAIL: the voice sheet has no checked voice"; fail=1; }
+# Another voice whose row is fully on screen: the list opens scrolled to the checked one, so
+# the row above can be cut to a sliver under the sheet's heading (2026-10-03).
+other=$(grep -v 'checked="true"' <<<"$radios" | while read -r r; do
+  read -r y0 y1 < <(sed -E 's/.*\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' <<<"$r")
+  [ $((y1 - y0)) -ge 150 ] && { sed -E 's/content-desc="voice ([^"]+)".*/\1/' <<<"$r"; break; }
+done || true)
+if [ -n "$other" ]; then
+  # Pick another voice: the sheet closes and the field shows it.
+  tap_node content-desc "voice $other"
+  for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
+  device_has "$(ui)" 'content-desc="close voice"' && { echo "FAIL: the voice sheet stayed open after a pick"; fail=1; }
+  on_screen "text=\"$other\"" || { echo "FAIL: the field does not show the picked voice"; fail=1; }
+  tap_node content-desc "$FIELD"
+  tap_node content-desc "voice $was"
+  on_screen "text=\"$was\"" || { echo "FAIL: the first voice was not restored"; fail=1; }
+else
+  echo "only one offline voice: the pick is not exercised"
+  adb shell input keyevent KEYCODE_BACK
+fi
+# Back closes an open sheet without leaving Settings.
+tap_node content-desc "$FIELD"
+on_screen 'content-desc="close voice"' || fail=1
+adb shell input keyevent KEYCODE_BACK
+for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
+device_has "$(ui)" 'content-desc="close voice"' && { echo "FAIL: Back did not close the voice sheet"; fail=1; }
+on_screen 'content-desc="licenses"' || { echo "FAIL: Back left Settings instead of closing the sheet"; fail=1; }
 tap_node content-desc 'licenses'
 # Alphabetical, so check what is on screen: packages with a license line.
 on_screen 'text="(MIT|Apache-2.0|ISC|BSD-3-Clause)"' || fail=1
