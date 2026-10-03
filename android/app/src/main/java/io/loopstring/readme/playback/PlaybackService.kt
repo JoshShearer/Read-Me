@@ -25,6 +25,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import io.loopstring.readme.MainActivity
+import io.loopstring.readme.R
 import io.loopstring.readme.bridge.BridgeFiles
 import io.loopstring.readme.bridge.BridgeServer
 import io.loopstring.readme.bridge.TtsSynth
@@ -455,7 +456,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     )
     val bridgeOn = bridge != null
     val text = ServiceText.of(title, s, bridgeOn)
-    b.setSmallIcon(android.R.drawable.ic_media_play)
+    b.setSmallIcon(R.drawable.ic_stat_readme)
       .setContentTitle(text.title)
       .setContentText(text.body)
       .setContentIntent(open)

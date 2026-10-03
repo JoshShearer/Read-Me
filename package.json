@@ -2,6 +2,7 @@
   "name": "io.loopstring.readme",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "android": "react-native run-android",
     "lint": "eslint .",
@@ -22,7 +23,9 @@
     "device:gap": "bash scripts/device-gap.sh",
     "notices": "node scripts/make-notices.mjs",
     "device:ui": "bash scripts/device-ui-e2e.sh",
-    "device:bridge": "bash scripts/device-bridge-e2e.sh"
+    "device:bridge": "bash scripts/device-bridge-e2e.sh",
+    "brand": "python3 scripts/gen-brand.py",
+    "device:screenshots": "bash scripts/device-screenshots.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

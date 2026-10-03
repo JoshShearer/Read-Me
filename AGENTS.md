@@ -45,6 +45,9 @@ GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): 
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
+npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
+                            # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
+npm run brand               # regenerates launcher, notification and store icons from scripts/gen-brand.py (needs Pillow)
 ```
 
 ### Device work: the one-phone slot
