@@ -587,6 +587,6 @@ This task runs from `main` after merge, so the tag points at a merged commit. It
 - [ ] **Step 1:** On `main`: `npm ci && npm run build:release` (clean). Then, using the tested APK from Task 5 if `main`'s app content equals that build (`apksigcopier compare`), run `npm run release:apk release/tested-<sha>.apk`.
   - Expected: `ready: release/read-me-1.0.0.apk ...`, with the signer equal to `release/signing-cert.sha256`.
   - If the content differs from the tested build (main moved after the runs), re-run Task 5 Step 3's set on the new build first.
-- [ ] **Step 2:** `gh release create v1.0.0 --draft --target main --title "Read Me 1.0.0" --notes-file <scratch notes> release/read-me-1.0.0.apk release/SHA256SUMS`. The notes are the changelog plus the R-M14 record and the SHA-256. A draft is not public and creates no tag until the owner publishes.
+- [ ] **Step 2:** `gh release create v1.0.0 --draft --target <full sha of the tested commit> --title "Read Me 1.0.0" --notes-file <scratch notes> release/read-me-1.0.0.apk release/SHA256SUMS`. The notes are the changelog plus the R-M14 record and the SHA-256. A draft is not public and creates no tag until the owner publishes.
   - Expected: `gh release view v1.0.0 --json isDraft` gives `true`.
 - [ ] **Step 3:** Hand off to the owner: `docs/release.md` steps 4-6.

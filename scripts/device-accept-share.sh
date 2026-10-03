@@ -86,6 +86,11 @@ for _ in $(seq 180); do ( device_require_unlocked ) 2>/dev/null && break; sleep 
 ( device_require_unlocked ) || exit 5
 
 echo "== killed and reopened, it resumes where it was"
+# Keep the share, fetch, trim and play logs (and the first process's crash lines): the
+# privacy and crash checks at the end read them together with the reopened process's.
+first_pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
+first_log=$(adb logcat -d)
+first_crash=$(adb logcat -d -b crash,main)
 adb shell am force-stop "$PKG"
 adb logcat -c
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
@@ -106,10 +111,13 @@ resumed=$(pos "$(logs | grep -oE 'playback paused item=1 paragraph=[0-9]+ offset
 read -r lp _ <<<"$locked"; read -r rp _ <<<"$resumed"
 [ "${rp:-0}" -ge "${lp:-0}" ] && echo "ok: position kept ($locked -> $resumed)" || { echo "FAIL: position went back ($locked -> $resumed)"; fail=1; }
 
-all=$(adb logcat -d)
+all="$first_log
+$(adb logcat -d)"
 device_has "$all" 'wiki/Lightning' && { echo "FAIL: a log line carries the URL path"; fail=1; }
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
-if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then echo "FAIL: crash logged"; fail=1; fi
+if device_crash_seen "${first_pid%% *}" <<<"$first_crash" || device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then
+  echo "FAIL: crash logged"; fail=1
+fi
 adb shell rm -f /sdcard/readme-ui.xml
 echo "device:accept-share $([ $fail -eq 0 ] && echo PASS || echo FAIL)"
 exit $fail
