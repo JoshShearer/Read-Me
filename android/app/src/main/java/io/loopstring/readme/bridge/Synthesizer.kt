@@ -4,7 +4,11 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-enum class SynthResult { OK, FAILED, TIMEOUT, CANCELLED }
+enum class SynthResult {
+  OK, FAILED, TIMEOUT, CANCELLED,
+  /** The engine went away (REA-29). TtsSynth's own signal; synthesize never returns it. */
+  LOST,
+}
 
 /** The bridge's speech engine (AGENTS.md 13: never playback's instance). */
 interface Synthesizer {
@@ -59,11 +63,30 @@ class SynthWait {
     true
   }
 
-  fun await(ms: Long): SynthResult {
+  /**
+   * Waits up to [ms]. Between [sliceMs] slices [alive] is asked whether the engine is still
+   * there; false ends the wait with LOST, since a dead engine never calls back (REA-29).
+   */
+  fun await(ms: Long, sliceMs: Long = ms, alive: () -> Boolean = { true }): SynthResult {
+    require(sliceMs > 0 || ms <= 0) { "sliceMs must be positive" }
     val l = synchronized(lock) { latch } ?: return SynthResult.FAILED
-    val done = l.await(ms, TimeUnit.MILLISECONDS)
+    var left = ms
+    var done = false
+    var lost = false
+    while (!done && left > 0) {
+      val slice = minOf(sliceMs, left)
+      done = l.await(slice, TimeUnit.MILLISECONDS)
+      left -= slice
+      if (!done && left > 0 && !alive()) lost = true
+      if (lost) break
+    }
     return synchronized(lock) {
-      val r = if (done) result else SynthResult.TIMEOUT
+      // A callback can land between the last slice and here; it wins.
+      val r = when {
+        done || l.count == 0L -> result
+        lost -> SynthResult.LOST
+        else -> SynthResult.TIMEOUT
+      }
       id = null
       latch = null
       r
