@@ -67,14 +67,17 @@ centre_of() {
   echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
 # uiautomator cannot dump while the Reader updates ("could not get idle state", 2026-10-02),
-# so the highlight is checked in pixels: the current sentence's background is #ffe680.
+# so the highlight is checked in pixels: the current sentence's background is primaryContainer
+# from src/ui/theme.ts, #ecdcff in light mode and #5a27a3 in dark (REA-24). The phone may be in
+# either mode, and neither colour is used anywhere else on screen.
 highlight_px() {
   adb exec-out screencap | node -e '
     const b = require("fs").readFileSync(0);
     const w = b.readUInt32LE(0), h = b.readUInt32LE(4), off = b.length - w * h * 4;
+    const near = (i, c) => Math.abs(b[i] - c[0]) < 4 && Math.abs(b[i + 1] - c[1]) < 4 && Math.abs(b[i + 2] - c[2]) < 4;
     let n = 0;
     for (let i = off; i < b.length; i += 4)
-      if (Math.abs(b[i] - 255) < 4 && Math.abs(b[i + 1] - 230) < 4 && Math.abs(b[i + 2] - 128) < 4) n++;
+      if (near(i, [0xec, 0xdc, 0xff]) || near(i, [0x5a, 0x27, 0xa3])) n++;
     console.log(n);'
 }
 on_screen() {

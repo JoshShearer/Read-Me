@@ -91,7 +91,7 @@ export function ReaderScreen({
       <View collapsable={false} style={ui.screen}>
         <Text style={ui.empty}>This item was deleted.</Text>
         <Pressable style={ui.button} onPress={onGone}>
-          <Text style={ui.buttonText}>Back to the list</Text>
+          <Text tone="action" style={ui.buttonText}>Back to the list</Text>
         </Pressable>
       </View>
     );
@@ -103,7 +103,7 @@ export function ReaderScreen({
         {detail.item.title}
       </Text>
       <Pressable style={ui.button} accessibilityLabel="trim" onPress={onTrim}>
-        <Text style={ui.buttonText}>Trim</Text>
+        <Text tone="action" style={ui.buttonText}>Trim</Text>
       </Pressable>
     </View>
   );
@@ -112,7 +112,7 @@ export function ReaderScreen({
     return (
       <View collapsable={false} style={ui.screen}>
         {header}
-        <View collapsable={false} style={[ui.card, { borderColor: colors.border }]}>
+        <View collapsable={false} style={[ui.card, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
           <Text>
             This phone has no offline text-to-speech voice Read Me can use, so it cannot read aloud.
             Install or enable an offline voice in Android's text-to-speech settings.
@@ -123,7 +123,7 @@ export function ReaderScreen({
             onPress={() => {
               Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(() => undefined);
             }}>
-            <Text style={ui.buttonText}>Open text-to-speech settings</Text>
+            <Text tone="action" style={ui.buttonText}>Open text-to-speech settings</Text>
           </Pressable>
         </View>
       </View>
@@ -147,12 +147,14 @@ export function ReaderScreen({
   };
   const button = (label: string, a11y: string, onPress: () => void, disabled = false) => (
     <Pressable
-      style={[ui.button, disabled ? ui.disabled : null]}
+      style={ui.button}
       accessibilityLabel={a11y}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}>
-      <Text style={ui.buttonText}>{label}</Text>
+      <Text tone={disabled ? 'disabled' : 'action'} style={ui.buttonText}>
+        {label}
+      </Text>
     </Pressable>
   );
 
@@ -179,7 +181,7 @@ export function ReaderScreen({
                   setLines({ index: p.index, lines: e.nativeEvent.lines.map(l => ({ text: l.text, y: l.y })) })
                 }>
                 {p.text.slice(0, p.current.start)}
-                <Text style={ui.highlight}>{p.text.slice(p.current.start, p.current.end)}</Text>
+                <Text style={{ backgroundColor: colors.primaryContainer, color: colors.onPrimaryContainer }}>{p.text.slice(p.current.start, p.current.end)}</Text>
                 {p.text.slice(p.current.end)}
               </Text>
             </View>
@@ -188,7 +190,7 @@ export function ReaderScreen({
           )
         }
       />
-      <View collapsable={false} style={[ui.transport, { borderTopColor: colors.border }]}>
+      <View collapsable={false} style={[ui.transport, { borderTopColor: colors.outlineVariant }]}>
         {/* Sentence controls act on whatever the service holds, so they work only for this
             item; they stay in place, disabled, so Play/Pause never moves. */}
         {button('¶◀', 'back paragraph', control(backParagraph), !mine)}

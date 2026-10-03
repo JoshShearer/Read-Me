@@ -25,7 +25,19 @@ from PIL import Image
 
 NODE = re.compile(r'<node [^>]*>')
 ATTR = re.compile(r'(\S+)="([^"]*)"')
-STATUS_BAR_PX = 120  # the reference device's status bar is 0-140; stay inside it
+PKG = 'io.loopstring.readme'
+STATUS_BAR_PX = 120  # without a dump: the reference device's status bar is 0-140
+
+
+def status_bar_px(xml):
+    """The status bar's height from the dump, kept a little inside it, or STATUS_BAR_PX.
+
+    The app draws edge to edge, so its root starts at 0 and pads its first screen view down
+    by the status bar inset: that view's top is the lowest non-zero top among Read Me's nodes.
+    A tablet's status bar is not the reference phone's 140 px."""
+    tops = [int(m.group(2)) for m in re.finditer(r'package="([^"]*)"[^>]*bounds="\[\d+,(\d+)\]', xml)
+            if m.group(1) == PKG and int(m.group(2)) > 0]
+    return max(1, min(tops) * 6 // 7) if tops else STATUS_BAR_PX
 
 
 def lum(rgb):
@@ -57,23 +69,33 @@ def contrast(img, box):
     return ratio(bg, fg), bg, fg
 
 
-HIGHLIGHT = (0xff, 0xe6, 0x80)
+# The Reader's sentence highlight is primaryContainer in src/ui/theme.ts, one per mode (REA-24).
+# The screenshot's name says the mode: device:themes writes light-*.png and dark-*.png.
+HIGHLIGHT = {'light': (0xec, 0xdc, 0xff), 'dark': (0x5a, 0x27, 0xa3)}
 
 
-def highlight(img):
+def highlight(img, mode, top):
     """The Reader's sentence highlight: its colour against the text drawn on it, or None."""
+    hl = HIGHLIGHT[mode]
     rgb = img.convert('RGB')
     w, h = rgb.size
-    hits = [(x, y) for y in range(STATUS_BAR_PX, h, 4) for x in range(0, w, 4)
-            if all(abs(a - b) <= 6 for a, b in zip(rgb.getpixel((x, y)), HIGHLIGHT))]
-    if len(hits) < 50:
+    rows = {}
+    for y in range(top, h, 4):
+        xs = [x for x in range(0, w, 4) if all(abs(a - b) <= 6 for a, b in zip(rgb.getpixel((x, y)), hl))]
+        if xs:
+            rows[y] = (min(xs), max(xs))
+    if len(rows) < 3:
         return None
-    xs, ys = [p[0] for p in hits], [p[1] for p in hits]
-    box = (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
-    # Text on the highlight: the darkest pixels inside the highlighted rows' span.
-    px = sorted(rgb.crop(box).getdata(), key=lum)
-    fg = px[int(len(px) * 0.02)]
-    return ratio(HIGHLIGHT, fg)
+    # Only the pixels between the first and last highlight pixel of each sampled row, so the
+    # page around a highlight that wraps onto another line is not taken for its text. The text
+    # is the 90th percentile by luminance distance from the highlight among the pixels that
+    # differ from it: lighter than the highlight in dark mode, darker in light mode.
+    lhl = lum(hl)
+    px = [rgb.getpixel((x, y)) for y, (x0, x1) in rows.items() for x in range(x0, x1 + 1)]
+    ink = sorted((p for p in px if abs(lum(p) - lhl) > 0.002), key=lambda p: abs(lum(p) - lhl))
+    if len(ink) < 20:
+        return None
+    return ratio(hl, ink[int(len(ink) * 0.9)])
 
 
 def faint(attrs, ancestors):
@@ -111,11 +133,14 @@ def main(d):
     for png in sorted(d.glob('*.png')):
         xml = png.with_suffix('.xml')
         img = Image.open(png)
-        sb, bg, fg = contrast(img, (0, 0, img.width, STATUS_BAR_PX))
+        dump = xml.read_text(errors='replace') if xml.exists() else ''
+        top = status_bar_px(dump)
+        sb, bg, fg = contrast(img, (0, 0, img.width, top))
         ok = sb >= 3.0
         bad += not ok
         print(f'{png.stem:18} status-bar        {sb:5.2f} bg={bg} fg={fg} {"ok" if ok else "LOW"}')
-        hl = highlight(img)
+        mode = png.stem.split('-', 1)[0]
+        hl = highlight(img, mode, top) if mode in HIGHLIGHT else None
         if hl is not None:
             ok = hl >= 4.5
             bad += not ok
@@ -123,9 +148,9 @@ def main(d):
         if not xml.exists():
             continue
         worst = None
-        for i, (a, anc) in enumerate(nodes(xml.read_text(errors='replace'))):
+        for i, (a, anc) in enumerate(nodes(dump)):
             x0, y0, x1, y1 = map(int, re.findall(r'\d+', a['bounds']))
-            if y1 - y0 < 8 or x1 - x0 < 8 or y0 < STATUS_BAR_PX:
+            if y1 - y0 < 8 or x1 - x0 < 8 or y0 < top:
                 continue
             if mask and overlaps((x0, y0, x1, y1), mask):
                 masked += 1

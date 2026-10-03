@@ -99,9 +99,9 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
 
       <Text style={[ui.row, ui.title]}>Voice</Text>
       {engine === null ? (
-        <Text style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
+        <Text tone="secondary" style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
       ) : engineBlocked(engine.status) ? (
-        <View collapsable={false} style={[ui.card, { borderColor: colors.border }]}>
+        <View collapsable={false} style={[ui.card, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
           <Text>No offline text-to-speech voice is available.</Text>
           <Pressable
             style={ui.button}
@@ -109,7 +109,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             onPress={() => {
               Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(() => undefined);
             }}>
-            <Text style={ui.buttonText}>Open text-to-speech settings</Text>
+            <Text tone="action" style={ui.buttonText}>Open text-to-speech settings</Text>
           </Pressable>
         </View>
       ) : (
@@ -122,29 +122,29 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               setVoice(v.name).then(loadEngine, () => undefined);
             }}>
             <Text>{`${v.name === engine.selected ? '● ' : '○ '}${v.name}`}</Text>
-            <Text style={ui.small}>{v.language}</Text>
+            <Text tone="secondary" style={ui.small}>{v.language}</Text>
           </Pressable>
         ))
       )}
-      <Text style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
+      <Text tone="secondary" style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
 
       <Text style={[ui.row, ui.title]}>Default rate</Text>
       <View collapsable={false} style={[ui.actions, ui.row]}>
         <Pressable style={ui.button} accessibilityLabel="default slower" onPress={() => changeRate(-1)}>
-          <Text style={ui.buttonText}>−</Text>
+          <Text tone="action" style={ui.buttonText}>−</Text>
         </Pressable>
         <Text>{formatRate(rate)}</Text>
         <Pressable style={ui.button} accessibilityLabel="default faster" onPress={() => changeRate(1)}>
-          <Text style={ui.buttonText}>+</Text>
+          <Text tone="action" style={ui.buttonText}>+</Text>
         </Pressable>
       </View>
 
       <Text style={[ui.row, ui.title]}>Obsidian bridge</Text>
-      <Text style={[ui.row, ui.small]}>
+      <Text tone="secondary" style={[ui.row, ui.small]}>
         Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices.
       </Text>
       {bridge === null ? null : (
-        <View collapsable={false} style={ui.row}>
+        <View collapsable={false} style={[ui.row, { backgroundColor: colors.surfaceContainerLow }]}>
           <Text>{bridgeStatus(bridge)}</Text>
           <Pressable
             style={ui.button}
@@ -164,13 +164,17 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
                 })
                 .then(b => b && setBridge(b), () => undefined);
             }}>
-            <Text style={ui.buttonText}>{bridge.enabled ? 'Turn off' : 'Turn on'}</Text>
+            <Text tone="action" style={ui.buttonText}>{bridge.enabled ? 'Turn off' : 'Turn on'}</Text>
           </Pressable>
           <View collapsable={false} style={ui.actions}>
-            <Text style={ui.small}>Port</Text>
+            <Text tone="secondary" style={ui.small}>Port</Text>
             <TextInput
               accessibilityLabel="bridge port"
-              style={{ color: colors.text }}
+              style={{ color: colors.onSurface }}
+              placeholderTextColor={colors.onSurfaceVariant}
+              selectionColor={colors.primary}
+              cursorColor={colors.primary}
+              underlineColorAndroid={colors.outlineVariant}
               keyboardType="number-pad"
               value={portText}
               onChangeText={setPortText}
@@ -180,7 +184,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           </View>
           {notifyOff && (bridge.enabled || refused) ? (
             <View collapsable={false}>
-              <Text style={ui.small}>
+              <Text tone="secondary" style={ui.small}>
                 Read Me needs to show a notification while the bridge is on, and notifications are off
                 for Read Me. Allow them in Android settings, then turn the bridge on.
               </Text>
@@ -190,14 +194,14 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
                 onPress={() => {
                   Linking.openSettings().catch(() => undefined);
                 }}>
-                <Text style={ui.buttonText}>Open Read Me's settings</Text>
+                <Text tone="action" style={ui.buttonText}>Open Read Me's settings</Text>
               </Pressable>
             </View>
           ) : null}
-          {portError ? <Text style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
+          {portError ? <Text tone="error" style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
           {bridge.enabled && bridge.token !== null ? (
             <View collapsable={false}>
-              <Text style={ui.small}>Pairing token (paste it into the plugin's settings)</Text>
+              <Text tone="secondary" style={ui.small}>Pairing token (paste it into the plugin's settings)</Text>
               <Text selectable accessibilityLabel="pairing token">
                 {bridge.token}
               </Text>
@@ -208,10 +212,10 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
                   onPress={() => {
                     copyBridgeToken().then(() => setCopied(true), () => undefined);
                   }}>
-                  <Text style={ui.buttonText}>{copied ? 'Copied' : 'Copy'}</Text>
+                  <Text tone="action" style={ui.buttonText}>{copied ? 'Copied' : 'Copy'}</Text>
                 </Pressable>
                 <Pressable style={ui.button} accessibilityLabel="new token" onPress={newToken}>
-                  <Text style={ui.buttonText}>New token</Text>
+                  <Text tone="action" style={ui.buttonText}>New token</Text>
                 </Pressable>
               </View>
             </View>
@@ -220,16 +224,16 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       )}
 
       <Text style={[ui.row, ui.title]}>Storage</Text>
-      <Text style={[ui.row, ui.small]}>{`${items.length} items, ${archived.length} archived`}</Text>
+      <Text tone="secondary" style={[ui.row, ui.small]}>{`${items.length} items, ${archived.length} archived`}</Text>
       {archived.length > 0 ? (
         <Pressable style={[ui.button, ui.row]} accessibilityLabel="delete archived" onPress={deleteArchived}>
-          <Text style={ui.buttonText}>Delete archived items</Text>
+          <Text tone="action" style={ui.buttonText}>Delete archived items</Text>
         </Pressable>
       ) : null}
 
       <Pressable style={ui.row} accessibilityLabel="licenses" onPress={onLicenses}>
         <Text style={ui.title}>Licenses</Text>
-        <Text style={ui.small}>Third-party software in Read Me</Text>
+        <Text tone="secondary" style={ui.small}>Third-party software in Read Me</Text>
       </Pressable>
     </ScrollView>
   );

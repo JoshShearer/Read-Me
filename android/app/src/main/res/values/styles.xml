@@ -1,9 +1,16 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Base application theme. -->
+    <!-- Base application theme. DayNight, so values-night/colors.xml picks the dark surface. -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- REA-24: the first frame and every rotation are drawn on the theme surface, and the
+             bars are see-through over it with icons for the mode. React Native's edge-to-edge
+             and StatusBar take over once JS runs; these cover the time before. -->
+        <item name="android:windowBackground">@color/readme_surface</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">@bool/light_system_bars</item>
     </style>
 
 </resources>

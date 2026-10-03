@@ -65,10 +65,13 @@ tap_node() {
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
+# Swipe up the middle of the screen, from 80% to 30% of its height, so the scroll works on the
+# reference phone and on a tablet alike (the last line of `wm size` is the size in use).
+read -r SCREEN_W SCREEN_H < <(adb shell wm size | tail -1 | grep -oE '[0-9]+x[0-9]+' | tr x ' ')
 scroll_to_desc() {
   for _ in $(seq 6); do
     ui | grep -qE "content-desc=\"$1\"" && return 0
-    adb shell input swipe 670 2400 670 900 300
+    adb shell input swipe $((SCREEN_W / 2)) $((SCREEN_H * 8 / 10)) $((SCREEN_W / 2)) $((SCREEN_H * 3 / 10)) 300
     sleep 1
   done
 }

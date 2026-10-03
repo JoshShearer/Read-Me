@@ -78,7 +78,19 @@ device_has() { grep -qE -- "$2" <<<"$1"; }
 device_require_unlocked() {
   local power window
   power=$(adb shell dumpsys power); window=$(adb shell dumpsys window)
-  if ! device_has "$power" 'mWakefulness=Awake' || ! device_has "$window" 'isKeyguardShowing=false'; then
+  # Android 10 (the VRD-W09 tablet) has no isKeyguardShowing line; its KeyguardStateMonitor
+  # says mIsShowing instead. Where isKeyguardShowing exists, only it decides. A locked phone must
+  # never read as unlocked: any isKeyguardShowing=true wins, and on Android 10 only the first
+  # mIsShowing under KeyguardStateMonitor counts, not one from another part of the dump.
+  local unlocked=1 kg
+  if device_has "$window" 'isKeyguardShowing='; then
+    device_has "$window" 'isKeyguardShowing=true' && unlocked=0
+    device_has "$window" 'isKeyguardShowing=false' || unlocked=0
+  else
+    kg=$(awk '/KeyguardStateMonitor/ { f = 1; next } f && /mIsShowing=/ { print; exit }' <<<"$window")
+    device_has "$kg" 'mIsShowing=false' || unlocked=0
+  fi
+  if ! device_has "$power" 'mWakefulness=Awake' || [ "$unlocked" = 0 ]; then
     echo "the phone is asleep or locked: ask the owner to unlock it, leave the screen on, rerun" >&2
     exit 5
   fi
