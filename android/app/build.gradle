@@ -7,6 +7,8 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    // REA-26: F-Droid builds hermesc from source (scripts/build-hermesc.sh) and passes it here.
+    if (findProperty('readmeHermesc')) hermesCommand = findProperty('readmeHermesc')
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
