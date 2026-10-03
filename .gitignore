@@ -99,3 +99,7 @@ src/devcheck/fixtures.generated.ts
 release/*.apk
 release/SHA256SUMS
 *.jks
+
+# Local secrets (never committed)
+.env
+.env.*
