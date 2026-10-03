@@ -196,14 +196,32 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   faint text 3.28 and 4.28. On device only partly measured: on the Huawei VRD-W09 tablet
   (secondary, not reference evidence; uncommitted build on a293b71, 2026-10-03) the List read
   10.0:1 or better with status bar 13.96, but EMUI ignored `cmd uimode night no`, so the
-  "light" pass drew dark, and the run then stopped at Trim. Reference-device `device:themes`,
-  `device:ui` and the `device:screenshots` retake are still to do.
+  "light" pass drew dark, and the run then stopped at Trim. On the reference device (REA-28,
+  build f4493c9, 2026-10-03) `device:themes` passed twice, both modes: the lowest text was the
+  Reader dock's disabled glyphs at 3.05 light and 3.92 dark (3.0 needed), run with
+  `SCREENSHOT_MASK=0,2290,145,2440` over another app's floating overlay. The F-Droid
+  `device:screenshots` retake is still to do.
   Every screen View is `collapsable={false}`: React Native issue #58265 (Fabric drops a Create
   when flattened wrappers unflatten during remounts) otherwise crashed or blanked List to Trim.
   App keys the screen element itself, not a wrapper View: a keyed wrapper created empty while
   the next screen loaded was lost by Fabric before the screen went into it, blanking the
   Reader after Trim's Done on a real article in 4-5 of 10 runs (REA-26; `npm run device:screens`).
-  The Settings bridge section once rendered blank the same way (REA-27, open).
+  Settings did the same when it added the voice picker and bridge panel as their data arrived
+  mid-mount: in 2 of 3 `device:themes` runs (REA-28, 2026-10-03) "Checking..." stayed, the
+  bridge panel was blank and its heading drew over its description, which matches REA-27. Since
+  f4493c9 both are there from the first frame, disabled while loading; 2 of 2 runs passed after.
+  REA-27 is likely this, but 2 runs do not close it.
+- **UI controls (REA-28, PR #22):** `src/ui/Button.tsx` (Button, IconButton), `Select.tsx` (a
+  bottom-sheet Modal), `Toggle.tsx`, `Stepper.tsx`, on Pressable and Modal, no dependencies.
+  Article words are set in the system serif (`read` in `theme.ts`), controls in sans. Settings'
+  voice is a Select (dumped as `content-desc="voice, <name>"`, options `voice <name>` with
+  `checked=`); the bridge is a switch "Use the bridge" (`checked=`). On f4493c9 `device:screens`
+  and `device:bridge` passed; `device:ui` passed on a80352b but failed once on f4493c9 (paused
+  before anything was read, right after the default engine was switched to Google TTS;
+  unexplained). Twice the default rate read 1.7x after scripted runs that never press slower;
+  `device:ui` now fails on a repeat. Select keyboard navigation is untested. The reference
+  phone's default engine is now Supertonic: its own media session takes media keys from Read Me
+  (REA-31), so `device:playback` passes only with `com.google.android.tts` as the default.
 - **Shared files (R-C04 partial, REA-30, PR #21):** `.md` and `.txt`. Obsidian's file Share
   sends `ACTION_VIEW` of a `content://` URI (typed `text/markdown` once and `*/*` once), not
   SEND. ShareActivity reads it on a worker (5 MB cap while reading, 20 s timeout) and Kotlin's
