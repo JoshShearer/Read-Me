@@ -56,9 +56,10 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
     return if (tts.setVoice(voice) == TextToSpeech.SUCCESS) EngineStatus.READY else EngineStatus.NO_VOICE
   }
 
-  override fun speak(id: String, text: String) {
-    tts.speak(text, TextToSpeech.QUEUE_ADD, null, id)
-  }
+  override fun speak(id: String, text: String): Boolean =
+    tts.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+
+  override fun isSpeaking(): Boolean = runCatching { tts.isSpeaking }.getOrDefault(false)
 
   override fun stop() {
     tts.stop()

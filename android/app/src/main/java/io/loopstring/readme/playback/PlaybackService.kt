@@ -250,6 +250,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     Log.i(TAG, "playback finished item=$itemId")
   }
 
+  override fun engineLost() {}
+
   override fun changed(snapshot: PlaybackSnapshot) {
     PlaybackHub.publish(snapshot)
     main.post { if (!destroyed) onSnapshot(snapshot) }

@@ -11,7 +11,7 @@ data class QueueStats(val gaps: GapSummary, val errors: Int, val saveErrors: Int
  * ignored. Gaps (onDone(n) to onStart(n+1)) are measured only across continuous play.
  */
 class PlaybackQueue(
-  private val speaker: Speaker,
+  private var speaker: Speaker,
   private val sink: PlaybackSink,
   private val clock: () -> Long,
   private val maxChars: Int = Utterances.MAX_CHARS,
@@ -30,6 +30,7 @@ class PlaybackQueue(
   private var saveErrors = 0
   private var consecutiveErrors = 0
   private var firstErrorIndex = -1
+  private var stallTicks = 0
   // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
   private val deleted = HashSet<Long>()
 
@@ -112,6 +113,7 @@ class PlaybackQueue(
 
   fun onStart(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
     consecutiveErrors = 0
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
@@ -121,6 +123,7 @@ class PlaybackQueue(
 
   fun onDone(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
     consecutiveErrors = 0
     lastDoneAt = clock()
     advanceLocked(i)
@@ -128,6 +131,7 @@ class PlaybackQueue(
 
   fun onError(id: String) = synchronized(lock) {
     val i = indexOf(id) ?: return
+    stallTicks = 0
     errors++
     lastDoneAt = -1
     if (consecutiveErrors == 0) firstErrorIndex = i
@@ -191,6 +195,7 @@ class PlaybackQueue(
 
   private fun restartLocked(index: Int) {
     flushLocked()
+    stallTicks = 0
     current = index
     queuedUntil = index
     playing = true
@@ -206,9 +211,38 @@ class PlaybackQueue(
 
   private fun topUpLocked() {
     while (playing && queuedUntil < rows.size && queuedUntil - current < AHEAD) {
-      speaker.speak("$generation:$queuedUntil", rows[queuedUntil].text)
+      if (!speaker.speak("$generation:$queuedUntil", rows[queuedUntil].text)) {
+        lostLocked()
+        return
+      }
       queuedUntil++
     }
+  }
+
+  /** Called every few seconds by the service while playing. True when the engine is lost. */
+  fun checkStall(): Boolean = synchronized(lock) {
+    if (!playing || speaker.isSpeaking()) {
+      stallTicks = 0
+      return false
+    }
+    if (++stallTicks < STALL_TICKS) return false
+    lostLocked()
+    true
+  }
+
+  /** A rebound engine (PlaybackService). Paused stays paused; the rate is applied once more. */
+  fun swapSpeaker(s: Speaker) = synchronized(lock) {
+    speaker = s
+    s.setRate(rate)
+  }
+
+  private fun lostLocked() {
+    flushLocked()
+    playing = false
+    stallTicks = 0
+    saveLocked()
+    publishLocked()
+    sink.engineLost()
   }
 
   private fun saveLocked() {
@@ -251,5 +285,6 @@ class PlaybackQueue(
   companion object {
     const val AHEAD = 3
     const val MAX_CONSECUTIVE_ERRORS = 3
+    const val STALL_TICKS = 3
   }
 }

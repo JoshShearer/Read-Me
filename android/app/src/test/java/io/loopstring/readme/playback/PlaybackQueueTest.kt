@@ -11,9 +11,16 @@ class PlaybackQueueTest {
     val spoken = mutableListOf<String>() // utterance ids, in order
     var stops = 0
     val rates = mutableListOf<Float>()
-    override fun speak(id: String, text: String) { spoken += id }
+    var refuse = false
+    var speaking = true
+    override fun speak(id: String, text: String): Boolean {
+      if (refuse) return false
+      spoken += id
+      return true
+    }
     override fun stop() { stops++ }
     override fun setRate(rate: Float) { rates += rate }
+    override fun isSpeaking() = speaking
   }
 
   private class FakeSink : PlaybackSink {
@@ -28,6 +35,8 @@ class PlaybackQueueTest {
     }
     override fun finished(itemId: Long) { finished += itemId }
     override fun changed(snapshot: PlaybackSnapshot) { snapshots += snapshot }
+    var lost = 0
+    override fun engineLost() { lost++ }
   }
 
   private var now = 0L
@@ -282,5 +291,56 @@ class PlaybackQueueTest {
     assertTrue(sink.finished.isEmpty())
     assertFalse(queue.snapshot().playing)
     assertEquals(Triple(7L, 3, 5), sink.saves.last()) // sentence 5 is paragraph 3 offset 5
+  }
+
+  @Test fun aRefusedSpeakPausesAndReportsTheEngineLost() {
+    // REA-18: after the engine process died, resume "played" silently with the wake lock held.
+    speaker.refuse = true
+    queue.load(7, rows, 2, 2.0f)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(1, sink.lost)
+    assertEquals(Triple(7L, 1, 0), sink.saves.last())
+  }
+
+  @Test fun anEngineThatStopsSpeakingIsLostAfterThreeChecks() {
+    queue.load(7, rows, 0, 2.0f)
+    speaker.speaking = false
+    assertFalse(queue.checkStall())
+    assertFalse(queue.checkStall())
+    assertTrue(queue.checkStall())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(1, sink.lost)
+  }
+
+  @Test fun aSlowFirstSentenceIsNotAStall() {
+    // A cold engine took 8 s to first audio (AGENTS.md); progress or speaking resets the count.
+    queue.load(7, rows, 0, 2.0f)
+    val g = gen(lastId())
+    speaker.speaking = false
+    queue.checkStall()
+    queue.checkStall()
+    queue.onStart("$g:0")
+    assertFalse(queue.checkStall())
+    assertFalse(queue.checkStall())
+    assertTrue(queue.snapshot().playing)
+    assertEquals(0, sink.lost)
+  }
+
+  @Test fun aPausedQueueIsNeverStalled() {
+    queue.load(7, rows, 0, 2.0f)
+    queue.pause()
+    speaker.speaking = false
+    repeat(5) { assertFalse(queue.checkStall()) }
+  }
+
+  @Test fun aSwappedSpeakerGetsTheRateAndTheNextResume() {
+    queue.load(7, rows, 2, 1.5f)
+    speaker.refuse = true
+    queue.next() // refused: lost
+    val fresh = FakeSpeaker()
+    queue.swapSpeaker(fresh)
+    assertEquals(listOf(1.5f), fresh.rates)
+    assertTrue(queue.resume())
+    assertEquals(3, fresh.spoken.size)
   }
 }
