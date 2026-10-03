@@ -3,7 +3,8 @@
 # link (the ACTION_SEND a browser's Share sends), trim a paragraph, play at 2.0x (the default
 # rate), lock the screen for 60 s, unlock, and confirm the position: reading advanced while
 # locked, and after the app is killed and reopened it resumes there, not at the start.
-# Needs the network (weather.gov, as device:intake) and the owner to unlock the phone once,
+# Needs the network (Wikipedia: a long real article, so it is still reading after 60 s at 2.0x;
+# the weather.gov page device:intake uses ends inside a minute) and the owner to unlock once,
 # when it says so. Clears Read Me's data. Checks no log line carries the URL path.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,7 +12,7 @@ cd "$(dirname "$0")/.."
 device_take interactive
 device_require_unlocked
 device_install_release
-LINK='https://www.weather.gov/safety/lightning'
+LINK='https://en.wikipedia.org/wiki/Lightning'
 
 ui() {
   adb shell rm -f /sdcard/readme-ui.xml
@@ -106,7 +107,7 @@ read -r lp _ <<<"$locked"; read -r rp _ <<<"$resumed"
 [ "${rp:-0}" -ge "${lp:-0}" ] && echo "ok: position kept ($locked -> $resumed)" || { echo "FAIL: position went back ($locked -> $resumed)"; fail=1; }
 
 all=$(adb logcat -d)
-device_has "$all" 'safety/lightning' && { echo "FAIL: a log line carries the URL path"; fail=1; }
+device_has "$all" 'wiki/Lightning' && { echo "FAIL: a log line carries the URL path"; fail=1; }
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then echo "FAIL: crash logged"; fail=1; fi
 adb shell rm -f /sdcard/readme-ui.xml
