@@ -27,10 +27,12 @@ class PlaybackQueue(
   private var lastDoneAt = -1L
   private val gaps = ArrayList<Long>()
   private var errors = 0
+  // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
+  private val deleted = HashSet<Long>()
 
   fun load(itemId: Long, sentences: List<SentenceRow>, startIndex: Int, rate: Float): Boolean =
     synchronized(lock) {
-      if (startIndex !in sentences.indices) return false
+      if (itemId in deleted || startIndex !in sentences.indices) return false
       saveLocked()
       val fitted = Utterances.fit(sentences, startIndex, maxChars)
       this.itemId = itemId
@@ -97,8 +99,9 @@ class PlaybackQueue(
     clearLocked()
   }
 
-  /** The item is being deleted: stop without saving into it. */
+  /** The item is being deleted: stop without saving into it, and never load it again. */
   fun stopItem(id: Long) = synchronized(lock) {
+    deleted += id
     if (itemId != id) return
     flushLocked()
     clearLocked()

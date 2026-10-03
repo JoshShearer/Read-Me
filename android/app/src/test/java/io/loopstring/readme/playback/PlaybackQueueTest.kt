@@ -217,4 +217,21 @@ class PlaybackQueueTest {
     assertEquals(SentenceRow(0, 5, 9, "A1."), sink.snapshots.last().sentence)
     assertTrue(sink.snapshots.last().playing)
   }
+
+  @Test fun anItemStoppedForDeletionCannotBeLoadedAfterwards() {
+    // REA-18: deleteItem stops the queue, then deletes; the service may have checked the
+    // item exists just before and load it just after.
+    queue.stopItem(7)
+    assertFalse(queue.load(7, rows, 0, 2.0f))
+    assertTrue(speaker.spoken.isEmpty())
+    assertNull(queue.snapshot().itemId)
+  }
+
+  @Test fun stoppingAnotherItemLeavesPlaybackAlone() {
+    queue.load(7, rows, 0, 2.0f)
+    queue.stopItem(8)
+    assertTrue(queue.snapshot().playing)
+    assertEquals(7L, queue.snapshot().itemId)
+    assertTrue(queue.load(9, rows, 0, 2.0f))
+  }
 }
