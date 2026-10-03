@@ -6,12 +6,14 @@ import React from 'react';
 import { Text as RNText, useColorScheme, type TextProps } from 'react-native';
 import { faint, palette, type Palette } from './theme';
 
-export type Tone = 'body' | 'secondary' | 'action' | 'disabled' | 'error';
+export type Tone = 'body' | 'secondary' | 'action' | 'heading' | 'disabled' | 'error';
 
 const COLOR: Record<Tone, (p: Palette) => string> = {
   body: p => p.onSurface,
   secondary: p => p.onSurfaceVariant,
   action: p => p.primary,
+  // A section heading in Settings (REA-28): primary like a button, but not one.
+  heading: p => p.primary,
   disabled: faint,
   error: p => p.error,
 };

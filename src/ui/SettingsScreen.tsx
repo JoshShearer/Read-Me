@@ -101,7 +101,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         <Text style={ui.headerTitle}>Settings</Text>
       </View>
 
-      <Text style={[ui.row, ui.title]}>Voice</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Voice</Text>
       {engine === null ? (
         <Text tone="secondary" style={[ui.row, ui.small]}>Checking the text-to-speech engine...</Text>
       ) : engineBlocked(engine.status) ? (
@@ -133,7 +133,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       )}
       <Text tone="secondary" style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
 
-      <Text style={[ui.row, ui.title]}>Default rate</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Default rate</Text>
       <View collapsable={false} style={ui.inset}>
         <Stepper
           value={rate}
@@ -146,7 +146,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         />
       </View>
 
-      <Text style={[ui.row, ui.title]}>Obsidian bridge</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Obsidian bridge</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>
         Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices.
       </Text>
@@ -171,7 +171,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             }}
           />
           <Text tone="secondary" style={ui.small}>{bridgeStatus(bridge)}</Text>
-          <View collapsable={false} style={ui.actions}>
+          <View collapsable={false} style={ui.field}>
             <Text tone="secondary" style={ui.small}>Port</Text>
             <TextInput
               accessibilityLabel="bridge port"
@@ -227,7 +227,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         </View>
       )}
 
-      <Text style={[ui.row, ui.title]}>Storage</Text>
+      <Text accessibilityRole="header" tone="heading" style={ui.section}>Storage</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>{`${items.length} items, ${archived.length} archived`}</Text>
       {archived.length > 0 ? (
         <View collapsable={false} style={ui.inset}>
@@ -242,10 +242,18 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         </View>
       ) : null}
 
-      <Pressable style={ui.row} accessibilityLabel="licenses" onPress={onLicenses}>
-        <Text style={ui.title}>Licenses</Text>
-        <Text tone="secondary" style={ui.small}>Third-party software in Read Me</Text>
+      <Pressable
+        style={[ui.row, ui.link]}
+        accessibilityRole="button"
+        accessibilityLabel="licenses"
+        onPress={onLicenses}>
+        <View collapsable={false} style={ui.grow}>
+          <Text style={ui.title}>Licenses</Text>
+          <Text tone="secondary" style={ui.small}>Third-party software in Read Me</Text>
+        </View>
+        <Text tone="secondary" style={ui.chevron}>{'›'}</Text>
       </Pressable>
+      <View collapsable={false} style={ui.end} />
     </ScrollView>
   );
 }

@@ -141,6 +141,9 @@ FIELD='voice, [^"]+'
 tap_node content-desc 'settings'
 on_screen "content-desc=\"$FIELD\"" || fail=1
 on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
+# Nothing above touches the rate, so it is still the 2.0x default. Twice on 2026-10-03 it read
+# 1.7x after a scripted run (three presses of "slower" no script sends); this catches a repeat.
+on_screen 'text="2\.0x"' || { echo "FAIL: the default rate moved without a press"; fail=1; }
 tap_node content-desc "$FIELD"
 sheet=""
 for _ in $(seq 10); do sheet=$(ui); device_has "$sheet" 'content-desc="close voice"' && break; sleep 1; done

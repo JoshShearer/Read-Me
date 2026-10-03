@@ -120,6 +120,7 @@ describe('Text', () => {
     expect(styleOf(scheme, { tone: 'body' }).color).toBe(p.onSurface);
     expect(styleOf(scheme, { tone: 'secondary' }).color).toBe(p.onSurfaceVariant);
     expect(styleOf(scheme, { tone: 'action' }).color).toBe(p.primary);
+    expect(styleOf(scheme, { tone: 'heading' }).color).toBe(p.primary);
     expect(styleOf(scheme, { tone: 'error' }).color).toBe(p.error);
     // Not primary at FAINT: that is 2.26:1 on the light surface, below 3:1.
     expect(styleOf(scheme, { tone: 'disabled' }).color).toBe(blend(p.onSurface, p.surface, FAINT));

@@ -10,7 +10,9 @@ import { Pressable, StyleSheet, useColorScheme, type StyleProp, type ViewStyle }
 import { Text, type Tone } from './Text';
 import { palette, type, type Palette } from './theme';
 
-export type Appearance = 'text' | 'filled' | 'tonal' | 'outlined';
+// quiet: a text button in onSurfaceVariant, for an action repeated on every list row (Delete)
+// that should not outweigh the titles; it still confirms before acting.
+export type Appearance = 'text' | 'quiet' | 'filled' | 'tonal' | 'outlined';
 
 type Look = { background?: string; border?: string; label: string; tone: Tone };
 
@@ -25,6 +27,8 @@ export function look(p: Palette, appearance: Appearance, disabled: boolean, dest
       return { background: p.secondaryContainer, label: p.onSecondaryContainer, tone };
     case 'outlined':
       return { border: destructive ? p.error : p.outline, label: '', tone };
+    case 'quiet':
+      return { label: '', tone: 'secondary' };
     default:
       return { label: '', tone };
   }
@@ -63,7 +67,7 @@ export function Button({
       onPress={onPress}
       style={[
         s.button,
-        appearance === 'text' ? s.textButton : null,
+        appearance === 'text' || appearance === 'quiet' ? s.textButton : null,
         l.border ? s.bordered : null,
         { backgroundColor: l.background, borderColor: l.border },
         style,

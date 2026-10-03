@@ -13,15 +13,15 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-const TONE = (p: ReturnType<typeof palette>) => ({ action: p.primary, error: p.error, disabled: faint(p), body: p.onSurface, secondary: p.onSurfaceVariant });
+const TONE = (p: ReturnType<typeof palette>) => ({ action: p.primary, secondary: p.onSurfaceVariant, error: p.error, disabled: faint(p), body: p.onSurface });
 
 describe.each(['light', 'dark'] as const)('%s mode', scheme => {
   const p = palette(scheme);
 
-  test.each(['text', 'filled', 'tonal', 'outlined'] as Appearance[])('a %s button label reads at 4.5:1 or better', a => {
+  test.each(['text', 'quiet', 'filled', 'tonal', 'outlined'] as Appearance[])('a %s button label reads at 4.5:1 or better', a => {
     for (const destructive of [false, true]) {
       const l = look(p, a, false, destructive);
-      const fg = l.label || TONE(p)[l.tone as 'action' | 'error'];
+      const fg = l.label || TONE(p)[l.tone as 'action' | 'error' | 'secondary'];
       expect(contrast(fg, l.background ?? p.surface)).toBeGreaterThanOrEqual(4.5);
       // On a card too.
       if (!l.background) expect(contrast(fg, p.surfaceContainerLow)).toBeGreaterThanOrEqual(4.5);

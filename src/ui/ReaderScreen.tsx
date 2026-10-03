@@ -99,7 +99,7 @@ export function ReaderScreen({
 
   const header = (
     <View collapsable={false} style={ui.header}>
-      <Text style={ui.headerTitle} numberOfLines={1}>
+      <Text style={ui.itemTitle} numberOfLines={2}>
         {detail.item.title}
       </Text>
       <Button label="Trim" accessibilityLabel="trim" onPress={onTrim} />
@@ -177,7 +177,9 @@ export function ReaderScreen({
           )
         }
       />
-      <View collapsable={false} style={[ui.transport, { borderTopColor: colors.outlineVariant }]}>
+      <View
+        collapsable={false}
+        style={[ui.dock, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
         {/* Sentence controls act on whatever the service holds, so they work only for this
             item; they stay in place, disabled, so Play/Pause never moves. */}
         <IconButton glyph="¶◀" accessibilityLabel="back paragraph" disabled={!mine} onPress={control(backParagraph)} />
