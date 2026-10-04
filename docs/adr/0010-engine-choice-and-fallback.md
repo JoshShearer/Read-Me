@@ -23,13 +23,15 @@ the system's engine is always used.
 - **Below Android 14** Settings lists the installed engines; one Android will not bind is
   shown, disabled, with "Needs Android 14 or later". With no choice made, or the chosen engine
   gone or unbindable, Read Me uses Android's default when it can be bound, else the first
-  bindable engine, system engines first (`TtsOpen`).
+  bindable engine: Google TTS first, then system engines (`TtsOpen`). REA-33: system-first picked
+  iFlytek on the Huawei tablet, whose English is Chinese-accented.
 - **From Android 14** Read Me requests no engine, so Android binds its default, and Settings
   names it.
 - Playback, the engine probe and the bridge ask the same function, so they agree on one engine.
 - A bridge rebind pinned to an engine never falls back (REA-29 stands: a stop, not a different
   voice). The fall-back above happens only when an engine is first chosen.
-- A changed engine or voice applies from the next play, even while `PlaybackService` runs.
+- A changed engine or voice applies from the next play, including Play on a paused item, and
+  to the running bridge at once (REA-33).
 
 ## Consequences
 
