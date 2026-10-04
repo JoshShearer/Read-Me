@@ -74,6 +74,29 @@ grep -q 'require_fdroid_verified "$TESTED"' scripts/release-apk.sh \
 grep -q 'apk_same_unsigned "$OURS" "$THEIRS"' scripts/fdroid-build.sh && grep -q 'compare "$@"' scripts/lib/recipe.sh \
   && grep -q 'apk_same --unsigned' scripts/lib/recipe.sh \
   && echo "ok: fdroid:build compares an unsigned F-Droid build" || { echo "FAIL: fdroid:build does not pass --unsigned"; fail=1; }
+# REA-38: F-Droid's check apk job refused v1.0.1 for AGP's "Dependency metadata" signing block
+# (0x504b4453, encrypted for Google Play); the comparisons copy the signing block, so only a
+# look inside it catches one. The fixture gets the block inserted, sizes and EOCD offset fixed.
+python3 - "$T/d.apk" "$T/dep.apk" <<'EOF'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+e = d.rfind(b"PK\x05\x06"); cd = struct.unpack("<I", d[e + 16:e + 20])[0]
+size = struct.unpack("<Q", d[cd - 24:cd - 16])[0]; start = cd - size - 8
+pair = struct.pack("<QI", 4 + 8, 0x504b4453) + b"\0" * 8
+new_size = struct.pack("<Q", size + len(pair))
+block = new_size + d[start + 8:cd - 24] + pair + new_size + d[cd - 16:cd]
+out = d[:start] + block + d[cd:e + 16] + struct.pack("<I", cd + len(pair)) + d[e + 20:]
+open(sys.argv[2], "wb").write(out)
+EOF
+require_no_extra_signing_blocks "$T/d.apk" >/dev/null 2>&1 \
+  && echo "ok: an APK without extra signing blocks is accepted" || { echo "FAIL: a plain signed APK was refused"; fail=1; }
+if require_no_extra_signing_blocks "$T/dep.apk" >/dev/null 2>&1; then
+  echo "FAIL: an APK with Dependency metadata was accepted"; fail=1
+else echo "ok: an APK with Dependency metadata is refused"; fi
+"$BT/apksigner" verify "$T/dep.apk" >/dev/null 2>&1 \
+  && echo "ok: the fixture with the block still verifies (so it is a real APK)" || { echo "FAIL: the injected fixture is not a valid APK"; fail=1; }
+grep -q 'require_no_extra_signing_blocks "$tmp"' scripts/lib/release.sh && grep -q 'require_no_extra_signing_blocks "$APK"' scripts/fdroid-scan.sh \
+  && echo "ok: release:apk and fdroid-scan refuse it" || { echo "FAIL: release:apk or fdroid-scan does not check signing blocks"; fail=1; }
 # REA-38 review: a match holds for the commit F-Droid built. A later commit that changes anything
 # but docs (the recipe, build-hermesc.sh: F-Droid's build only) needs a new fdroid:build.
 LIB=$PWD/scripts/lib/release.sh

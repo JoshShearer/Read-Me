@@ -26,6 +26,7 @@ publish_checked() {
   tmp=$(mktemp "$dir/.unchecked-XXXXXX")
   cp "$1" "$tmp"
   if ! require_release_cert "$tmp"; then rm -f "$tmp"; return 1; fi
+  if ! require_no_extra_signing_blocks "$tmp"; then rm -f "$tmp"; return 1; fi
   if ! PATH="$BT:$PATH" .venv-fdroid/bin/apksigcopier compare "$tmp" "$4"; then
     rm -f "$tmp"
     echo "refused: the signed APK's content differs from the tested build" >&2
@@ -62,4 +63,28 @@ require_fdroid_verified() {
 # (v1.0.0 shipped the template's logos from 2026-10-01) is packaged forever (REA-38).
 clear_bundle_output() {
   rm -rf "$1/build/generated/res/react" "$1/build/generated/assets/react"
+}
+# require_no_extra_signing_blocks <apk>: REA-38. AGP puts its dependency list, encrypted for
+# Google Play, into the APK Signing Block ("Dependency metadata", 0x504b4453), and F-Droid's check
+# apk job refuses it, as it does Play's "Frosting" and Meituan's payload. v1.0.1 shipped one:
+# apksigcopier copies the whole signing block, so every comparison here passed, and fdroidserver
+# 2.4.5's own check reads nothing with the androguard our venv resolves.
+require_no_extra_signing_blocks() {
+  python3 - "$1" <<'PY'
+import struct, sys
+bad = {0x2146444E: 'Google Play "Frosting"', 0x71777777: "Meituan payload", 0x504B4453: "Dependency metadata"}
+d = open(sys.argv[1], "rb").read()
+e = d.rfind(b"PK\x05\x06")
+cd = struct.unpack("<I", d[e + 16:e + 20])[0] if e >= 0 else 0
+if cd < 24 or d[cd - 16:cd] != b"APK Sig Block 42":
+    sys.exit(f"refused: {sys.argv[1]} has no APK Signing Block")
+p, end, found = cd - struct.unpack("<Q", d[cd - 24:cd - 16])[0], cd - 24, []
+while p < end:
+    n, i = struct.unpack("<QI", d[p:p + 12])
+    if i in bad:
+        found.append(bad[i])
+    p += 8 + n
+if found:
+    sys.exit(f"refused: {sys.argv[1]} carries extra signing blocks F-Droid rejects: {', '.join(found)}")
+PY
 }
