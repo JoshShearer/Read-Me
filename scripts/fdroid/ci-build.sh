@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs inside registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie for npm run fdroid:build
 # (REA-38): the "fdroid build" job of fdroiddata's .gitlab-ci.yml (2026-10-03), for one build,
-# with fdroidserver at the commit that job pins. $CI_PROJECT_DIR is an fdroiddata checkout holding
+# with fdroidserver as that job takes it: the pinned commit as the root of trust, then master
+# fast-forwarded, so each run uses fdroidserver master of its day (logged below). $CI_PROJECT_DIR is an fdroiddata checkout holding
 # our recipe; the source to build is the local clone the recipe's Repo names.
 set -ex
 BUILD=${1:?usage: ci-build.sh <appid:versionCode>}
@@ -17,6 +18,7 @@ rm -rf "$fdroidserver"
 git clone -q --shallow-since=2026-07-13 https://gitlab.com/fdroid/fdroidserver.git "$fdroidserver"
 git -C "$fdroidserver" checkout -q -B master a35fdfddd9c66823987a410566a6101186e39c84
 git -C "$fdroidserver" pull -q origin master --ff-only
+echo "fdroidserver $(git -C "$fdroidserver" rev-parse HEAD)"
 export PATH="$fdroidserver:$PATH" PYTHONPATH="$fdroidserver:$fdroidserver/examples" PYTHONUNBUFFERED=true serverwebroot=/tmp
 git -C "$home_vagrant/gradlew-fdroid" pull -q || true
 git -C /tmp/ clone -q https://gitlab.com/fdroid/fdroid-bootstrap-buildserver.git

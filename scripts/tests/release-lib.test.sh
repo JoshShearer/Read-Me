@@ -74,4 +74,19 @@ grep -q 'require_fdroid_verified "$TESTED"' scripts/release-apk.sh \
 grep -q 'apk_same_unsigned "$OURS" "$THEIRS"' scripts/fdroid-build.sh && grep -q 'compare "$@"' scripts/lib/recipe.sh \
   && grep -q 'apk_same --unsigned' scripts/lib/recipe.sh \
   && echo "ok: fdroid:build compares an unsigned F-Droid build" || { echo "FAIL: fdroid:build does not pass --unsigned"; fail=1; }
+# REA-38 review: a match holds for the commit F-Droid built. A later commit that changes anything
+# but docs (the recipe, build-hermesc.sh: F-Droid's build only) needs a new fdroid:build.
+LIB=$PWD/scripts/lib/release.sh
+R=$T/repo && mkdir -p "$R/fdroid" "$R/docs" && cd "$R" && git init -q && echo a > fdroid/r.yml && echo a > docs/x.md
+git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm a
+echo apk > "$T/t2.apk"
+( source "$LIB"; record_fdroid_verified "$T/t2.apk" "$T/v2" )
+echo b > docs/x.md && echo note >> README.md && git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm docs
+( source "$LIB"; RELEASE_VERIFIED_FILE="$T/v2" require_fdroid_verified "$T/t2.apk" >/dev/null 2>&1 ) \
+  && echo "ok: a docs-only commit keeps the match" || { echo "FAIL: a docs-only commit lost the match"; fail=1; }
+echo b > fdroid/r.yml && git -c user.email=t@t -c user.name=t commit -qam recipe
+if ( source "$LIB"; RELEASE_VERIFIED_FILE="$T/v2" require_fdroid_verified "$T/t2.apk" >/dev/null 2>&1 ); then
+  echo "FAIL: a recipe change after the match was accepted"; fail=1
+else echo "ok: a recipe change after the match is refused"; fi
+cd - >/dev/null
 exit $fail

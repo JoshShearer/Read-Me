@@ -56,4 +56,10 @@ grep -q '^Binaries:' fdroid/io.loopstring.readme.yml && grep -q '^AllowedAPKSign
 v=$(node -p "require('./package.json').version")
 [ "$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/io.loopstring.readme.yml'))['Builds'][-1]['versionName'])")" = "$v" ] \
   && echo "ok: the recipe builds version $v" || { echo "FAIL: the recipe's versionName is not package.json's $v"; fail=1; }
+# REA-38 review: a build that fails before fdroid prints ERROR (apt, a clone, a checksum) must
+# still say so and name its log, under the script's set -euo pipefail.
+printf 'E: Failed to fetch something\n' > "$T/early.log"
+out=$(bash -c 'set -euo pipefail; source scripts/lib/recipe.sh; fdroid_build_failed "$1"' _ "$T/early.log" 2>&1 || true)
+grep -q "F-Droid's build FAILED (log: $T/early.log)" <<<"$out" && grep -q 'E: Failed to fetch' <<<"$out" \
+  && echo "ok: an early build failure is reported with its log" || { echo "FAIL: an early build failure went unreported: $out"; fail=1; }
 exit $fail

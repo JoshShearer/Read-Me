@@ -47,7 +47,7 @@ nothing for day-to-day builds, device scripts or CI.
    `fdroid:build` has not matched (`release/fdroid-verified`), builds with your key, refuses any
    other signer, checks the signed APK's content equals the tested one (apksigcopier), and
    writes `release/read-me-<version>.apk` and `release/SHA256SUMS`.
-3. The draft release, tagged at the tested commit (not whatever `main` is when you publish, so
+3. The draft release, tagged at the commit `release:apk` prints (the one F-Droid built; not whatever `main` is when you publish, so
    the tag's source is what F-Droid's `commit: v<version>` builds):
    ```
    gh release create v<version> --draft --target <full sha of the tested commit> \

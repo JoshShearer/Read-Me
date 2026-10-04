@@ -21,3 +21,4 @@ clear_bundle_output android/app
 OUT=release/read-me-$VER.apk
 publish_checked android/app/build/outputs/apk/release/app-release.apk release "$VER" "$TESTED"
 echo "ready: $OUT sha256 $(cut -c1-16 release/SHA256SUMS)..., signer $(cert_sha256 "$OUT" | cut -c1-16)..."
+echo "tag the commit F-Droid built: gh release create v$VER --draft --target $FDROID_VERIFIED_COMMIT ..."

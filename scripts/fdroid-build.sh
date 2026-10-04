@@ -13,6 +13,9 @@ OURS=${1:?usage: npm run fdroid:build -- <the tested APK>}
 [ -f "$OURS" ] || { echo "no such APK: $OURS"; exit 1; }
 [ -z "$(git status --porcelain -- . ':(exclude).claude')" ] || { echo "refused: the tree is dirty; F-Droid builds the commit"; exit 1; }
 command -v docker >/dev/null || { echo "refused: no docker"; exit 1; }
+# Checked now, not after the 20-minute build, where a missing tool would read as a mismatch.
+[ -x .venv-fdroid/bin/apksigcopier ] || { echo "refused: no .venv-fdroid/bin/apksigcopier; run scripts/fdroid-scan.sh once"; exit 1; }
+$(recipe_py) -c 'import yaml' 2>/dev/null || { echo "refused: no PyYAML for $(recipe_py)"; exit 1; }
 IMAGE=registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie
 APPID=io.loopstring.readme
 VC=$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/$APPID.yml'))['Builds'][-1]['versionCode'])")
@@ -33,10 +36,10 @@ docker pull -q "$IMAGE" >/dev/null
 docker run --rm -e CI_PROJECT_DIR=/builds/fdroiddata -e ANDROID_HOME=/opt/android-sdk -e TERM=dumb \
   -v "$W/fdroiddata:/builds/fdroiddata" -v "$W/src:/src:ro" -v "$PWD/scripts/fdroid/ci-build.sh:/ci-build.sh:ro" \
   "$IMAGE" bash /ci-build.sh "$APPID:$VC" > "$LOG" 2>&1 \
-  || { grep -E "ERROR|What went wrong" -A3 "$LOG" | tail -20; echo "fdroid:build: F-Droid's build FAILED (log: $LOG)"; exit 1; }
+  || fdroid_build_failed "$LOG"
 THEIRS=$W/fdroiddata/tmp/${APPID}_$VC.apk
 [ -f "$THEIRS" ] || { echo "fdroid:build: no APK from F-Droid's build (log: $LOG)"; exit 1; }
-cp "$THEIRS" ".claude/scratch/fdroid-built-$(git rev-parse --short HEAD).apk"
+cp "$THEIRS" "$(dirname "$LOG")/fdroid-built-$(git rev-parse --short HEAD).apk"
 if apk_same_unsigned "$OURS" "$THEIRS"; then
   mkdir -p release && record_fdroid_verified "$OURS"
   echo "fdroid:build: SAME: F-Droid's build equals $OURS (recorded in release/fdroid-verified)"

@@ -46,3 +46,11 @@ apk_differs() {
     cmp -s <(unzip -p "$1" "$f") <(unzip -p "$2" "$f") || echo "  differs: $f"
   done
 }
+# fdroid_build_failed <log>: report F-Droid's failed build and exit 1. Falls back to the log's
+# tail when no ERROR line exists (apt, a clone or a checksum fails before fdroid logs one);
+# under pipefail a grep that finds nothing would otherwise end the script without a word.
+fdroid_build_failed() {
+  { grep -E "ERROR|What went wrong" -A3 "$1" || tail -20 "$1"; } | tail -20 || true
+  echo "fdroid:build: F-Droid's build FAILED (log: $1)"
+  exit 1
+}
