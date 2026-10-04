@@ -14,18 +14,25 @@ PY
   ( cd "$root/$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/io.loopstring.readme.yml'))['Builds'][-1]['subdir'])")" && bash -c "$cmd" )
 }
 # recipe_local_metadata <recipe> <repo> <commit>: the recipe for fdroid:build (REA-38), building
-# <commit> of a local clone. Only the last build is kept, and the Binaries/AllowedAPKSigningKeys
-# lines go: the release they name is published after this check, not before.
+# <commit> of a local clone. The Binaries/AllowedAPKSigningKeys lines go: the release they name
+# is published after this check, not before. Edited as text: a YAML round trip turns the
+# gradle: entry "yes" into true, which fdroidserver (YAML 1.2) reads as a flavor named True.
 recipe_local_metadata() {
   $(recipe_py) - "$1" "$2" "$3" <<'PY'
-import sys, yaml
-m = yaml.safe_load(open(sys.argv[1]))
-m["Repo"] = sys.argv[2]
-m["Builds"] = m["Builds"][-1:]
-m["Builds"][0]["commit"] = sys.argv[3]
-for k in ("Binaries", "AllowedAPKSigningKeys"):
-    m.pop(k, None)
-print(yaml.safe_dump(m, sort_keys=False, width=1000), end="")
+import re, sys
+lines = open(sys.argv[1]).read().splitlines()
+if sum(1 for l in lines if l.startswith("  - versionName:")) != 1:
+    sys.exit("recipe_local_metadata: the recipe must list exactly one build")
+out = []
+for l in lines:
+    if re.match(r"(Binaries|AllowedAPKSigningKeys):", l):
+        continue
+    if l.startswith("Repo:"):
+        l = "Repo: " + sys.argv[2]
+    elif l.startswith("    commit:"):
+        l = "    commit: " + sys.argv[3]
+    out.append(l)
+print("\n".join(out))
 PY
 }
 # apk_same <a> <b>: equal apart from signatures (apksigcopier copies a's signature onto b and

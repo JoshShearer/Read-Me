@@ -47,6 +47,10 @@ assert m["Builds"][-1]["commit"] == "0123456789abcdef0123456789abcdef01234567"
 assert "Binaries" not in m and "AllowedAPKSigningKeys" not in m
 assert len(m["Builds"]) == 1
 PY
+# fdroidserver reads YAML 1.2, where "yes" is the string the gradle: entry needs; a YAML 1.1
+# round trip writes it back as true, and F-Droid then builds a flavor named "True".
+diff <(grep -vE '^(Repo|Binaries|AllowedAPKSigningKeys):|^    commit:|^#|^ *#' fdroid/io.loopstring.readme.yml) <(grep -vE '^(Repo|Binaries|AllowedAPKSigningKeys):|^    commit:|^#|^ *#' "$T/local.yml") >/dev/null \
+  && echo "ok: local metadata keeps every other recipe line as written" || { echo "FAIL: local metadata rewrote recipe lines"; fail=1; }
 grep -q '^Binaries:' fdroid/io.loopstring.readme.yml && grep -q '^AllowedAPKSigningKeys:' fdroid/io.loopstring.readme.yml \
   && echo "ok: the repo's recipe names our signed APK" || { echo "FAIL: the recipe lacks Binaries or AllowedAPKSigningKeys"; fail=1; }
 v=$(node -p "require('./package.json').version")
