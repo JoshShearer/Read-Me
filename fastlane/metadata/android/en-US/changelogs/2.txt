@@ -1,0 +1,3 @@
+Share a .md or .txt file to read it as text. Voices show readable names and a voice dropdown; below Android 14 you can choose the speech engine. New reading layout and controls on every screen.
+
+Fixes: a voice or engine change now reaches a paused item and the Obsidian bridge; Play waits for a slow-starting engine; an engine that cannot be bound no longer crashes the app; screens stay above the gesture bar.

@@ -13,3 +13,27 @@ PY
 )
   ( cd "$root/$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/io.loopstring.readme.yml'))['Builds'][-1]['subdir'])")" && bash -c "$cmd" )
 }
+# recipe_local_metadata <recipe> <repo> <commit>: the recipe for fdroid:build (REA-38), building
+# <commit> of a local clone. Only the last build is kept, and the Binaries/AllowedAPKSigningKeys
+# lines go: the release they name is published after this check, not before.
+recipe_local_metadata() {
+  $(recipe_py) - "$1" "$2" "$3" <<'PY'
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1]))
+m["Repo"] = sys.argv[2]
+m["Builds"] = m["Builds"][-1:]
+m["Builds"][0]["commit"] = sys.argv[3]
+for k in ("Binaries", "AllowedAPKSigningKeys"):
+    m.pop(k, None)
+print(yaml.safe_dump(m, sort_keys=False, width=1000), end="")
+PY
+}
+# apk_same <a> <b>: equal apart from signatures (apksigcopier copies a's signature onto b and
+# verifies). apk_differs lists the entries that are not.
+apk_same() { PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0:$PATH" .venv-fdroid/bin/apksigcopier compare "$1" "$2" >/dev/null 2>&1; }
+apk_differs() {
+  diff <(unzip -Z1 "$1" | sort) <(unzip -Z1 "$2" | sort) || true
+  for f in $(unzip -Z1 "$1" | grep -v '^META-INF/'); do
+    cmp -s <(unzip -p "$1" "$f") <(unzip -p "$2" "$f") || echo "  differs: $f"
+  done
+}

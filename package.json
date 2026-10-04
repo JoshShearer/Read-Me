@@ -1,6 +1,6 @@
 {
   "name": "io.loopstring.readme",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -32,7 +32,8 @@
     "brand": "python3 scripts/gen-brand.py",
     "device:screenshots": "bash scripts/device-screenshots.sh",
     "device:themes": "bash scripts/device-themes.sh",
-    "device:lifecycle": "bash scripts/device-lifecycle.sh"
+    "device:lifecycle": "bash scripts/device-lifecycle.sh",
+    "fdroid:build": "bash scripts/fdroid-build.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

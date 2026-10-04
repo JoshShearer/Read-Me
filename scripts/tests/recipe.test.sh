@@ -15,8 +15,8 @@ recipe_prebuild "$T/repo" "$T/hermes" >/dev/null 2>&1
 fail=0
 grep -qx "readmeHermesc=$T/hermes/out/build/bin/hermesc" "$T/repo/android/gradle.properties" \
   && echo "ok: readmeHermesc set in android/gradle.properties" || { echo "FAIL: readmeHermesc not set"; fail=1; }
-grep -qx 'android.newDsl=false' "$T/repo/android/gradle.properties" \
-  && echo "ok: the last existing property is intact" || { echo "FAIL: android.newDsl corrupted"; fail=1; }
+grep -qx 'reactNativeDevServerIp=localhost' "$T/repo/android/gradle.properties" \
+  && echo "ok: the last existing property is intact" || { echo "FAIL: reactNativeDevServerIp corrupted"; fail=1; }
 # The recipe's Hermes srclib tag must be the hermesc npm installs (critique A F2): an upgrade
 # that forgets the recipe would build the bundle with the old compiler.
 want="hermes-v$(node -p "require('./node_modules/hermes-compiler/package.json').version")"
@@ -36,4 +36,20 @@ if [ -x .venv-fdroid/bin/python ]; then
     echo "FAIL: signing config survives F-Droid's stripping"; fail=1
   else echo "ok: F-Droid's stripping removes every signingConfig"; fi
 else echo "SKIP: F-Droid stripping (no .venv-fdroid)"; fi
+# fdroid:build (REA-38) runs F-Droid's build job on a local clone: the recipe's last build must
+# point at that clone and commit, and must not name our release download (it does not exist yet).
+recipe_local_metadata fdroid/io.loopstring.readme.yml /src 0123456789abcdef0123456789abcdef01234567 > "$T/local.yml" 2>"$T/local.err"
+$(recipe_py) - "$T/local.yml" <<'PY' && echo "ok: local metadata points at the clone and commit" || { echo "FAIL: local metadata: $(cat "$T/local.err")"; fail=1; }
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1]))
+assert m["Repo"] == "/src", m.get("Repo")
+assert m["Builds"][-1]["commit"] == "0123456789abcdef0123456789abcdef01234567"
+assert "Binaries" not in m and "AllowedAPKSigningKeys" not in m
+assert len(m["Builds"]) == 1
+PY
+grep -q '^Binaries:' fdroid/io.loopstring.readme.yml && grep -q '^AllowedAPKSigningKeys:' fdroid/io.loopstring.readme.yml \
+  && echo "ok: the repo's recipe names our signed APK" || { echo "FAIL: the recipe lacks Binaries or AllowedAPKSigningKeys"; fail=1; }
+v=$(node -p "require('./package.json').version")
+[ "$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/io.loopstring.readme.yml'))['Builds'][-1]['versionName'])")" = "$v" ] \
+  && echo "ok: the recipe builds version $v" || { echo "FAIL: the recipe's versionName is not package.json's $v"; fail=1; }
 exit $fail

@@ -7,24 +7,39 @@ SourceCode: https://github.com/JoshShearer/Read-Me
 IssueTracker: https://github.com/JoshShearer/Read-Me/issues
 Changelog: https://github.com/JoshShearer/Read-Me/releases
 
-AutoName: Read Me
+AutoName: Read Me Offline
 
 RepoType: git
 Repo: https://github.com/JoshShearer/Read-Me.git
+# F-Droid publishes our signed APK only if its own build of the tag is identical (REA-38:
+# npm run fdroid:build checks that in F-Droid's image before a release).
+Binaries: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v.apk
 
 Builds:
-  - versionName: 1.0.0
-    versionCode: 1
-    commit: v1.0.0
+  - versionName: 1.0.1
+    versionCode: 2
+    # fdroiddata wants the tag's full commit hash here; the MR carries it.
+    commit: v1.0.1
     subdir: android/app
     sudo:
       - apt-get update
-      - apt-get install -y cmake ninja-build libicu-dev
+      # F-Droid's buildserver image has no xz, no C++ compiler and no JDK 17 (REA-38, run in
+      # registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie). g++ builds hermesc.
+      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
       - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
       - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
         | sha256sum -c -
       - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
-      - ln -sf /opt/node/bin/node /opt/node/bin/npm /usr/local/bin/
+      # Gradle's React Native settings plugin runs npx.
+      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      # React Native's Gradle plugin wants a JDK 17 toolchain; Debian trixie has only 21. This is
+      # the Temurin build our releases use (Gradle provisions the same one here), so nothing
+      # is patched to 21 and the output stays identical.
+      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
+      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
+        | sha256sum -c -
+      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
+        --strip-components=1
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
@@ -48,7 +63,9 @@ Builds:
       - node_modules/react-native/React/I18n/strings
     ndk: r27b
 
+AllowedAPKSigningKeys: f730c468c33f4de8ec5b6917920399169ccdef2664def86ffc4f0dbe01535bf5
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.0.0
-CurrentVersionCode: 1
+CurrentVersion: 1.0.1
+CurrentVersionCode: 2

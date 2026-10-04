@@ -17,6 +17,8 @@ if [ -d android/app/.cxx ] && { [ ! -f "$CXX_STAMP" ] || [ "$SPEC_TS" -nt "$CXX_
   rm -rf android/app/.cxx android/app/build/intermediates/cxx
   echo "the TurboModule spec changed since the native build cache was made; cleared it"
 fi
+source scripts/lib/release.sh
+clear_bundle_output android/app
 ( cd android && ./gradlew --quiet assembleRelease )
 # The entry file is a Gradle property, which ORG_GRADLE_PROJECT_readmeEntryFile or a
 # gradle.properties can set without anyone passing it. A product build must never carry the
