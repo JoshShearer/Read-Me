@@ -293,12 +293,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   (NRL-130, note-reader-local 5b3f963, `ReadMeBridgeEngine`) and was measured on the Huawei
   MatePad only; a plugin read on the reference device is not established, so run 3 is open.
   Run 1's share is the intent a browser sends, sent by adb.
-  `device:playback` gaps n=26 p50=12 p95=17. Not established: an F-Droid build server run,
-  and whether F-Droid accepts the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
+  `device:playback` gaps n=26 p50=12 p95=17. Not established: whether F-Droid's reviewers
+  accept the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
   Published 2026-10-03T18:59:38Z as v1.0.0, tag at d3edc19, assets `read-me-1.0.0.apk` and
-  `SHA256SUMS` (`gh release view`). main since then carries unreleased REA-30 (shared .md/.txt),
-  REA-28 (UI controls), REA-32 and REA-33 (engine choice, voice change), so a new release is
-  needed before they reach users.
+  `SHA256SUMS` (`gh release view`). REA-30, REA-28, REA-32 and REA-33 reached users in 1.0.1.
   The published v1.0.0 APK cannot be reproduced by F-Droid (REA-38, 2026-10-04): built in the
   primary checkout, it carries stale resources from 2026-10-01 (the template's new-app-screen
   logos and raw/keep.xml under generated/res/react/release, which the bundle task never empties),
@@ -308,9 +306,24 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   Fixed for 1.0.1 (pinned dev-server IP, `-ffile-prefix-map` of the Gradle home, the bundle
   output cleared before release builds); `npm run fdroid:build` (fdroiddata's build job in
   registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie, this machine, 2026-10-04) built
-  51b0914 identical to our tested APK apart from the signature. F-Droid merge request:
-  https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, open, its pipeline red on the
-  1.0.0 recipe until 1.0.1 is published and the MR updated.
+  51b0914 identical to our tested APK apart from the signature.
+  Release 1.0.1 (2026-10-04, tag at 8e4af79, `read-me-1.0.1.apk` and `SHA256SUMS`): `fdroid:build`
+  SAME on 8e4af79, and on the reference device `device:ui`, `intake`, `screens`, `bridge`,
+  `playback`, `accept-share` (resumed at sentence 17, list "2% read") and `AIRPLANE=1
+  GAP_MINUTES=10 device:gap` (n=99 p50=4 p95=12 max=19 ms, stalls 0, errors 0) passed, read by
+  Supertonic (the phone's default; Google TTS is not installed for user 0). F-Droid's `check apk`
+  then refused it, as it would have 1.0.0: AGP put its "Dependency metadata" block (0x504b4453,
+  encrypted for Google Play) in the APK Signing Block. apksigcopier copies that block, so
+  `fdroid:build` and `release:apk` compared equal, and fdroidserver 2.4.5's scanner check matches
+  nothing with our venv's androguard. 1.0.2 (PR #30) turns `dependenciesInfo` off, and
+  `release:apk` and `fdroid-scan.sh` now read the signing block themselves.
+  Release 1.0.2 (2026-10-04, tag at 40515c6, sha256 b3cfb797...1fa4): the code is 1.0.1's (the
+  APKs differ only in versionCode/versionName, BuildConfig's copies of them and the baseline
+  profile's dex checksum), so 1.0.1's acceptance stands; on the reference device `device:smoke`
+  and `device:playback` passed (gaps n=24 p50=12 p95=21 max=24 ms); `fdroid:build` SAME on
+  40515c6; `fdroid-scan.sh` CLEAN. F-Droid merge request:
+  https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, open, on the 1.0.2 recipe; its pipeline
+  (#2910982485, 2026-10-04) passed every job, `fdroid build` and `check apk` included.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
