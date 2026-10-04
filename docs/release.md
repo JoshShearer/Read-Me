@@ -26,6 +26,8 @@ nothing for day-to-day builds, device scripts or CI.
 ## Per release
 
 1. Build and test one build. Keep its APK: it is the build the acceptance runs installed.
+   Build it in a fresh worktree or clone if you can (`build:release` clears React Native's
+   bundle output, which kept stale images in v1.0.0, but a fresh tree is the safe habit).
    ```
    npm run build:release
    cp android/app/build/outputs/apk/release/app-release.apk release/tested-$(git rev-parse --short HEAD).apk
@@ -36,11 +38,13 @@ nothing for day-to-day builds, device scripts or CI.
    npm run device:screens
    scripts/fdroid-scan.sh             # == result: CLEAN
    npm run repro -- release/tested-<sha>.apk   # repro: SAME, and the recipe's build equals ours
+   npm run fdroid:build -- release/tested-<sha>.apk   # fdroid:build: SAME (about 20 min; docker)
    ```
    Write the results down (date, device, build); they go into `AGENTS.md` Known state by a PR
    after the release. `release:apk` refuses a dirty tree, and a commit now would move HEAD off
    the tested commit.
-2. `npm run release:apk -- release/tested-<sha>.apk`. It builds with your key, refuses any
+2. `npm run release:apk -- release/tested-<sha>.apk`. It refuses an APK that
+   `fdroid:build` has not matched (`release/fdroid-verified`), builds with your key, refuses any
    other signer, checks the signed APK's content equals the tested one (apksigcopier), and
    writes `release/read-me-<version>.apk` and `release/SHA256SUMS`.
 3. The draft release, tagged at the tested commit (not whatever `main` is when you publish, so
@@ -65,21 +69,21 @@ nothing for day-to-day builds, device scripts or CI.
    public `android` password (React Native's template), nothing secret.
    Then `gh repo edit JoshShearer/Read-Me --visibility public` (gh 2.45 here; newer gh also wants
    `--accept-visibility-change-consequences`).
-3. F-Droid merge request:
-   1. Fork `https://gitlab.com/fdroid/fdroiddata`.
-   2. Copy `fdroid/io.loopstring.readme.yml` to `metadata/` and `fdroid/srclibs/hermes.yml`
-      to `srclibs/`.
-   3. To have F-Droid publish your signed APK instead of signing its own: add
-      `Binaries: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v.apk`
-      and `AllowedAPKSigningKeys: <the fingerprint in release/signing-cert.sha256>` to the
-      recipe. F-Droid then builds from source and publishes yours only if the two match.
-      `npm run repro -- <tested apk>` checks, on this machine only, that two recipe-style
-      builds match each other and the APK we publish.
-   4. `fdroid lint io.loopstring.readme` in the fork, then open the merge request.
+3. F-Droid: the merge request is https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088
+   (branch `io.loopstring.readme` of `gitlab.com/Joshshearer/fdroiddata`). For each release,
+   in that fork's `metadata/io.loopstring.readme.yml`, replace the build entry with the one in
+   `fdroid/io.loopstring.readme.yml`, with `commit:` set to the tag's full hash
+   (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there), and set
+   `CurrentVersion`/`CurrentVersionCode`. Then `fdroid rewritemeta io.loopstring.readme` (it
+   strips the comments, which fdroiddata's CI requires) and `fdroid lint io.loopstring.readme`,
+   commit and push; the merge request's pipeline reruns. Before the first merge only the latest
+   version may be listed. After it is merged, `AutoUpdateMode: Version` and `UpdateCheckMode:
+   Tags` make F-Droid pick up new tags itself.
 
 ## Not established
 
-- F-Droid's build server has not run this recipe. `npm run repro` compares two builds on this
-  machine with its caches and JDK 21; the buildserver has another JDK and paths.
+- F-Droid's production build server has not run this recipe. `npm run fdroid:build` runs
+  fdroiddata's own CI build job in F-Droid's buildserver image on this machine; the merge
+  request's pipeline runs the same job on GitLab.
 - Whether F-Droid accepts React Native's `react-android` and `hermes-android` AARs (prebuilt
   native libraries from Maven Central) or asks for them built from source (SPIKE-04).
