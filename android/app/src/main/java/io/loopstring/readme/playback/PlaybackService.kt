@@ -73,6 +73,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   // Written on the main thread; read on TTS binder threads by preemptOnPlay.
   @Volatile private var bridge: BridgeServer? = null
   @Volatile private var synth: TtsSynth? = null
+  private var synthFor: Pair<String?, String?> = null to null
   @VisibleForTesting var bridgePreemptsForTest = 0
     private set
   // ADR 0004: playback starting stops a bridge synthesis in flight (the bridge's instance only).
@@ -208,14 +209,15 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     PlaybackCommands.ACTION_PLAY -> {
       rebinds = 0
-      queue.resume()
+      // REA-33: Play on a paused item resumed with the engine and voice it had, so a change in
+      // Settings never reached it. Rebind with the new choice and resume once it is ready.
+      if (choice() != speakerFor && !rebinding && !queue.snapshot().playing) follow() else queue.resume()
     }
     PlaybackCommands.ACTION_TOGGLE ->
       if (queue.snapshot().playing) {
         handle(PlaybackCommands.ACTION_PAUSE)
       } else {
-        rebinds = 0
-        queue.resume()
+        handle(PlaybackCommands.ACTION_PLAY)
       }
     PlaybackCommands.ACTION_NEXT -> queue.next()
     PlaybackCommands.ACTION_PREVIOUS -> queue.previous()
@@ -242,7 +244,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
         Log.i(TAG, "bridge off")
       }
     }
+    // REA-33: a voice or engine chosen in Settings reaches the running bridge.
+    if (want && bridge != null && choice() != synthFor) {
+      synthFor = choice()
+      synth?.reselect(synthFor.second)
+      Log.i(TAG, "bridge voice changed")
+    }
     if (!want || bridge != null) return
+    synthFor = choice()
     val sy = TtsSynth(this, s.voice, log = { Log.i(TAG, it) })
     try {
       bridge = BridgeServer(
@@ -338,6 +347,18 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     updateSession(s)
     syncForeground(s)
+  }
+
+  /** REA-33: a new speaker for Settings' engine and voice; onReady resumes where it stopped. */
+  private fun follow(): Boolean {
+    speakerFor = choice()
+    speaker.shutdown()
+    speaker = TtsSpeaker(this, this, speakerFor.second)
+    queue.swapSpeaker(speaker)
+    rebinding = true
+    resumeAfterRebind = true
+    Log.i(TAG, "playback voice changed")
+    return true
   }
 
   /** REA-18: rebind playback's own engine (never the bridge's) and resume where it stopped. */

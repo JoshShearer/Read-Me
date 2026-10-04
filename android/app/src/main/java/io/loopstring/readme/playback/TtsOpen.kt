@@ -20,7 +20,7 @@ import io.loopstring.readme.store.Settings as AppSettings
  * PlaybackService.onCreate, crashed Read Me on every start.
  *
  * [engine] does the fall-back Android meant to: when the default engine cannot be bound, the
- * first installed engine that can (system engines first, as Android ranks them). Every caller
+ * first installed engine that can (Google's, then system engines, as Android ranks them). Every caller
  * asks it, so playback, the probe and the bridge agree on one engine. A bind still refused is a
  * failed init: [open] posts ERROR, like the framework's callback, and the caller reports no-engine.
  * A rebind pinned to an engine never falls back (REA-29: a stop, not a different voice).
@@ -54,7 +54,11 @@ object TtsOpen {
     val d = engines.firstOrNull { it.pkg == default }
     // Not installed, or bindable: Android's own choice is right.
     if (d == null || d.bindable) return null
-    return engines.filter { it.bindable }.sortedByDescending { it.system }.firstOrNull()?.pkg ?: default
+    // Google's engine first: on the Huawei tablet the system engine is iFlytek, whose English is
+    // Chinese-accented (owner, 2026-10-03). Then system engines, as Android ranks them.
+    return engines.filter { it.bindable }
+      .sortedWith(compareBy<Candidate>({ it.pkg != GOOGLE }, { !it.system }))
+      .firstOrNull()?.pkg ?: default
   }
 
   /** The installed engines, by label; [Candidate.bindable] is false where Android refuses the bind. */
@@ -88,5 +92,6 @@ object TtsOpen {
     }
 
   private const val TAG = "ReadMe"
+  private const val GOOGLE = "com.google.android.tts"
   private const val BIND_TTS = "android.permission.BIND_TEXT_TO_SPEECH_SERVICE"
 }

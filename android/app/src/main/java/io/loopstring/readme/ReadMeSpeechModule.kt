@@ -228,12 +228,17 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     }
   }
 
-  override fun setVoice(name: String?, promise: Promise) = settle(promise) { settings.voice = name; null }
+  override fun setVoice(name: String?, promise: Promise) = settle(promise) {
+    settings.voice = name
+    if (settings.bridgeEnabled) PlaybackService.syncBridge(reactApplicationContext)
+    null
+  }
 
   // A voice name belongs to its engine, so choosing an engine clears the voice.
   override fun setEngine(pkg: String?, promise: Promise) = settle(promise) {
     settings.engine = pkg
     settings.voice = null
+    if (settings.bridgeEnabled) PlaybackService.syncBridge(reactApplicationContext)
     null
   }
 

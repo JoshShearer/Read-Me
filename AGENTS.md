@@ -227,13 +227,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
   (Android 10). `TtsOpen` catches it (no-engine) and picks the engine for playback, the probe and
   the bridge: from Android 14 always the system's; below 14 Settings' Engine choice, else the
-  default if bindable, else the first bindable engine, system first. Settings shows voices as
+  default if bindable, else the first bindable engine (Google, then system). Settings shows voices as
   `VoiceLabels` (language names, Female/Male for Supertonic's F1-M5, a voice's own name without
   a model prefix). A changed engine or voice applies at the next play. Seen on device
   (2026-10-03): the tablet read with iFlytek while Marmalade was default (build b9ffadc); the
   Pixel's Settings named Supertonic, then Marmalade (build 0ee68a3, dirty). Not run on the
   merged build: playback, the `device:*` scripts, the tablet's disabled Engine rows, a change
-  while paused. The bridge reads the engine when it starts, not on a later change.
+  while paused. REA-33: a change reaches a paused item on Play and the running bridge at once; the fall-back prefers Google TTS.
 - **Shared files (R-C04 partial, REA-30, PR #21):** `.md` and `.txt`. Obsidian's file Share
   sends `ACTION_VIEW` of a `content://` URI (typed `text/markdown` once and `*/*` once), not
   SEND. ShareActivity reads it on a worker (5 MB cap while reading, 20 s timeout) and Kotlin's
