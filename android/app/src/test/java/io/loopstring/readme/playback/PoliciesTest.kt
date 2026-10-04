@@ -113,6 +113,11 @@ class VoiceLabelsTest {
     org.junit.Assert.assertEquals(VoiceLabels.Label("English", ""), l["en"])
   }
 
+  @Test fun aModelPrefixIsDropped() {
+    val l = VoiceLabels.of(listOf(v("kitten-direct-v0_8:Bruno", "en-US")), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals(VoiceLabels.Label("Bruno", "English (United States)"), l["kitten-direct-v0_8:Bruno"])
+  }
+
   @Test fun supertonicVoicesReadAsFemaleAndMale() {
     val l = VoiceLabels.of(listOf(v("en-supertonic-F1", "en-US"), v("en-supertonic-M2", "en-US")), java.util.Locale.ENGLISH)
     org.junit.Assert.assertEquals(VoiceLabels.Label("English (United States)", "Female 1"), l["en-supertonic-F1"])

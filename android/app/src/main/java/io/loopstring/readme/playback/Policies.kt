@@ -46,7 +46,7 @@ object VoiceList {
  * What Settings shows for a voice. Engines name voices for machines: iFlytek's are bare language
  * codes ("en", "agq") and Google's are like "en-us-x-sfg-local", so a name that looks like a
  * locale is replaced by the locale's name in the phone's language ("English (United States)").
- * A name a person gave (Marmalade's, say) is kept, with the language as its detail. Voices that
+ * A name a person gave (Marmalade's, say) is kept, without a model prefix, with the language as its detail. Voices that
  * would read the same are numbered, in name order.
  */
 object VoiceLabels {
@@ -64,7 +64,7 @@ object VoiceLabels {
     // A quality every voice shares says nothing, so it is shown only when voices differ.
     val qualities = voices.map { it.quality }.distinct().size > 1
     val base = voices.associate { v ->
-      v.name to if (MACHINE.matches(v.name)) Label(language(v), if (qualities) quality(v.quality) else "") else Label(v.name, language(v))
+      v.name to if (MACHINE.matches(v.name)) Label(language(v), if (qualities) quality(v.quality) else "") else Label(spoken(v.name), language(v))
     }
     val out = HashMap<String, Label>()
     voices.groupBy { base.getValue(it.name).label }.forEach { (_, same) ->
@@ -83,6 +83,9 @@ object VoiceLabels {
 
   // Supertonic names its voices "en-supertonic-F1" .. "-M5" (reference device, 2026-10-03).
   private val SPEAKER = Regex("[-_]([FfMm])(\\d{1,2})$")
+
+  /** Marmalade prefixes its model: "kitten-direct-v0_8:Bruno" reads as "Bruno" (reference device, 2026-10-03). */
+  fun spoken(name: String): String = name.substringAfterLast(':').trim().ifEmpty { name }
 
   /** "Female 1" for a name ending in F1, "Male 2" for M2; null otherwise. */
   fun speaker(name: String): String? = SPEAKER.find(name)?.let { m ->
