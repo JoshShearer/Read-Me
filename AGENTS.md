@@ -214,7 +214,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 - **UI controls (REA-28, PR #22):** `src/ui/Button.tsx` (Button, IconButton), `Select.tsx` (a
   bottom-sheet Modal), `Toggle.tsx`, `Stepper.tsx`, on Pressable and Modal, no dependencies.
   Article words are set in the system serif (`read` in `theme.ts`), controls in sans. Settings'
-  voice is a Select (dumped as `content-desc="voice, <name>"`, options `voice <name>` with
+  voice is a Select (dumped as `content-desc="voice, <label>"`, options `voice <name>` with
   `checked=`); the bridge is a switch "Use the bridge" (`checked=`). On f4493c9 `device:screens`
   and `device:bridge` passed; `device:ui` passed on a80352b but failed once on f4493c9 (paused
   before anything was read, right after the default engine was switched to Google TTS;
@@ -222,6 +222,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `device:ui` now fails on a repeat. Select keyboard navigation is untested. The reference
   phone's default engine is now Supertonic: its own media session takes media keys from Read Me
   (REA-31), so `device:playback` passes only with `com.google.android.tts` as the default.
+- **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
+  `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
+  throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
+  (Android 10). `TtsOpen` catches it (no-engine) and picks the engine for playback, the probe and
+  the bridge: from Android 14 always the system's; below 14 Settings' Engine choice, else the
+  default if bindable, else the first bindable engine, system first. Settings shows voices as
+  `VoiceLabels` (language names, Female/Male for Supertonic's F1-M5, a voice's own name without
+  a model prefix). A changed engine or voice applies at the next play. Seen on device
+  (2026-10-03): the tablet read with iFlytek while Marmalade was default (build b9ffadc); the
+  Pixel's Settings named Supertonic, then Marmalade (build 0ee68a3, dirty). Not run on the
+  merged build: playback, the `device:*` scripts, the tablet's disabled Engine rows, a change
+  while paused. The bridge reads the engine when it starts, not on a later change.
 - **Shared files (R-C04 partial, REA-30, PR #21):** `.md` and `.txt`. Obsidian's file Share
   sends `ACTION_VIEW` of a `content://` URI (typed `text/markdown` once and `*/*` once), not
   SEND. ShareActivity reads it on a worker (5 MB cap while reading, 20 s timeout) and Kotlin's

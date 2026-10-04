@@ -94,9 +94,9 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text; SharedFile and Markdown: a shared .md or .txt read
   off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions;
-  lifecycle per ADR 0007; Settings: the rate, voice and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
+  lifecycle per ADR 0007; Settings: the rate, voice, engine below Android 14, and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
-  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; EngineProbe: engine and offline voices before any play;
+  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; TtsOpen: which engine to bind, a refused bind as no-engine (ADR 0010); EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and
   ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats),
   bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
