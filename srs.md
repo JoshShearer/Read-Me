@@ -64,7 +64,8 @@ The app MUST open to the reading list. The UI MUST be limited to four screens in
    Archive view.
 2. **Trim**: the extracted paragraphs of one item, with cut controls (R-M05).
 3. **Reader**: the kept text with the current sentence highlighted and transport controls.
-4. **Settings**: voice, default rate, bridge on/off and pairing token, storage.
+4. **Settings**: voice, default rate, bridge on/off and pairing token, storage. Below Android
+   14 also the TTS engine; from Android 14 the system's engine is used and named (ADR 0010).
 
 There MUST be no account, sign-in, onboarding carousel, feed, or recommendations.
 
@@ -164,6 +165,8 @@ Speech MUST use Android's `android.speech.tts.TextToSpeech` only.
   and never used, including as a fallback.
 - If no engine binds, or no offline voice exists, the app MUST show a blocking state that
   explains this and links to Android's TTS settings (R-M10).
+- Which engine binds follows ADR 0010: the system's engine from Android 14; below 14 the one
+  chosen in Settings, else the default when it can be bound, else the first engine that can.
 
 ### R-M07 - Reading and playback
 
