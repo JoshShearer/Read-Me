@@ -7,6 +7,7 @@
 #   5. fdroidserver source scan of the tree after npm ci, with the recipe's deletions.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/lib/release.sh
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 VENV=.venv-fdroid
 { [ -x "$VENV/bin/fdroid" ] && [ -x "$VENV/bin/apksigcopier" ]; } || { python3 -m venv "$VENV" && "$VENV/bin/pip" -q install fdroidserver==2.4.5 apksigcopier==1.1.1; } || exit 1
@@ -35,7 +36,10 @@ if [ ! -f "$APK" ]; then echo "missing $APK; run npm run build:release"; fail=1
 elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ] \
      || [ "$(sed -n 2p "$APK.stamp" 2>/dev/null)" != clean ]; then
   echo "APK not built from a clean HEAD (stamp: $(tr '\n' ' ' < "$APK.stamp" 2>/dev/null)); run npm run build:release"; fail=1
-else "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1; fi
+else
+  "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1
+  require_no_extra_signing_blocks "$APK" && echo "no extra signing blocks" || fail=1
+fi
 
 echo "== 3. non-free Gradle dependencies (resolved tree)"
 # Capture first: a failed gradlew piped straight into grep would read as "none found".

@@ -16,10 +16,10 @@ Repo: https://github.com/JoshShearer/Read-Me.git
 Binaries: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v.apk
 
 Builds:
-  - versionName: 1.0.1
-    versionCode: 2
+  - versionName: 1.0.2
+    versionCode: 3
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.0.1
+    commit: v1.0.2
     subdir: android/app
     sudo:
       - apt-get update
@@ -67,5 +67,5 @@ AllowedAPKSigningKeys: f730c468c33f4de8ec5b6917920399169ccdef2664def86ffc4f0dbe0
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.0.1
-CurrentVersionCode: 2
+CurrentVersion: 1.0.2
+CurrentVersionCode: 3

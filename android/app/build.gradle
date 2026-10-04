@@ -82,6 +82,12 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "io.loopstring.readme"
+    // REA-38: AGP otherwise writes the dependency list, encrypted with Google's key, into the APK
+    // Signing Block. Only Google Play can read it, and F-Droid refuses an APK that has it (v1.0.1).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
     testOptions {
         unitTests {
             // Robolectric reads the merged manifest and resources.
@@ -92,8 +98,8 @@ android {
         applicationId "io.loopstring.readme"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 3
+        versionName "1.0.2"
         // REA-26: reproducible native libraries. The GNU build ID hashes the unstripped library,
         // whose debug info holds the checkout's path, so two clones (ours, F-Droid's) differed
         // only in it. RN adds its own CMake arguments without replacing this one.

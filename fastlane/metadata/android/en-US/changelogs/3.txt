@@ -1,0 +1,1 @@
+Fixes: the APK no longer carries an encrypted dependency list that only Google Play can read, so F-Droid can publish it. No other changes from 1.0.1.
