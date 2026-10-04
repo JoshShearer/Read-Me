@@ -40,8 +40,10 @@ export type NativePosition = { paragraphIndex: number; charOffset: number };
 
 // The service's state. paragraphIndex is -1 when there is no current sentence. engine is
 // 'unknown' until a service has started, then 'pending', 'ready', 'no-engine' or 'no-voice'.
+// waitingItemId is the item of a play request held while the engine starts (REA-35), else null.
 export type NativePlayback = {
   itemId: number | null;
+  waitingItemId: number | null;
   playing: boolean;
   paragraphIndex: number;
   start: number;

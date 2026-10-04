@@ -10,6 +10,7 @@ import io.loopstring.readme.bridge.TokenClipboard
 import io.loopstring.readme.fetch.FetchWorker
 import io.loopstring.readme.playback.BridgeStatus
 import io.loopstring.readme.playback.EngineProbe
+import io.loopstring.readme.playback.EnginePolicy
 import io.loopstring.readme.playback.TtsOpen
 import io.loopstring.readme.playback.VoiceLabels
 import io.loopstring.readme.playback.PlaybackCommands
@@ -181,6 +182,8 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     putInt("end", sentence?.end ?: 0)
     putDouble("rate", Math.round(rate * 10) / 10.0)
     putString("engine", PlaybackHub.engine)
+    val waiting = waitingItemId
+    if (waiting == null) putNull("waitingItemId") else putDouble("waitingItemId", waiting.toDouble())
   }
 
   override fun setCuts(id: Double, indices: ReadableArray, promise: Promise) = settle(promise) {
@@ -193,9 +196,10 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   override fun getEngine(promise: Promise) {
     try {
       EngineProbe.start(reactApplicationContext, settings.voice) { r ->
-        PlaybackHub.engine = r.status
+        val answer = EnginePolicy.answer(r.status, PlaybackHub.controller != null, PlaybackHub.engine)
+        if (answer.write) PlaybackHub.engine = answer.status
         promise.resolve(Arguments.createMap().apply {
-          putString("status", r.status)
+          putString("status", answer.status)
           putArray("voices", Arguments.createArray().apply {
             val labels = VoiceLabels.of(r.voices)
             r.voices.forEach { v ->

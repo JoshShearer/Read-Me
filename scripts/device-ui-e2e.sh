@@ -4,7 +4,8 @@
 # the list shows both with their R-M10 states; opening the text goes to Trim (first open);
 # cutting paragraph 2 and Done goes to the Reader, which plays only the kept sentences and
 # highlights the current one; back to the list shows progress; the dead link is deleted;
-# Settings lists a voice and Licenses lists packages. Checks logs for text and crashes.
+# Settings lists a voice and Licenses lists packages. Then REA-35's cold start: a rate tap and
+# a cut made while the engine starts, and a cut while playing. Checks logs for text and crashes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
@@ -212,8 +213,124 @@ if [ -n "$next_at" ]; then
   [ "${px:-0}" -gt 1000 ] || { echo "FAIL: deep in a long paragraph the highlight is off screen ($px px)"; fail=1; }
 fi
 
+# Cold start (REA-35): while the engine starts, the service holds Play with no item loaded. A
+# rate tap then dropped the Play, and a cut made then was not applied. The phone's default
+# engine is force-stopped, never changed (TtsOpen binds the system's engine from Android 14).
+# The service must be new, so Read Me is force-stopped too: only a new service's speaker is
+# still pending. Each tap sequence goes to the phone as one adb shell script so it lands inside
+# the window, which is measured from a marker logged just before the Play tap.
+engine=$(adb shell settings get secure tts_default_synth | tr -d '\r')
+count() { logs | grep -cE -- "$1" || true; }
+last_start() { logs | grep 'playback start item=' | tail -1 || true; }
+# at <tag> <ERE>: epoch seconds of the last matching line in that tag, or nothing.
+at() { adb logcat -d -v epoch -s "$1:I" | grep -E -- "$2" | tail -1 | awk '{print $1}' || true; }
+ms() { awk -v a="$1" -v b="$2" 'BEGIN { if (a == "" || b == "") print "?"; else printf "%d", (b - a) * 1000 }'; }
+open_cold() {
+  adb shell am force-stop "$PKG"
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+  tap_node text 'Echo one is here[^"]*'
+  on_screen 'content-desc="play"' || fail=1
+  # The Reader probes the engine on open, which binds it; let that finish before stopping it.
+  sleep 5
+}
+# The window, and whether the step reached the cold start ("reached"): the service logged
+# `playback waiting` after the Play tap (it held the Play for the engine), and the last tap
+# landed before the first start after the Play tap. A cut that lands once reading has begun
+# comes after that first start, so it cannot pass as a cut made during the cold start.
+window() {
+  local play tapped held start
+  play=$(at ReadMeE2E rea35-play); tapped=$(at ReadMeE2E rea35-tapped)
+  held=$(at ReadMe 'playback waiting item=')
+  start=$(adb logcat -d -v epoch -s ReadMe:I | grep 'playback start item=' | awk -v p="${play:-0}" '$1 >= p { print $1; exit }' || true)
+  echo "cold start ($1): $(ms "$play" "$start") ms from the Play tap to playback start; the last tap at $(ms "$play" "$tapped") ms; held at $(ms "$play" "$held") ms"
+  [ "$(ms "$play" "$held")" != "?" ] && [ "$(ms "$play" "$held")" -ge 0 ] \
+    && [ "$(ms "$tapped" "$start")" != "?" ] && [ "$(ms "$tapped" "$start")" -ge 0 ]
+}
+sentences() { sed -nE 's/.* sentences=([0-9]+) .*/\1/p' <<<"$1"; }
+if [ -z "$engine" ] || [ "$engine" = null ]; then
+  echo "cold start (REA-35): NOT RUN (no default engine in settings)"
+else
+  # Three paragraphs of ten sentences: Echo, Foxtrot, Golf.
+  three=""
+  for name in Echo Foxtrot Golf; do
+    para=""; for w in "${words[@]}"; do para+="$name $w is here. "; done
+    three+="${para% }"$'\n\n'
+  done
+  share "${three%$'\n\n'}"
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+  tap_node text 'Echo one is here[^"]*'
+  on_screen 'content-desc="trim done"' || fail=1
+  tap_node content-desc 'trim done'
+  on_screen 'content-desc="play"' || fail=1
+  sleep 3 # the Reader settles (it cannot be dumped while it updates)
+  play_at=$(centre_of play); faster_at=$(centre_of faster); trim_at=$(centre_of trim)
+  tap_node content-desc trim
+  on_screen 'content-desc="trim done"' || fail=1
+  p1_at=$(centre_of 'paragraph 1'); done_at=$(centre_of 'trim done')
+  tap_node content-desc 'trim done'
+  if [ -z "$play_at" ] || [ -z "$faster_at" ] || [ -z "$trim_at" ] || [ -z "$p1_at" ] || [ -z "$done_at" ]; then
+    echo "FAIL: cold start (REA-35): a control was not found on screen"; fail=1
+  else
+    # (a) Play, then faster, during the cold start: Play must go on, at the new rate.
+    n=$(count 'playback start item=')
+    open_cold
+    printf '%s\n' "am force-stop $engine" "log -t ReadMeE2E rea35-play" "input tap $play_at" \
+      "input tap $faster_at" "log -t ReadMeE2E rea35-tapped" | adb shell >/dev/null
+    for _ in $(seq 20); do [ "$(count 'playback start item=')" -gt "$n" ] && break; sleep 1; done
+    if [ "$(count 'playback start item=')" -le "$n" ]; then
+      echo "FAIL: cold start (a): a rate tap while the engine started dropped Play (no playback start in 20 s)"; fail=1
+    elif window a; then
+      device_has "$(last_start)" ' rate=2\.1$' || { echo "FAIL: cold start (a): Play did not start at the new rate"; fail=1; }
+    else
+      echo "cold start (a): NOT REACHED (the engine was up before the rate tap landed)"
+    fi
+    # Pause near the start, so the position stays in paragraph 1.
+    n=$(count 'playback paused item=')
+    adb shell input tap $play_at
+    for _ in $(seq 10); do [ "$(count 'playback paused item=')" -gt "$n" ] && break; sleep 1; done
+
+    # (b) Play, then cut paragraph 1, during the cold start: the start reads only what is kept.
+    n=$(count 'playback start item=')
+    open_cold
+    printf '%s\n' "am force-stop $engine" "log -t ReadMeE2E rea35-play" "input tap $play_at" \
+      "input tap $trim_at" "sleep 0.7" "input tap $p1_at" "input tap $done_at" \
+      "log -t ReadMeE2E rea35-tapped" | adb shell >/dev/null
+    for _ in $(seq 20); do [ "$(count 'playback start item=')" -gt "$n" ] && break; sleep 1; done
+    sleep 3 # a replacing start, if the engine came up between the tap and the new play
+    new=$(( $(count 'playback start item=') - n ))
+    if [ "$new" -le 0 ]; then
+      echo "FAIL: cold start (b): no playback start in 20 s"; fail=1
+    elif window b; then
+      got=$(sentences "$(last_start)")
+      echo "cold start (b): $new start line(s), the last with sentences=$got"
+      [ "$got" = 20 ] || { echo "FAIL: cold start (b): the cut made while the engine started was not applied"; fail=1; }
+    else
+      echo "cold start (b): NOT REACHED (the engine was up before the cut landed)"
+    fi
+
+    # (c) A cut of the current paragraph while playing: a new start with fewer sentences.
+    sleep 2
+    before=$(sentences "$(last_start)")
+    n=$(count 'playback start item=')
+    tap_node content-desc trim
+    on_screen 'content-desc="trim done"' || fail=1
+    tap_node content-desc 'paragraph 2'
+    on_screen 'content-desc="paragraph 2 cut"' || fail=1
+    tap_node content-desc 'trim done'
+    for _ in $(seq 15); do [ "$(count 'playback start item=')" -gt "$n" ] && break; sleep 1; done
+    after=$(sentences "$(last_start)")
+    echo "cut while playing: sentences=$before before, sentences=$after after"
+    if [ "$(count 'playback start item=')" -le "$n" ] || [ -z "$before" ] || [ -z "$after" ] || [ "$after" -ge "$before" ]; then
+      echo "FAIL: cutting the current paragraph while playing did not re-plan with fewer sentences"; fail=1
+    fi
+    # Pause what still plays (the Reader cannot be dumped while it updates, so ask the log).
+    state=$(logs | grep -E 'playback (start|resumed|paused|finished) ' | tail -1 || true)
+    if device_has "$state" 'playback (start|resumed) '; then adb shell input tap $play_at; fi
+  fi
+fi
+
 all=$(adb logcat -d)
-if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|nothing-here'; then
+if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|Echo one|Foxtrot one|Golf one|nothing-here'; then
   echo "FAIL: a log line carries shared text or a URL path"; fail=1
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)

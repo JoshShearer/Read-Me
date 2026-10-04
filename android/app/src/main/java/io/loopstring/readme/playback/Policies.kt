@@ -193,6 +193,21 @@ object ServiceText {
 }
 
 /**
+ * REA-35: what getEngine reports. A live service's engine is the truth while it exists: a probe
+ * (its own short-lived instance, AGENTS.md 13) can time out on a busy engine, and must not show
+ * the blocking card while the service reads aloud, nor overwrite the state the service publishes.
+ */
+object EnginePolicy {
+  data class Answer(val status: String, val write: Boolean)
+
+  fun answer(probe: String, serviceAlive: Boolean, serviceEngine: String): Answer = when {
+    serviceAlive && serviceEngine == "ready" -> Answer("ready", write = false)
+    serviceAlive -> Answer(probe, write = false)
+    else -> Answer(probe, write = true)
+  }
+}
+
+/**
  * REA-18: when playback's engine dies (its process killed or crashed), TextToSpeech does not
  * rebind by itself. The service rebinds once and resumes; a second loss before the user presses
  * Play again leaves playback paused at the saved position.

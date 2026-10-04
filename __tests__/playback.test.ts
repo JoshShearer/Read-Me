@@ -8,7 +8,7 @@ const mockState = {
   resume: true,
   cutAll: false,
   cuts: [] as number[],
-  playback: null as null | { itemId: number | null; playing: boolean },
+  playback: null as null | { itemId: number | null; playing: boolean; waitingItemId?: number | null },
   position: null as null | { paragraphIndex: number; charOffset: number },
 };
 
@@ -34,6 +34,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     getPlayback: jest.fn(async () => ({
       itemId: mockState.playback?.itemId ?? null,
       playing: mockState.playback?.playing ?? false,
+      waitingItemId: mockState.playback?.waitingItemId ?? null,
       paragraphIndex: -1, start: 0, end: 0, rate: 2, engine: 'ready',
     })),
     play: jest.fn(async (id: number, title: string, sentences: NativeSentence[], start: number) => {
@@ -197,6 +198,43 @@ describe('applyCuts', () => {
     serviceHas(1, true);
     await applyCuts(1, new Set([0]));
     expect(mockPlays).toHaveLength(1);
+  });
+
+  test('a cut while the engine starts replaces the waiting play with the cut list', async () => {
+    // REA-35 #4: the service held the Play in `waiting` with no item, applyCuts saw no item and
+    // gave up, and the engine coming up read the uncut list.
+    mockState.playback = { itemId: null, playing: false, waitingItemId: 1 };
+    mockState.cuts = [0];
+    await applyCuts(1, new Set([0]));
+    expect(mockPlays).toHaveLength(1);
+    expect(mockPlays[0].sentences.map(s => s.paragraphIndex)).toEqual([1]);
+    expect(Native.stop).not.toHaveBeenCalled();
+  });
+
+  test('cutting everything while the engine starts cancels the waiting play', async () => {
+    // REA-35 #4: nothing kept, so the waiting request must not be read at all.
+    mockState.playback = { itemId: null, playing: false, waitingItemId: 1 };
+    mockState.cutAll = true;
+    await applyCuts(1, new Set([0, 1]));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test('a cut on another item while one waits for the engine leaves it alone', async () => {
+    // Guard (passes before REA-35).
+    mockState.playback = { itemId: null, playing: false, waitingItemId: 1 };
+    await applyCuts(2, new Set([0]));
+    expect(Native.stop).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+
+  test('a cut on the paused item leaves another item waiting for the engine alone', async () => {
+    // REA-35 critique: item 1 paused, item 3's Play waiting for the engine. Stopping for the cut
+    // on item 1 cancelled item 3's Play, which the user never touched.
+    mockState.playback = { itemId: 1, playing: false, waitingItemId: 3 };
+    await applyCuts(1, new Set([0]));
+    expect(Native.stop).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
   });
 
   test('a cut change on another item leaves playback alone', async () => {

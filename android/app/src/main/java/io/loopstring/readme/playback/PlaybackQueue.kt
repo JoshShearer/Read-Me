@@ -94,6 +94,9 @@ class PlaybackQueue(
   fun setRate(rate: Float) = synchronized(lock) {
     this.rate = rate
     speaker.setRate(rate)
+    // REA-35: with no item an empty snapshot reads as "the item ended", and the service dropped
+    // a play request waiting for the engine. load() takes the rate from Settings.
+    if (itemId == null) return
     if (playing) restartLocked(current) else publishLocked()
   }
 

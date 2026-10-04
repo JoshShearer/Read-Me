@@ -46,7 +46,7 @@ GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): 
 AIRPLANE=1 GAP_MINUTES=10 npm run device:gap   # R-M14 run 2 (the release run): the 10-min measurement in airplane mode, restored on exit
 npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, trims, plays at 2.0x, locks 60 s, waits for the owner's unlock, checks the position held and resumes after a kill (needs network; clears app data)
 npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
-npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses (clears app data)
+npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the default engine: a rate tap and a cut during it, a cut while playing) (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
 npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's way; must print repro: SAME (about 4 min)

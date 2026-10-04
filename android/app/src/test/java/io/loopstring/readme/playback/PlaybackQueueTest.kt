@@ -143,6 +143,14 @@ class PlaybackQueueTest {
     assertEquals(listOf(2.0f, 3.0f), speaker.rates) // never applied twice
   }
 
+  @Test fun aRateChangeWithNoItemPublishesNothing() {
+    // REA-35 #1: an empty snapshot told PlaybackService the item had ended, and it dropped the
+    // play request waiting for a cold engine. The next load reads the rate from Settings.
+    queue.setRate(2.1f)
+    assertTrue(sink.snapshots.isEmpty())
+    assertEquals(2.1f, queue.snapshot().rate)
+  }
+
   @Test fun aRateChangeWhilePlayingFlushesAndRefillsFromTheCurrentSentence() {
     queue.load(7, rows, 0, 2.0f)
     val g = gen(lastId())
