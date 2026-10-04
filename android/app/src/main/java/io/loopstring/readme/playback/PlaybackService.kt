@@ -46,6 +46,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private lateinit var store: Store
   private lateinit var audio: AudioManager
   private lateinit var speaker: TtsSpeaker
+  private var speakerFor: Pair<String?, String?> = null to null
   private lateinit var queue: PlaybackQueue
   private lateinit var session: MediaSession
   private var focusRequest: AudioFocusRequest? = null
@@ -92,6 +93,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     session = MediaSession(this, "ReadMe").apply { setCallback(sessionCallback, main) }
     speaker = TtsSpeaker(this, this, Settings(this).voice)
+    speakerFor = choice()
     queue = PlaybackQueue(speaker, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars())
     PlaybackHub.queue = queue
     PlaybackHub.controller = ::handle
@@ -154,7 +156,21 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
 
   // --- requests and controls ---
 
+  /** The engine and voice Settings asks for; the speaker is rebuilt when they change. */
+  private fun choice(): Pair<String?, String?> = Settings(this).let { it.engine to it.voice }
+
   private fun begin(r: PlaybackHub.Request) {
+    // A voice or engine chosen in Settings since this speaker was made applies from this play:
+    // the service can outlive many plays (a paused hold, the bridge), so onCreate is not enough.
+    val wanted = choice()
+    if (wanted != speakerFor && speaker.status != TtsSpeaker.EngineStatus.PENDING && !rebinding) {
+      speaker.shutdown()
+      speaker = TtsSpeaker(this, this, wanted.second)
+      speakerFor = wanted
+      queue.swapSpeaker(speaker)
+      waiting = r
+      return
+    }
     when (speaker.status) {
       TtsSpeaker.EngineStatus.PENDING -> waiting = r
       TtsSpeaker.EngineStatus.READY -> load(r)
@@ -335,7 +351,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     resumeAfterRebind = true
     Log.i(TAG, "playback engine lost; rebinding")
     speaker.shutdown()
-    speaker = TtsSpeaker(this, this, Settings(this).voice)
+    speakerFor = choice()
+    speaker = TtsSpeaker(this, this, speakerFor.second)
     queue.swapSpeaker(speaker)
   }
 

@@ -130,6 +130,18 @@ export type Engine = NativeEngine;
 
 export const getEngine = (): Promise<Engine> => Native.getEngine();
 export const setVoice = (name: string | null) => Native.setVoice(name);
+/** Below Android 14 only; clears the voice, since a voice belongs to its engine. */
+export const setEngine = (pkg: string | null) => Native.setEngine(pkg);
+
+export const NO_ENGINE: Engine = {
+  status: 'no-engine',
+  voices: [],
+  selected: null,
+  engine: null,
+  engineLabel: null,
+  choosable: false,
+  engines: [],
+};
 export const getNotices = () => Native.getNotices();
 
 /** R-M06 / R-M10: no engine bound, or no offline voice. */

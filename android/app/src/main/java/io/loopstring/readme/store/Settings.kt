@@ -40,6 +40,16 @@ class Settings(context: Context) {
       prefs.edit().apply { if (value == null) remove(KEY_VOICE) else putString(KEY_VOICE, value) }.apply()
     }
 
+  /**
+   * The engine package chosen in Settings, below Android 14 only; null means Android's default.
+   * Android 14 and later always use the system's engine (TtsOpen).
+   */
+  var engine: String?
+    get() = prefs.getString(KEY_ENGINE, null)
+    set(value) {
+      prefs.edit().apply { if (value == null) remove(KEY_ENGINE) else putString(KEY_ENGINE, value) }.apply()
+    }
+
   /** R-M12: the bridge runs only while this is true. */
   var bridgeEnabled: Boolean
     get() = prefs.getBoolean(KEY_BRIDGE, false)
@@ -70,6 +80,7 @@ class Settings(context: Context) {
     const val BRIDGE_PORT_MAX = 65535
     private const val KEY_RATE = "rate"
     private const val KEY_VOICE = "voice"
+    private const val KEY_ENGINE = "engine"
     private const val KEY_BRIDGE = "bridge"
     private const val KEY_BRIDGE_PORT = "bridgePort"
     private const val KEY_BRIDGE_TOKEN = "bridgeToken"

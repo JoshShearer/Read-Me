@@ -149,6 +149,17 @@ describe('Select', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  // REA-32: an engine Android will not bind stays listed, with its reason, but cannot be picked.
+  test('a disabled option is listed, marked disabled and cannot be picked', () => {
+    const onChange = jest.fn();
+    const opts = [...options, { value: 'c', label: 'Marmalade', detail: 'Needs Android 14 or later', disabled: true }];
+    const r = render(<Select name="engine" title="Engine" options={opts} value="a-local" onChange={onChange} />);
+    ReactTestRenderer.act(() => byLabel(r, 'engine').props.onPress());
+    const c = byLabel(r, 'engine c');
+    expect(c.props.accessibilityState).toEqual({ checked: false, disabled: true });
+    expect(c.props.disabled).toBe(true);
+  });
+
   test('with no current value the field shows the placeholder', () => {
     const r = render(<Select name="voice" title="Voice" options={options} value={null} placeholder="System default" onChange={() => {}} />);
     expect(byLabel(r, 'voice').props.accessibilityValue).toEqual({ text: 'System default' });

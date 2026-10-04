@@ -5,7 +5,15 @@ import type { NativeItem } from '../src/native/NativeReadMeSpeech';
 const mockState = {
   items: [] as NativeItem[],
   detail: null as unknown,
-  engine: { status: 'ready', voices: [] as unknown[], selected: null as string | null },
+  engine: {
+    status: 'ready',
+    voices: [] as unknown[],
+    selected: null as string | null,
+    engine: null as string | null,
+    engineLabel: null as string | null,
+    choosable: false,
+    engines: [] as unknown[],
+  },
   bridge: { enabled: false, state: 'off', port: 8787, token: null as string | null, error: null as string | null },
 };
 const base: NativeItem = {
@@ -89,7 +97,7 @@ async function render(el: React.ReactElement) {
 beforeEach(() => {
   mockState.items = [];
   mockState.detail = null;
-  mockState.engine = { status: 'ready', voices: [], selected: null };
+  mockState.engine = { status: 'ready', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
   mockState.bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
 });
 
@@ -171,7 +179,7 @@ test('Reader with every paragraph cut offers Trim (Review Focus 3)', async () =>
 
 test('Reader blocks when the engine has no offline voice (Review Focus 4)', async () => {
   mockState.detail = text(['One.']);
-  mockState.engine = { status: 'no-voice', voices: [], selected: null };
+  mockState.engine = { status: 'no-voice', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
   const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
   expect(out).toContain('no offline text-to-speech voice');
   expect(out).toContain('Open text-to-speech settings');
@@ -208,12 +216,18 @@ test('Reader disables sentence controls until its item is the one the service ho
 test('Settings lists offline voices, the default rate and storage', async () => {
   mockState.engine = {
     status: 'ready',
-    voices: [{ name: 'en-us-x-a-local', language: 'en', quality: 400 }],
+    voices: [{ name: 'en-us-x-a-local', language: 'en', quality: 400, label: 'English (United States)', detail: 'High quality' }],
     selected: 'en-us-x-a-local',
+    engine: 'com.google.android.tts',
+    engineLabel: 'Speech Services by Google',
+    choosable: false,
+    engines: [],
   };
   mockState.items = [base, { ...base, id: 2, archivedAt: 3 }];
   const out = await render(<SettingsScreen onLicenses={() => {}} />);
-  expect(out).toContain('en-us-x-a-local');
+  // REA-32: the voice reads as its language, not its engine's id.
+  expect(out).toContain('English (United States)');
+  expect(out).toContain('High quality');
   // REA-28: the voice is a Select, not one row per voice.
   expect(out).toContain('"voice"');
   expect(out).toContain('2.0x');
@@ -392,7 +406,7 @@ describe('theme on the screens (REA-24)', () => {
 
   test('cards and the bridge row sit on surfaceContainerLow with an outlineVariant border', async () => {
     mockState.detail = text(['One.']);
-    mockState.engine = { status: 'no-voice', voices: [], selected: null };
+    mockState.engine = { status: 'no-voice', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
     const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
     const card = r.root.findAll(n => n.type === RN.View && flat(n.props.style).borderWidth === 1)[0];
     expect(flat(card.props.style)).toMatchObject({ backgroundColor: p.surfaceContainerLow, borderColor: p.outlineVariant });

@@ -11,15 +11,17 @@
 // each option is a radio with a checked state, labelled "<name> <value>" so the device
 // scripts can find one by its value.
 //
-// The field shows no title of its own: the screen's section heading names it, and a second
-// "Voice" inside the box read as a stutter on the phone.
+// The field is a Material 3 filled field: its own small label ("Engine", "Voice") over the
+// current option and that option's detail, on a tonal surface, so two fields under one section
+// heading read as two settings. An option can be disabled (an engine Android will not bind):
+// it stays listed, faint, with its reason as the detail, and cannot be picked.
 import React, { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 import { palette, type } from './theme';
 
-export type Option = { value: string; label: string; detail?: string };
+export type Option = { value: string; label: string; detail?: string; disabled?: boolean };
 
 // Every option row is this tall, so the list can open scrolled to the current option.
 const ROW = 64;
@@ -35,7 +37,7 @@ export function Select({
 }: {
   /** Lower-case accessibility name; also the prefix of each option's label. */
   name: string;
-  /** The heading of the sheet. */
+  /** The field's label and the heading of the sheet. */
   title: string;
   options: readonly Option[];
   value: string | null;
@@ -65,10 +67,16 @@ export function Select({
         accessibilityState={{ expanded: open, disabled }}
         disabled={disabled}
         onPress={() => setOpen(true)}
-        style={[s.field, { borderColor: disabled ? p.outlineVariant : p.outline }]}>
+        style={({ pressed }) => [
+          s.field,
+          { backgroundColor: pressed ? p.surfaceContainerHigh : p.surfaceContainerLow, borderColor: open ? p.primary : p.outlineVariant },
+        ]}>
         <View collapsable={false} style={s.fieldText}>
-          <Text tone={disabled ? 'secondary' : 'body'} numberOfLines={1}>{current?.label ?? placeholder}</Text>
-          {current?.detail ? <Text tone="secondary" style={s.small}>{current.detail}</Text> : null}
+          <Text tone="secondary" style={s.label}>{title}</Text>
+          <Text tone={disabled ? 'secondary' : 'body'} numberOfLines={1} style={s.value}>
+            {current?.label ?? placeholder}
+          </Text>
+          {current?.detail ? <Text tone="secondary" numberOfLines={1} style={s.small}>{current.detail}</Text> : null}
         </View>
         <Text tone="secondary" style={s.chevron}>{'▾︎'}</Text>
       </Pressable>
@@ -98,24 +106,33 @@ export function Select({
               getItemLayout={(_, i) => ({ length: ROW, offset: ROW * i, index: i })}
               renderItem={({ item: o }) => {
                 const on = o.value === value;
+                const ink = on ? { color: p.onSecondaryContainer } : null;
                 return (
                   <Pressable
                     accessibilityRole="radio"
                     accessibilityLabel={`${name} ${o.value}`}
-                    accessibilityState={{ checked: on }}
+                    accessibilityState={o.disabled ? { checked: on, disabled: true } : { checked: on }}
+                    disabled={o.disabled}
                     onPress={() => pick(o.value)}
-                    style={[s.option, on ? { backgroundColor: p.secondaryContainer } : null]}>
+                    style={({ pressed }) => [
+                      s.option,
+                      on ? { backgroundColor: p.secondaryContainer } : pressed ? { backgroundColor: p.surfaceContainerHigh } : null,
+                    ]}>
+                    <View
+                      collapsable={false}
+                      style={[s.radio, { borderColor: on ? p.onSecondaryContainer : o.disabled ? p.outlineVariant : p.outline }]}>
+                      {on ? <View collapsable={false} style={[s.dot, { backgroundColor: p.onSecondaryContainer }]} /> : null}
+                    </View>
                     <View collapsable={false} style={s.fieldText}>
-                      <Text numberOfLines={1} style={on ? { color: p.onSecondaryContainer } : null}>
+                      <Text numberOfLines={1} tone={o.disabled ? 'disabled' : 'body'} style={[s.value, ink]}>
                         {o.label}
                       </Text>
                       {o.detail ? (
-                        <Text tone="secondary" style={[s.small, on ? { color: p.onSecondaryContainer } : null]}>
+                        <Text numberOfLines={1} tone={o.disabled ? 'disabled' : 'secondary'} style={[s.small, ink]}>
                           {o.detail}
                         </Text>
                       ) : null}
                     </View>
-                    {on ? <Text style={[s.check, { color: p.onSecondaryContainer }]}>{'✓︎'}</Text> : null}
                   </Pressable>
                 );
               }}
@@ -131,20 +148,32 @@ const s = StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    minHeight: 64,
+    paddingLeft: 16,
+    paddingRight: 12,
+    paddingVertical: 10,
     borderWidth: 1,
-    borderRadius: 4,
+    borderRadius: 16,
     gap: 12,
   },
   fieldText: { flex: 1 },
+  label: { ...type.xs, letterSpacing: 0.4 },
+  value: { ...type.base, fontWeight: '500' },
   small: type.sm,
   chevron: type.lg,
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { maxHeight: '70%', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 8 },
   handle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, marginBottom: 8 },
   title: { ...type.lg, fontWeight: '600', paddingHorizontal: 24, paddingVertical: 12 },
-  option: { height: ROW, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, gap: 12 },
-  check: type.lg,
+  option: {
+    height: ROW,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    gap: 16,
+  },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 10, height: 10, borderRadius: 5 },
 });

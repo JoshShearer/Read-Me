@@ -1,6 +1,7 @@
 package io.loopstring.readme.playback
 
 import android.media.AudioManager
+import java.util.Locale
 
 /** A TextToSpeech Voice reduced to what the choice needs, so the rule is testable. */
 data class VoiceInfo(
@@ -9,6 +10,8 @@ data class VoiceInfo(
   val networkRequired: Boolean,
   val notInstalled: Boolean,
   val quality: Int,
+  /** The full locale as a BCP 47 tag ("en-US"); [language] is only its language part. */
+  val tag: String = language,
 )
 
 /**
@@ -28,11 +31,74 @@ object VoicePicker {
   }
 }
 
-/** Settings' voice list: offline, installed voices; the default's language first, then quality. */
+/**
+ * Settings' voice list: offline, installed voices, each name once (iFlytek on the Huawei tablet
+ * listed "en" twice, 2026-10-03); the default's language first, then quality.
+ */
 object VoiceList {
   fun usable(voices: List<VoiceInfo>, language: String): List<VoiceInfo> =
     voices.filter(VoicePicker::usable)
+      .distinctBy { it.name }
       .sortedWith(compareBy<VoiceInfo>({ it.language != language }, { -it.quality }, { it.name }))
+}
+
+/**
+ * What Settings shows for a voice. Engines name voices for machines: iFlytek's are bare language
+ * codes ("en", "agq") and Google's are like "en-us-x-sfg-local", so a name that looks like a
+ * locale is replaced by the locale's name in the phone's language ("English (United States)").
+ * A name a person gave (Marmalade's, say) is kept, without a model prefix, with the language as its detail. Voices that
+ * would read the same are numbered, in name order.
+ */
+object VoiceLabels {
+  data class Label(val label: String, val detail: String)
+
+  private val MACHINE = Regex("^[a-z]{2,3}([-_][A-Za-z0-9_#-]*)?$")
+
+  fun of(voices: List<VoiceInfo>, display: Locale = Locale.getDefault()): Map<String, Label> {
+    // Language and country only: iFlytek's English voice carried a script that read as
+    // "English (Zawgyi)" on the Huawei tablet (2026-10-03).
+    fun language(v: VoiceInfo): String {
+      val l = Locale.forLanguageTag(v.tag.replace('_', '-'))
+      return Locale(l.language, l.country).getDisplayName(display).ifEmpty { v.tag }
+    }
+    // A quality every voice shares says nothing, so it is shown only when voices differ.
+    val qualities = voices.map { it.quality }.distinct().size > 1
+    val base = voices.associate { v ->
+      v.name to if (MACHINE.matches(v.name)) Label(language(v), if (qualities) quality(v.quality) else "") else Label(spoken(v.name), language(v))
+    }
+    val out = HashMap<String, Label>()
+    voices.groupBy { base.getValue(it.name).label }.forEach { (_, same) ->
+      if (same.size == 1) {
+        out[same[0].name] = base.getValue(same[0].name)
+      } else {
+        same.sortedBy { it.name }.forEachIndexed { i, v ->
+          val b = base.getValue(v.name)
+          val rest = if (b.detail.isEmpty()) "" else ", ${b.detail.replaceFirstChar { it.lowercase(display) }}"
+          out[v.name] = Label(b.label, "${speaker(v.name) ?: "Voice ${i + 1}"}$rest")
+        }
+      }
+    }
+    return out
+  }
+
+  // Supertonic names its voices "en-supertonic-F1" .. "-M5" (reference device, 2026-10-03).
+  private val SPEAKER = Regex("[-_]([FfMm])(\\d{1,2})$")
+
+  /** Marmalade prefixes its model: "kitten-direct-v0_8:Bruno" reads as "Bruno" (reference device, 2026-10-03). */
+  fun spoken(name: String): String = name.substringAfterLast(':').trim().ifEmpty { name }
+
+  /** "Female 1" for a name ending in F1, "Male 2" for M2; null otherwise. */
+  fun speaker(name: String): String? = SPEAKER.find(name)?.let { m ->
+    (if (m.groupValues[1].equals("F", ignoreCase = true)) "Female " else "Male ") + m.groupValues[2]
+  }
+
+  fun quality(q: Int): String = when {
+    q >= 500 -> "Very high quality"
+    q >= 400 -> "High quality"
+    q >= 300 -> "Normal quality"
+    q >= 200 -> "Low quality"
+    else -> "Very low quality"
+  }
 }
 
 enum class FocusAction { PAUSE, PAUSE_TRANSIENT, RESUME, NONE }

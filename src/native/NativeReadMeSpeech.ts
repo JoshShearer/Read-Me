@@ -50,13 +50,23 @@ export type NativePlayback = {
   engine: string;
 };
 
-export type NativeVoice = { name: string; language: string; quality: number };
+// label and detail are for people ("English (United States)", "High quality"); name is the id.
+export type NativeVoice = { name: string; language: string; quality: number; label: string; detail: string };
+
+// An installed engine; usable is false where Android refuses to bind it (REA-32).
+export type NativeEngineChoice = { id: string; label: string; usable: boolean };
 
 // R-M06: status 'ready', 'no-engine' or 'no-voice'; voices are offline and installed only.
+// engine is the package bound. choosable is true below Android 14, where engines lists every
+// installed engine and Settings offers them; from Android 14 the system's engine is used.
 export type NativeEngine = {
   status: string;
   voices: NativeVoice[];
   selected: string | null;
+  engine: string | null;
+  engineLabel: string | null;
+  choosable: boolean;
+  engines: NativeEngineChoice[];
 };
 
 // R-M12: state is 'off', 'starting', 'on' or 'failed'; error is an exception class name
@@ -106,6 +116,7 @@ export interface Spec extends TurboModule {
   stop(): Promise<boolean>;
   getEngine(): Promise<NativeEngine>;
   setVoice(name: string | null): Promise<void>;
+  setEngine(pkg: string | null): Promise<void>;
   getNotices(): Promise<string>;
   getBridge(): Promise<NativeBridge>;
   setBridgeEnabled(enabled: boolean): Promise<NativeBridge>;
