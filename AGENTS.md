@@ -285,6 +285,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   Run 1's share is the intent a browser sends, sent by adb.
   `device:playback` gaps n=26 p50=12 p95=17. Not established: an F-Droid build server run,
   and whether F-Droid accepts the prebuilt `react-android`/`hermes-android` AARs (SPIKE-04).
+  Published 2026-10-03T18:59:38Z as v1.0.0, tag at d3edc19, assets `read-me-1.0.0.apk` and
+  `SHA256SUMS` (`gh release view`). main since then carries unreleased REA-30 (shared .md/.txt),
+  REA-28 (UI controls), REA-32 and REA-33 (engine choice, voice change), so a new release is
+  needed before they reach users.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
@@ -311,7 +315,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 - **Identifiers:** application id `io.loopstring.readme` (`$PKG`), launcher
   `io.loopstring.readme/.MainActivity`, JS component `ReadMe`. Log tags: `ReadMe` for native code,
   `ReactNativeJS` for the JS console, `ReadMeSpike` on spike branches only (see `CONTEXT.md`).
-- **The GitHub repo is private** (`JoshShearer/Read-Me`); it must be public before F-Droid.
+- **The GitHub repo is public** (`JoshShearer/Read-Me`; `gh repo view`, 2026-10-04). The F-Droid
+  submission has not been made.
 
 ## Style
 

@@ -80,7 +80,7 @@ Each claim is checked by a command, not by memory:
 | The intended gate list | Every command in the block must exist (`npm run`, `ls`). A listed gate that does not exist after the scaffold is drift (rule 18) |
 | "Six spikes ... None has run" | Read `srs.md` "Spikes" for recorded answers; `git log --oneline --grep=SPIKE` |
 | Build toolchain lines | `ls ~/Android/Sdk/build-tools`, `cat ~/Android/tools/jdk-path.txt`; re-verify before keeping a version number |
-| "The GitHub repo is private" | `gh repo view --json visibility` |
+| "The GitHub repo is public" and the release state | `gh repo view --json visibility`; `gh release view v<ver> --json isDraft,targetCommitish` |
 | Any reproduced defect listed | Reproduce it, on the phone if it is a device behaviour (rule 16) |
 
 A false entry gets **removed** or rewritten to what is now true. A partially true one gets
