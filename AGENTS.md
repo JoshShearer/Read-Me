@@ -48,6 +48,7 @@ npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, tr
 npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
 npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins com.google.android.tts as the default engine and restores the previous one on exit; the cold-start section uses the previous default instead (Google TTS restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
+npm run device:settings   # REA-27 guard: bridge on, then LOOPS (default 20) x List to Settings, alternating with Reader, Home and /health; fails on a missing bridge control, stuck "Checking...", viewState error, crash, or token/item text in logcat (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
 npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's way; must print repro: SAME (about 4 min)
 npm run release:keystore  # the owner, once: creates the release key interactively (docs/release.md)
@@ -215,7 +216,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   mid-mount: in 2 of 3 `device:themes` runs (REA-28, 2026-10-03) "Checking..." stayed, the
   bridge panel was blank and its heading drew over its description, which matches REA-27. Since
   f4493c9 both are there from the first frame, disabled while loading; 2 of 2 runs passed after.
-  REA-27 is likely this, but 2 runs do not close it.
+  REA-27 is likely this, but 2 runs do not close it. Those 2 runs had the bridge off; with it on,
+  REA-27 was not reproduced: `LOOPS=30 npm run device:settings` on the reference device, build
+  8ddfadf (2026-10-04), 0 of 30 loops failed (15 plain List to Settings, 15 via Reader, Home and
+  /health). Settings is unchanged: the token and notifications-off blocks still mount late.
 - **UI controls (REA-28, PR #22):** `src/ui/Button.tsx` (Button, IconButton), `Select.tsx` (a
   bottom-sheet Modal), `Toggle.tsx`, `Stepper.tsx`, on Pressable and Modal, no dependencies.
   Article words are set in the system serif (`read` in `theme.ts`), controls in sans. Settings'
