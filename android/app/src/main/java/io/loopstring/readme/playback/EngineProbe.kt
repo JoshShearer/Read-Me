@@ -27,7 +27,7 @@ class EngineProbe private constructor(
   // onInit can run inside the constructor when binding fails (SPIKE-05 probe): post it.
   // Null when Android refused the bind (REA-32): onInit then gets ERROR and reports no-engine.
   private val tts: TextToSpeech? =
-    TtsOpen.open(main, { TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } } }) { onInit(it) }
+    TtsOpen.open(main, { TextToSpeech(context.applicationContext, { s -> main.post { onInit(s) } }, TtsOpen.engine(context)) }) { onInit(it) }
 
   init {
     main.postDelayed(timeout, TIMEOUT_MS)

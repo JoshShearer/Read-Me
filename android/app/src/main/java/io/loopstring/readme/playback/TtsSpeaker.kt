@@ -36,7 +36,7 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
   // `tts` is assigned (SPIKE-05 probe). Posting defers every use of `tts` until it exists.
   // Null when Android refused the bind (REA-32): onInit then gets ERROR and status is NO_ENGINE.
   private val tts: TextToSpeech? =
-    TtsOpen.open(main, { TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } } }) { onInit(it) }
+    TtsOpen.open(main, { TextToSpeech(context.applicationContext, { s -> main.post { onInit(s) } }, TtsOpen.engine(context)) }) { onInit(it) }
 
   private fun onInit(result: Int) {
     val tts = tts

@@ -75,8 +75,9 @@ class TtsSynth(
 
     // onInit can run inside the constructor before `tts` is assigned (SPIKE-05): defer it.
     // Null when Android refused the bind (REA-32): onInit then gets ERROR, so NO_ENGINE.
+    private val requested = pin?.engine ?: TtsOpen.engine(app)
     val tts: TextToSpeech? =
-      TtsOpen.open(main, { TextToSpeech(app, { s -> main.post { onInit(s) } }, pin?.engine) }) { onInit(it) }
+      TtsOpen.open(main, { TextToSpeech(app, { s -> main.post { onInit(s) } }, requested) }) { onInit(it) }
 
     private fun onInit(result: Int) {
       status = choose(result)
@@ -86,7 +87,8 @@ class TtsSynth(
     private fun choose(result: Int): TtsSpeaker.EngineStatus {
       val tts = tts
       if (result != TextToSpeech.SUCCESS || tts == null) return TtsSpeaker.EngineStatus.NO_ENGINE
-      name = runCatching { tts.defaultEngine }.getOrNull() ?: "unknown"
+      // The engine actually bound: with a fall-back (REA-32) it is not the default.
+      name = requested ?: runCatching { tts.defaultEngine }.getOrNull() ?: "unknown"
       val v = if (pin == null) TtsSpeaker.chooseVoice(tts, preferredVoice) else pinned(pin)
       if (v == null || tts.setVoice(v) != TextToSpeech.SUCCESS) return TtsSpeaker.EngineStatus.NO_VOICE
       voice = v.name
