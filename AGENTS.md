@@ -46,7 +46,7 @@ GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): 
 AIRPLANE=1 GAP_MINUTES=10 npm run device:gap   # R-M14 run 2 (the release run): the 10-min measurement in airplane mode, restored on exit
 npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, trims, plays at 2.0x, locks 60 s, waits for the owner's unlock, checks the position held and resumes after a kill (needs network; clears app data)
 npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
-npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the default engine: a rate tap and a cut during it, a cut while playing) (clears app data)
+npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins com.google.android.tts as the default engine and restores the previous one on exit; the cold-start section uses the previous default instead (Google TTS restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
 npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's way; must print repro: SAME (about 4 min)
@@ -176,6 +176,11 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   failed position save no longer stops reading. `npm run device:lifecycle`, `device:playback`,
   `device:ui`, `device:bridge` passed; `GAP_MINUTES=10 npm run device:gap`: n=92 p50=11
   p95=18 max=29 ms, stalls 0, errors 0.
+  Cold start (REA-35, checked by `device:ui` since REA-37): 2026-10-04, reference device,
+  build b1be02f, Google TTS pinned and Supertonic for the cold-start section: `device:ui` passed
+  twice; Play tap to playback start was 851 and 917 ms in step (a) (rate tap), 964 and 1092 ms
+  in step (b) (cut, sentences=40), and step (c) (cut while playing) went 40 -> 20. With
+  REA-35's applyCuts change reverted (dirty build) step (b) failed, sentences=60.
 - **UI (Phase 4, REA-19):** List (unread / Archive, words, progress, R-M10 states and
   actions), Trim (first open; tap, "Cut everything after this", "Start here"), Reader
   (highlight kept in view, transport, engine card probed on open), Settings (offline voices,
