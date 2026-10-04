@@ -43,4 +43,50 @@ else echo "SKIP: publish success path (no .venv-fdroid apksigcopier)"; fi
 if grep -nE -- '-storepass|-keypass|--ks-pass|--key-pass|storePassword +["'"'"']' scripts/release-*.sh scripts/lib/release.sh android/app/build.gradle | grep -v "'android'"; then
   echo "FAIL: a password on a command line or in the build file"; fail=1
 else echo "ok: no password on a command line"; fi
+# REA-38: release:apk signs only a tested APK that F-Droid's own build matched (npm run fdroid:build).
+echo apk > "$T/tested.apk"
+if RELEASE_VERIFIED_FILE="$T/none" require_fdroid_verified "$T/tested.apk" >/dev/null 2>&1; then
+  echo "FAIL: an APK F-Droid never matched was accepted"; fail=1
+else echo "ok: an APK without an F-Droid match is refused"; fi
+echo "$(sha256sum < "$T/d.apk" | cut -d' ' -f1)  other.apk" > "$T/verified"
+if RELEASE_VERIFIED_FILE="$T/verified" require_fdroid_verified "$T/tested.apk" >/dev/null 2>&1; then
+  echo "FAIL: another APK's match was accepted"; fail=1
+else echo "ok: a match for another APK is refused"; fi
+record_fdroid_verified "$T/tested.apk" "$T/verified"
+RELEASE_VERIFIED_FILE="$T/verified" require_fdroid_verified "$T/tested.apk" >/dev/null \
+  && echo "ok: a recorded match is accepted" || { echo "FAIL: a recorded match was refused"; fail=1; }
+# REA-38: React Native's bundle task never empties its output directories, so a resource from an
+# old build (the template's new-app-screen logos, in v1.0.0) is packaged into every later APK.
+mkdir -p "$T/app/build/generated/res/react/release/drawable-mdpi" "$T/app/build/generated/assets/react/release" "$T/app/build/generated/res/resValues"
+touch "$T/app/build/generated/res/react/release/drawable-mdpi/stale.png" "$T/app/build/generated/assets/react/release/index.android.bundle" "$T/app/build/generated/res/resValues/keep"
+clear_bundle_output "$T/app"
+if [ -e "$T/app/build/generated/res/react" ] || [ -e "$T/app/build/generated/assets/react" ]; then
+  echo "FAIL: stale bundle output survives"; fail=1
+elif [ ! -e "$T/app/build/generated/res/resValues/keep" ]; then echo "FAIL: cleared more than the bundle output"; fail=1
+else echo "ok: the bundle task's old output is cleared, nothing else"; fi
+grep -q 'clear_bundle_output' scripts/build-release.sh && grep -q 'clear_bundle_output' scripts/release-apk.sh \
+  && echo "ok: both release builds clear it" || { echo "FAIL: a release build does not clear the bundle output"; fail=1; }
+grep -q 'require_fdroid_verified "$TESTED"' scripts/release-apk.sh \
+  && echo "ok: release:apk requires F-Droid's match" || { echo "FAIL: release:apk does not require F-Droid's match"; fail=1; }
+# REA-38: F-Droid's build is unsigned; without apksigcopier's --unsigned every F-Droid build reads
+# as different (seen on 51f837a, whose entries were all identical). apksigner re-lays out a zip
+# it signs, so no fixture pair can stand in for AGP's; npm run fdroid:build exercises it.
+grep -q 'apk_same_unsigned "$OURS" "$THEIRS"' scripts/fdroid-build.sh && grep -q 'compare "$@"' scripts/lib/recipe.sh \
+  && grep -q 'apk_same --unsigned' scripts/lib/recipe.sh \
+  && echo "ok: fdroid:build compares an unsigned F-Droid build" || { echo "FAIL: fdroid:build does not pass --unsigned"; fail=1; }
+# REA-38 review: a match holds for the commit F-Droid built. A later commit that changes anything
+# but docs (the recipe, build-hermesc.sh: F-Droid's build only) needs a new fdroid:build.
+LIB=$PWD/scripts/lib/release.sh
+R=$T/repo && mkdir -p "$R/fdroid" "$R/docs" && cd "$R" && git init -q && echo a > fdroid/r.yml && echo a > docs/x.md
+git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm a
+echo apk > "$T/t2.apk"
+( source "$LIB"; record_fdroid_verified "$T/t2.apk" "$T/v2" )
+echo b > docs/x.md && echo note >> README.md && git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm docs
+( source "$LIB"; RELEASE_VERIFIED_FILE="$T/v2" require_fdroid_verified "$T/t2.apk" >/dev/null 2>&1 ) \
+  && echo "ok: a docs-only commit keeps the match" || { echo "FAIL: a docs-only commit lost the match"; fail=1; }
+echo b > fdroid/r.yml && git -c user.email=t@t -c user.name=t commit -qam recipe
+if ( source "$LIB"; RELEASE_VERIFIED_FILE="$T/v2" require_fdroid_verified "$T/t2.apk" >/dev/null 2>&1 ); then
+  echo "FAIL: a recipe change after the match was accepted"; fail=1
+else echo "ok: a recipe change after the match is refused"; fi
+cd - >/dev/null
 exit $fail

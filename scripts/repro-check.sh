@@ -30,16 +30,9 @@ for d in a b/deeper; do
 done
 A=$S/a/android/app/build/outputs/apk/release/app-release.apk
 B=$S/b/deeper/android/app/build/outputs/apk/release/app-release.apk
-same() { PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0:$PATH" .venv-fdroid/bin/apksigcopier compare "$1" "$2" >/dev/null 2>&1; }
-differs() {
-  diff <(unzip -Z1 "$1" | sort) <(unzip -Z1 "$2" | sort) || true
-  for f in $(unzip -Z1 "$1" | grep -v '^META-INF/'); do
-    cmp -s <(unzip -p "$1" "$f") <(unzip -p "$2" "$f") || echo "  differs: $f"
-  done
-}
 fail=0
-if same "$A" "$B"; then echo "repro: SAME ($(stat -c %s "$A") bytes)"; else echo "repro: DIFFERENT"; differs "$A" "$B"; fail=1; fi
+if apk_same "$A" "$B"; then echo "repro: SAME ($(stat -c %s "$A") bytes)"; else echo "repro: DIFFERENT"; apk_differs "$A" "$B"; fail=1; fi
 if [ -n "$OURS" ]; then
-  if same "$A" "$OURS"; then echo "repro: the recipe's build equals $OURS"; else echo "repro: the recipe's build differs from $OURS"; differs "$A" "$OURS"; fail=1; fi
+  if apk_same "$A" "$OURS"; then echo "repro: the recipe's build equals $OURS"; else echo "repro: the recipe's build differs from $OURS"; apk_differs "$A" "$OURS"; fail=1; fi
 fi
 exit $fail

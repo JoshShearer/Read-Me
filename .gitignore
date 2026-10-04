@@ -90,7 +90,7 @@ yarn-error.log
 !.yarn/versions
 
 # fdroidserver venv for scripts/fdroid-scan.sh
-.venv-fdroid/
+.venv-fdroid
 
 # Phase 1 devcheck generated fixtures
 src/devcheck/fixtures.generated.ts
@@ -103,3 +103,4 @@ release/SHA256SUMS
 # Local secrets (never committed)
 .env
 .env.*
+release/fdroid-verified
