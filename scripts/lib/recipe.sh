@@ -37,7 +37,9 @@ PY
 }
 # apk_same <a> <b>: equal apart from signatures (apksigcopier copies a's signature onto b and
 # verifies). apk_differs lists the entries that are not.
-apk_same() { PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0:$PATH" .venv-fdroid/bin/apksigcopier compare "$1" "$2" >/dev/null 2>&1; }
+apk_same() { PATH="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools/37.0.0:$PATH" .venv-fdroid/bin/apksigcopier compare "$@" >/dev/null 2>&1; }
+# apk_same_unsigned <signed> <unsigned>: F-Droid's build output is unsigned (REA-38).
+apk_same_unsigned() { apk_same --unsigned "$1" "$2"; }
 apk_differs() {
   diff <(unzip -Z1 "$1" | sort) <(unzip -Z1 "$2" | sort) || true
   for f in $(unzip -Z1 "$1" | grep -v '^META-INF/'); do

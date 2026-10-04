@@ -37,7 +37,7 @@ docker run --rm -e CI_PROJECT_DIR=/builds/fdroiddata -e ANDROID_HOME=/opt/androi
 THEIRS=$W/fdroiddata/tmp/${APPID}_$VC.apk
 [ -f "$THEIRS" ] || { echo "fdroid:build: no APK from F-Droid's build (log: $LOG)"; exit 1; }
 cp "$THEIRS" ".claude/scratch/fdroid-built-$(git rev-parse --short HEAD).apk"
-if apk_same "$OURS" "$THEIRS"; then
+if apk_same_unsigned "$OURS" "$THEIRS"; then
   mkdir -p release && record_fdroid_verified "$OURS"
   echo "fdroid:build: SAME: F-Droid's build equals $OURS (recorded in release/fdroid-verified)"
 else

@@ -68,4 +68,10 @@ grep -q 'clear_bundle_output' scripts/build-release.sh && grep -q 'clear_bundle_
   && echo "ok: both release builds clear it" || { echo "FAIL: a release build does not clear the bundle output"; fail=1; }
 grep -q 'require_fdroid_verified "$TESTED"' scripts/release-apk.sh \
   && echo "ok: release:apk requires F-Droid's match" || { echo "FAIL: release:apk does not require F-Droid's match"; fail=1; }
+# REA-38: F-Droid's build is unsigned; without apksigcopier's --unsigned every F-Droid build reads
+# as different (seen on 51f837a, whose entries were all identical). apksigner re-lays out a zip
+# it signs, so no fixture pair can stand in for AGP's; npm run fdroid:build exercises it.
+grep -q 'apk_same_unsigned "$OURS" "$THEIRS"' scripts/fdroid-build.sh && grep -q 'compare "$@"' scripts/lib/recipe.sh \
+  && grep -q 'apk_same --unsigned' scripts/lib/recipe.sh \
+  && echo "ok: fdroid:build compares an unsigned F-Droid build" || { echo "FAIL: fdroid:build does not pass --unsigned"; fail=1; }
 exit $fail
