@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import io.loopstring.readme.playback.TtsOpen
 import io.loopstring.readme.playback.TtsSpeaker
 import io.loopstring.readme.playback.VoicePicker
 import java.io.File
@@ -73,7 +74,9 @@ class TtsSynth(
     val settled = CountDownLatch(1)
 
     // onInit can run inside the constructor before `tts` is assigned (SPIKE-05): defer it.
-    val tts = TextToSpeech(app, { s -> main.post { onInit(s) } }, pin?.engine)
+    // Null when Android refused the bind (REA-32): onInit then gets ERROR, so NO_ENGINE.
+    val tts: TextToSpeech? =
+      TtsOpen.open(main, { TextToSpeech(app, { s -> main.post { onInit(s) } }, pin?.engine) }) { onInit(it) }
 
     private fun onInit(result: Int) {
       status = choose(result)
@@ -81,7 +84,8 @@ class TtsSynth(
     }
 
     private fun choose(result: Int): TtsSpeaker.EngineStatus {
-      if (result != TextToSpeech.SUCCESS) return TtsSpeaker.EngineStatus.NO_ENGINE
+      val tts = tts
+      if (result != TextToSpeech.SUCCESS || tts == null) return TtsSpeaker.EngineStatus.NO_ENGINE
       name = runCatching { tts.defaultEngine }.getOrNull() ?: "unknown"
       val v = if (pin == null) TtsSpeaker.chooseVoice(tts, preferredVoice) else pinned(pin)
       if (v == null || tts.setVoice(v) != TextToSpeech.SUCCESS) return TtsSpeaker.EngineStatus.NO_VOICE
@@ -102,16 +106,16 @@ class TtsSynth(
 
     /** Null when this binding does not offer the pinned voice: Android bound another engine. */
     private fun pinned(pin: Pin): Voice? {
-      val voices = runCatching { tts.voices }.getOrNull().orEmpty()
+      val voices = runCatching { tts?.voices }.getOrNull().orEmpty()
       return voices.firstOrNull { it.name == pin.voice && VoicePicker.usable(TtsSpeaker.info(it)) }
     }
 
     /** getVoice goes to the engine; with the binding gone it answers null. */
-    fun alive(): Boolean = runCatching { tts.voice }.getOrNull() != null
+    fun alive(): Boolean = runCatching { tts?.voice }.getOrNull() != null
 
     fun shutdown() {
-      runCatching { tts.stop() }
-      runCatching { tts.shutdown() }
+      runCatching { tts?.stop() }
+      runCatching { tts?.shutdown() }
     }
   }
 
@@ -148,9 +152,9 @@ class TtsSynth(
       wait.await(0)
       return SynthResult.CANCELLED
     }
-    e.tts.setSpeechRate(rate)
+    e.tts?.setSpeechRate(rate)
     // A dead binding refuses at once; that is how the next request after a kill finds out.
-    if (e.tts.synthesizeToFile(text, Bundle(), out, id) != TextToSpeech.SUCCESS) {
+    if (e.tts?.synthesizeToFile(text, Bundle(), out, id) != TextToSpeech.SUCCESS) {
       wait.cancel()
       wait.await(0)
       return if (e.alive()) SynthResult.FAILED else SynthResult.LOST
@@ -158,7 +162,7 @@ class TtsSynth(
     val r = wait.await(TIMEOUT_MS, ALIVE_CHECK_MS) { e.alive() }
     // A cancel can land before the engine took the request; stop it now that it has. A lost
     // engine is stopped too, in case it was not gone after all and is still writing [out].
-    if (r == SynthResult.TIMEOUT || r == SynthResult.CANCELLED || r == SynthResult.LOST) runCatching { e.tts.stop() }
+    if (r == SynthResult.TIMEOUT || r == SynthResult.CANCELLED || r == SynthResult.LOST) runCatching { e.tts?.stop() }
     return if (r == SynthResult.LOST && e.alive()) SynthResult.FAILED else r
   }
 
@@ -210,7 +214,7 @@ class TtsSynth(
   }
 
   override fun cancel() {
-    if (wait.cancel()) current.tts.stop()
+    if (wait.cancel()) current.tts?.stop()
   }
 
   fun shutdown() {

@@ -34,11 +34,14 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
 
   // onInit can run synchronously inside this constructor when the engine fails to bind, before
   // `tts` is assigned (SPIKE-05 probe). Posting defers every use of `tts` until it exists.
-  private val tts = TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } }
+  // Null when Android refused the bind (REA-32): onInit then gets ERROR and status is NO_ENGINE.
+  private val tts: TextToSpeech? =
+    TtsOpen.open(main, { TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } } }) { onInit(it) }
 
   private fun onInit(result: Int) {
-    status = if (result != TextToSpeech.SUCCESS) EngineStatus.NO_ENGINE else chooseVoice()
-    if (status == EngineStatus.READY) {
+    val tts = tts
+    status = if (result != TextToSpeech.SUCCESS || tts == null) EngineStatus.NO_ENGINE else chooseVoice(tts)
+    if (status == EngineStatus.READY && tts != null) {
       tts.setAudioAttributes(ATTRIBUTES)
       tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
         override fun onStart(id: String?) { if (id != null) callbacks.onStart(id) }
@@ -51,27 +54,27 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
     callbacks.onReady(status)
   }
 
-  private fun chooseVoice(): EngineStatus {
+  private fun chooseVoice(tts: TextToSpeech): EngineStatus {
     val voice = chooseVoice(tts, preferredVoice) ?: return EngineStatus.NO_VOICE
     return if (tts.setVoice(voice) == TextToSpeech.SUCCESS) EngineStatus.READY else EngineStatus.NO_VOICE
   }
 
   override fun speak(id: String, text: String): Boolean =
-    tts.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+    tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
 
-  override fun isSpeaking(): Boolean = runCatching { tts.isSpeaking }.getOrDefault(false)
+  override fun isSpeaking(): Boolean = runCatching { tts?.isSpeaking == true }.getOrDefault(false)
 
   override fun stop() {
-    tts.stop()
+    tts?.stop()
   }
 
   override fun setRate(rate: Float) {
-    tts.setSpeechRate(rate)
+    tts?.setSpeechRate(rate)
   }
 
   fun shutdown() {
-    tts.stop()
-    tts.shutdown()
+    tts?.stop()
+    tts?.shutdown()
   }
 
   companion object {

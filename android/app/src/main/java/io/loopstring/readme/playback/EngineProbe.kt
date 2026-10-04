@@ -25,14 +25,17 @@ class EngineProbe private constructor(
   private val timeout = Runnable { finish(Report("no-engine", emptyList(), null)) }
 
   // onInit can run inside the constructor when binding fails (SPIKE-05 probe): post it.
-  private val tts = TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } }
+  // Null when Android refused the bind (REA-32): onInit then gets ERROR and reports no-engine.
+  private val tts: TextToSpeech? =
+    TtsOpen.open(main, { TextToSpeech(context.applicationContext) { s -> main.post { onInit(s) } } }) { onInit(it) }
 
   init {
     main.postDelayed(timeout, TIMEOUT_MS)
   }
 
   private fun onInit(status: Int) {
-    if (status != TextToSpeech.SUCCESS) return finish(Report("no-engine", emptyList(), null))
+    val tts = tts
+    if (status != TextToSpeech.SUCCESS || tts == null) return finish(Report("no-engine", emptyList(), null))
     val all = runCatching { tts.voices }.getOrNull().orEmpty().map { TtsSpeaker.info(it) }
     val default = runCatching { tts.defaultVoice }.getOrNull()?.let { TtsSpeaker.info(it) }
     val language = default?.language ?: Locale.getDefault().language
@@ -45,7 +48,7 @@ class EngineProbe private constructor(
     if (finished) return
     finished = true
     main.removeCallbacks(timeout)
-    runCatching { tts.shutdown() }
+    runCatching { tts?.shutdown() }
     done(r)
   }
 
