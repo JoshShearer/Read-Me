@@ -1,7 +1,7 @@
 // R-M01 Settings: voice (R-M06: offline voices only), default rate, storage, Licenses (R-M13).
 // R-M12: the Obsidian bridge row (on/off, port, pairing token with Copy).
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
 import { Button } from './Button';
 import { Select } from './Select';
 import { Stepper } from './Stepper';
@@ -20,7 +20,7 @@ import {
   type Bridge,
 } from '../library/bridge';
 import { deleteItem, listItems, onItemsChanged, type Item } from '../library/library';
-import { engineBlocked, getEngine, setRate, setVoice, type Engine } from '../library/playback';
+import { engineBlocked, getEngine, NO_ENGINE, setEngine as chooseEngine, setRate, setVoice, type Engine } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
 import { bridgeStatus, formatRate, parsePort, RATE_MAX, RATE_MIN, stepRate, visibleItems } from './model';
 import { ui } from './ui';
@@ -33,6 +33,10 @@ import { ui } from './ui';
 // description (REA-27's blank bridge controls). Now both are there at once, disabled while
 // loading, and only their props change when the data arrives.
 const NO_BRIDGE: Bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
+
+// Below Android 14 the engine is chosen here; from 14 Android's own engine is used (owner
+// decision, 2026-10-03). Known from the first frame, so the engine field never arrives mid-mount.
+const CHOOSE_ENGINE = Platform.OS === 'android' && Number(Platform.Version) < 34;
 
 export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const colors = palette(useColorScheme());
@@ -75,7 +79,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
     ]);
 
   const loadEngine = useCallback(() => {
-    getEngine().then(setEngine, () => setEngine({ status: 'no-engine', voices: [], selected: null }));
+    getEngine().then(setEngine, () => setEngine(NO_ENGINE));
   }, []);
   const loadItems = useCallback(() => {
     listItems().then(setItems, () => setItems([]));
@@ -113,9 +117,38 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
       </View>
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Voice</Text>
+      {CHOOSE_ENGINE ? (
+        <View collapsable={false} style={ui.row}>
+          <Select
+            name="engine"
+            title="Engine"
+            disabled={engine === null}
+            placeholder="Checking..."
+            options={(engine?.engines ?? []).map(e => ({
+              value: e.id,
+              label: e.label,
+              detail: e.usable ? undefined : 'Needs Android 14 or later',
+              disabled: !e.usable,
+            }))}
+            value={engine?.engine ?? null}
+            onChange={id => {
+              setEngine(null);
+              chooseEngine(id).then(loadEngine, loadEngine);
+            }}
+          />
+        </View>
+      ) : (
+        <Text tone="secondary" style={[ui.row, ui.small]}>
+          {engine?.engineLabel ? `Speaking with ${engine.engineLabel}, Android's text-to-speech engine.` : ' '}
+        </Text>
+      )}
       {engine !== null && engineBlocked(engine.status) ? (
         <View collapsable={false} style={[ui.card, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
-          <Text>No offline text-to-speech voice is available.</Text>
+          <Text>
+            {engine.status === 'no-voice'
+              ? 'This engine has no voice that works offline.'
+              : 'No offline text-to-speech voice is available.'}
+          </Text>
           <Button
             appearance="filled"
             label="Open text-to-speech settings"
@@ -134,7 +167,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             title="Voice"
             disabled={engine === null}
             placeholder="Checking the text-to-speech engine..."
-            options={(engine?.voices ?? []).map(v => ({ value: v.name, label: v.name, detail: v.language }))}
+            options={(engine?.voices ?? []).map(v => ({ value: v.name, label: v.label, detail: v.detail || undefined }))}
             value={engine?.selected ?? null}
             onChange={name => {
               setVoice(name).then(loadEngine, () => undefined);
@@ -142,7 +175,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           />
         </View>
       )}
-      <Text tone="secondary" style={[ui.row, ui.small]}>A new voice applies from the next play.</Text>
+      <Text tone="secondary" style={[ui.row, ui.small]}>A new voice or engine applies from the next play.</Text>
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Default rate</Text>
       <View collapsable={false} style={ui.inset}>

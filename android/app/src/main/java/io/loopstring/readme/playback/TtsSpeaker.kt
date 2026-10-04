@@ -84,6 +84,7 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
       networkRequired = v.isNetworkConnectionRequired,
       notInstalled = v.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true,
       quality = v.quality,
+      tag = v.locale.toLanguageTag(),
     )
 
     /** R-M06, AGENTS.md 5: VoicePicker's choice among this engine's voices; null means none is offline. */

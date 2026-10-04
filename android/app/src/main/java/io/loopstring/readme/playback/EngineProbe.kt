@@ -18,16 +18,28 @@ class EngineProbe private constructor(
   private val preferred: String?,
   private val done: (Report) -> Unit,
 ) {
-  data class Report(val status: String, val voices: List<VoiceInfo>, val selected: String?)
+  /**
+   * [engine] is the package bound (null when none was); [engines] lists every installed engine
+   * when Settings may choose one (below Android 14), else is empty.
+   */
+  data class Report(
+    val status: String,
+    val voices: List<VoiceInfo>,
+    val selected: String?,
+    val engine: String? = null,
+    val engines: List<TtsOpen.Candidate> = emptyList(),
+  )
 
   private val main = Handler(Looper.getMainLooper())
+  private val app = context.applicationContext
+  private val requested = TtsOpen.engine(app)
   private var finished = false
   private val timeout = Runnable { finish(Report("no-engine", emptyList(), null)) }
 
   // onInit can run inside the constructor when binding fails (SPIKE-05 probe): post it.
   // Null when Android refused the bind (REA-32): onInit then gets ERROR and reports no-engine.
   private val tts: TextToSpeech? =
-    TtsOpen.open(main, { TextToSpeech(context.applicationContext, { s -> main.post { onInit(s) } }, TtsOpen.engine(context)) }) { onInit(it) }
+    TtsOpen.open(main, { TextToSpeech(app, { s -> main.post { onInit(s) } }, requested) }) { onInit(it) }
 
   init {
     main.postDelayed(timeout, TIMEOUT_MS)
@@ -41,12 +53,14 @@ class EngineProbe private constructor(
     val language = default?.language ?: Locale.getDefault().language
     val usable = VoiceList.usable(all, language)
     val selected = VoicePicker.pick(default, all, language, preferred)
-    finish(Report(if (selected == null) "no-voice" else "ready", usable, selected?.name))
+    val engine = requested ?: runCatching { tts.defaultEngine }.getOrNull()
+    finish(Report(if (selected == null) "no-voice" else "ready", usable, selected?.name, engine))
   }
 
-  private fun finish(r: Report) {
+  private fun finish(base: Report) {
     if (finished) return
     finished = true
+    val r = if (TtsOpen.choosable) base.copy(engines = TtsOpen.candidates(app)) else base
     main.removeCallbacks(timeout)
     runCatching { tts?.shutdown() }
     done(r)

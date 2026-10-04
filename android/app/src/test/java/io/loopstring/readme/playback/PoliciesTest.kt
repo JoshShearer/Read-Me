@@ -86,3 +86,40 @@ class PlaybackCommandsTest {
     assertEquals(Route.IGNORE, PlaybackCommands.route(PlaybackCommands.ACTION_START, false, true))
   }
 }
+
+class VoiceLabelsTest {
+  private fun v(name: String, tag: String, q: Int = 400) = VoiceInfo(name, tag.substringBefore('-'), false, false, q, tag)
+
+  // REA-32: iFlytek on the Huawei tablet named its voices "en", "af", "agq"; Settings showed "en en".
+  @Test fun aLocaleLikeNameReadsAsTheLanguage() {
+    val l = VoiceLabels.of(listOf(v("en", "en"), v("en-us-x-sfg-local", "en-US", 300)), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals(VoiceLabels.Label("English", "High quality"), l["en"])
+    org.junit.Assert.assertEquals(VoiceLabels.Label("English (United States)", "Normal quality"), l["en-us-x-sfg-local"])
+  }
+
+  @Test fun aNameAPersonGaveIsKept() {
+    val l = VoiceLabels.of(listOf(v("Amy", "en-GB")), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals(VoiceLabels.Label("Amy", "English (United Kingdom)"), l["Amy"])
+  }
+
+  @Test fun voicesThatReadTheSameAreNumbered() {
+    val l = VoiceLabels.of(listOf(v("en-us-x-iob-local", "en-US"), v("en-us-x-iog-local", "en-US")), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals("Voice 1", l["en-us-x-iob-local"]?.detail)
+    org.junit.Assert.assertEquals("Voice 2", l["en-us-x-iog-local"]?.detail)
+  }
+
+  @Test fun aScriptIsLeftOutAndASharedQualityIsNotShown() {
+    val l = VoiceLabels.of(listOf(v("en", "en-Qaag"), v("af", "af")), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals(VoiceLabels.Label("English", ""), l["en"])
+  }
+
+  @Test fun supertonicVoicesReadAsFemaleAndMale() {
+    val l = VoiceLabels.of(listOf(v("en-supertonic-F1", "en-US"), v("en-supertonic-M2", "en-US")), java.util.Locale.ENGLISH)
+    org.junit.Assert.assertEquals(VoiceLabels.Label("English (United States)", "Female 1"), l["en-supertonic-F1"])
+    org.junit.Assert.assertEquals("Male 2", l["en-supertonic-M2"]?.detail)
+  }
+
+  @Test fun aRepeatedNameIsListedOnce() {
+    org.junit.Assert.assertEquals(1, VoiceList.usable(listOf(v("en", "en"), v("en", "en")), "en").size)
+  }
+}
