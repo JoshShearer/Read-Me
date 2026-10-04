@@ -219,4 +219,169 @@ class PlaybackServiceTest {
     Settings(ctx).voice = null
     c.destroy()
   }
+
+  // --- REA-35: a play request waiting for a cold engine (the engine is PENDING) ---
+
+  private fun intent(action: String) =
+    Intent(ApplicationProvider.getApplicationContext(), PlaybackService::class.java).setAction(action)
+
+  private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+  /** A new service whose engine has not answered yet, holding a play request for a stored item. */
+  private fun waiting(): Pair<org.robolectric.android.controller.ServiceController<PlaybackService>, Long> {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val id = Store.get(ctx).insertText("t", listOf("Hello World"), 1L)
+    PlaybackHub.offer(request(id))
+    val c = Robolectric.buildService(PlaybackService::class.java, intent(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    idle()
+    assertEquals(null, PlaybackHub.queue!!.snapshot().itemId)
+    return c to id
+  }
+
+  @Test fun aRateChangeWhileTheEngineStartsKeepsThePlayAtTheNewRate() {
+    // REA-35 #1: the rate tap published an empty snapshot, onSnapshot ended the service and the
+    // waiting Play was dropped. ReadMeSpeechModule.setRate does exactly these two writes.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val (c, id) = waiting()
+    Settings(ctx).rate = 2.1f
+    PlaybackHub.queue!!.setRate(2.1f)
+    idle()
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    val s = PlaybackHub.queue!!.snapshot()
+    assertEquals(id, s.itemId)
+    assertTrue(s.playing)
+    assertEquals(2.1f, s.rate)
+    Settings(ctx).rate = 2.0f
+    c.destroy()
+  }
+
+  @Test fun aStaleControlIntentWhileTheEngineStartsDoesNotStopTheService() {
+    // REA-35 #2: routing looked only at the queue's item, so a notification or headset intent
+    // that arrived during a cold start stopped the service and the Play was lost.
+    val (c, id) = waiting()
+    c.withIntent(intent(PlaybackCommands.ACTION_NEXT)).startCommand(0, 2)
+    idle()
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(id, PlaybackHub.queue!!.snapshot().itemId)
+    c.destroy()
+  }
+
+  @Test fun aPauseFromTheAppWhileTheEngineStartsCancelsThePlay() {
+    // REA-35 #2: Pause found nothing playing and changed nothing, so the engine coming up later
+    // started reading what the user had paused.
+    val (c, _) = waiting()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun aStopFromTheAppWhileTheEngineStartsCancelsThePlay() {
+    // REA-35 #2: as Pause; Stop is what Trim sends when everything left is cut.
+    val (c, _) = waiting()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_STOP)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun aStopIntentWhileTheEngineStartsCancelsThePlay() {
+    // Guard (passes before REA-35): the stop must still win once routing sees the waiting request.
+    val (c, _) = waiting()
+    c.withIntent(intent(PlaybackCommands.ACTION_STOP)).startCommand(0, 2)
+    idle()
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun aSecondPlayWhileTheEngineStartsReplacesTheWaitingRequest() {
+    // Guard (passes before REA-35): a cut during a cold start re-plays the item; the new list wins.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val (c, id) = waiting()
+    val cut = PlaybackHub.Request(id, "t", listOf(SentenceRow(0, 6, 11, "World")), 0)
+    PlaybackHub.offer(cut)
+    c.withIntent(intent(PlaybackCommands.ACTION_START)).startCommand(0, 2)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(SentenceRow(0, 6, 11, "World"), PlaybackHub.queue!!.snapshot().sentence)
+    assertFalse(Store.get(ctx).item(id) == null)
+    c.destroy()
+  }
+
+  @Test fun theServiceStopsItselfWithTheLatestStartId() {
+    // REA-35 #2: stopSelf() without an id also discards a start Android has delivered since.
+    val c = playing()
+    c.withIntent(intent(PlaybackCommands.ACTION_STOP)).startCommand(0, 5)
+    idle()
+    assertEquals(5, shadowOf(c.get()).stopSelfResultId)
+    c.destroy()
+  }
+
+  @Test fun aFailedRebindDropsTheWaitingPlayAndTheNextPlayBindsAFreshEngine() {
+    // REA-35 #3: the failed rebind kept `waiting`, so the foreground never synced, and the next
+    // Play met the dead speaker's NO_ENGINE and ended the service.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() }
+    idle() // recoverEngine: rebinding
+    val second = Store.get(ctx).insertText("u", listOf("Hello World"), 2L)
+    PlaybackHub.offer(request(second))
+    c.withIntent(intent(PlaybackCommands.ACTION_START)).startCommand(0, 2)
+    idle()
+    // The rebind fails through the real TtsSpeaker.onInit path.
+    shadowOf(org.robolectric.shadows.ShadowTextToSpeech.getLastTextToSpeechInstance())
+      .onInitListener.onInit(android.speech.tts.TextToSpeech.ERROR)
+    idle()
+    assertEquals("no-engine", PlaybackHub.engine)
+    assertFalse(PlaybackHub.queue!!.snapshot().itemId == second)
+    // The user plays again: a fresh speaker is bound instead of ending on the dead one.
+    val before = org.robolectric.shadows.ShadowTextToSpeech.getLastTextToSpeechInstance()
+    PlaybackHub.offer(request(second))
+    c.withIntent(intent(PlaybackCommands.ACTION_START)).startCommand(0, 3)
+    idle()
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    assertFalse(before === org.robolectric.shadows.ShadowTextToSpeech.getLastTextToSpeechInstance())
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(second, PlaybackHub.queue!!.snapshot().itemId)
+    c.destroy()
+  }
+
+  @Test fun theWaitingRequestsItemIsPublished() {
+    // REA-35 #4: JS saw no item while the Play waited, so a cut could not reach it.
+    val (c, id) = waiting()
+    assertEquals(id, PlaybackHub.last.waitingItemId)
+    assertEquals(null, PlaybackHub.last.itemId)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(null, PlaybackHub.last.waitingItemId)
+    assertEquals(id, PlaybackHub.last.itemId)
+    c.destroy()
+  }
+
+  @Test fun aPauseFromAnotherThreadWhileTheEngineStartsCancelsThePlay() {
+    // Guard (passes before the critique fix): JS calls the controller on its own thread, so the
+    // cancel goes through main.post; the other Pause tests call it on the main thread.
+    val (c, _) = waiting()
+    val t = Thread { PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE) }
+    t.start()
+    t.join()
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
 }

@@ -18,6 +18,20 @@ class PlaybackHubTest {
     assertNull(PlaybackHub.take())
   }
 
+  @Test fun aClaimedRequestCountsAsStartingUntilReleased() {
+    // REA-35 critique: the service took the request and only later held it in `waiting`; a
+    // Pause from the JS thread in between saw nothing starting and the Play went ahead.
+    val r = PlaybackHub.Request(4, "t", listOf(SentenceRow(0, 0, 1, "a")), 0)
+    PlaybackHub.offer(r)
+    assertEquals(4L, PlaybackHub.startingItemId())
+    assertEquals(r, PlaybackHub.claim())
+    assertFalse(PlaybackHub.hasPending())
+    assertNull(PlaybackHub.take()) // the JS thread cannot take what the service claimed
+    assertEquals(4L, PlaybackHub.startingItemId())
+    PlaybackHub.release()
+    assertNull(PlaybackHub.startingItemId())
+  }
+
   @Test fun publishingSetsSpeakingAndNotifiesListeners() {
     // ADR 0004: the bridge reads `speaking` to answer 503 while Read Me plays.
     val seen = mutableListOf<PlaybackSnapshot>()

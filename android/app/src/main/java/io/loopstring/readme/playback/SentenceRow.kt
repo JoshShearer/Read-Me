@@ -6,12 +6,17 @@ package io.loopstring.readme.playback
  */
 data class SentenceRow(val paragraphIndex: Int, val start: Int, val end: Int, val text: String)
 
-/** What the service is doing now; `sentence` is the current (or paused-at) sentence. */
+/**
+ * What the service is doing now; `sentence` is the current (or paused-at) sentence.
+ * `waitingItemId` is the item of a play request held while the engine starts (REA-35): the
+ * queue has no item yet, but a cut or a stop must still reach that request.
+ */
 data class PlaybackSnapshot(
   val itemId: Long?,
   val playing: Boolean,
   val sentence: SentenceRow?,
   val rate: Float,
+  val waitingItemId: Long? = null,
 )
 
 /** The engine side of the queue. PlaybackService backs it with a TextToSpeech instance. */

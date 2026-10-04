@@ -22,6 +22,10 @@ object PlaybackHub {
   data class Request(val itemId: Long, val title: String, val sentences: List<SentenceRow>, val startIndex: Int)
 
   private val pending = AtomicReference<Request?>(null)
+  // REA-35: the request the service has taken and not yet held in `waiting` or loaded. Guarded
+  // by `lock` with `pending`, so a reader on the JS thread never sees neither of them.
+  private val lock = Any()
+  private var claimed: Request? = null
   private val listeners = CopyOnWriteArraySet<(PlaybackSnapshot) -> Unit>()
   private val idle = PlaybackSnapshot(null, false, null, Rate.DEFAULT)
 
@@ -33,9 +37,17 @@ object PlaybackHub {
   @Volatile var queue: PlaybackQueue? = null
   @Volatile var controller: ((String) -> Boolean)? = null
 
-  fun offer(r: Request) = pending.set(r)
-  fun take(): Request? = pending.getAndSet(null)
+  fun offer(r: Request) = synchronized(lock) { pending.set(r) }
+  fun take(): Request? = synchronized(lock) { pending.getAndSet(null) }
   fun hasPending() = pending.get() != null
+  fun pendingItemId(): Long? = pending.get()?.itemId
+
+  /** The service takes the request to start it; it still counts as starting until [release]. */
+  fun claim(): Request? = synchronized(lock) { pending.getAndSet(null).also { claimed = it } }
+  fun release() = synchronized(lock) { claimed = null }
+
+  /** The item of a request offered, or claimed by the service and not yet released. */
+  fun startingItemId(): Long? = synchronized(lock) { (pending.get() ?: claimed)?.itemId }
 
   /** The item is being deleted: drop a request for it the service has not taken yet. */
   fun stopItem(itemId: Long) {
@@ -68,7 +80,7 @@ object PlaybackHub {
 
   @VisibleForTesting
   fun resetForTest() {
-    pending.set(null)
+    synchronized(lock) { pending.set(null); claimed = null }
     listeners.clear()
     last = idle
     speaking = false

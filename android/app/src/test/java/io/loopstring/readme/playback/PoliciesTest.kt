@@ -127,4 +127,12 @@ class VoiceLabelsTest {
   @Test fun aRepeatedNameIsListedOnce() {
     org.junit.Assert.assertEquals(1, VoiceList.usable(listOf(v("en", "en"), v("en", "en")), "en").size)
   }
+
+  @Test fun aLiveServicesReadyEngineWinsOverTheProbe() {
+    // REA-35 #5: a probe that timed out showed the blocking card while the service read aloud.
+    assertEquals(EnginePolicy.Answer("ready", write = false), EnginePolicy.answer("no-engine", serviceAlive = true, serviceEngine = "ready"))
+    assertEquals(EnginePolicy.Answer("no-voice", write = false), EnginePolicy.answer("no-voice", serviceAlive = true, serviceEngine = "pending"))
+    assertEquals(EnginePolicy.Answer("no-engine", write = true), EnginePolicy.answer("no-engine", serviceAlive = false, serviceEngine = "ready"))
+    assertEquals(EnginePolicy.Answer("ready", write = true), EnginePolicy.answer("ready", serviceAlive = false, serviceEngine = "unknown"))
+  }
 }

@@ -14,6 +14,8 @@ export type Plan = { sentences: Sentence[]; startIndex: number; pastEnd: boolean
 
 export type Playback = {
   itemId: number | null;
+  // A Play the service holds while its engine starts (REA-35): no item is loaded yet.
+  waitingItemId?: number | null;
   playing: boolean;
   sentence: { paragraphIndex: number; start: number; end: number } | null;
   rate: number;
@@ -71,6 +73,7 @@ export const setRate = (rate: number) => Native.setRate(rate);
 export function toPlayback(n: NativePlayback): Playback {
   return {
     itemId: n.itemId,
+    waitingItemId: n.waitingItemId ?? null,
     playing: n.playing,
     sentence:
       n.paragraphIndex < 0
@@ -110,13 +113,20 @@ export const stop = () => Native.stop();
  * go on reading paragraphs that are now cut. Playing: hand it the new list from the saved
  * position (remapped by plan()). Paused, everything cut, or nothing kept after the position:
  * stop, so nothing cut is read and a finished stretch does not restart from the top. The
- * service's state is read here: a screen's copy can be stale or not loaded yet.
+ * service's state is read here: a screen's copy can be stale or not loaded yet. A Play waiting
+ * for the engine counts as playing (REA-35 #4): a new play replaces the waiting request, and a
+ * stop cancels it. A Play waiting for another item is left alone.
  */
 export async function applyCuts(id: number, cuts: ReadonlySet<number>): Promise<void> {
   await setCuts(id, [...cuts].sort((a, b) => a - b));
   const current = await getPlayback().catch(() => null);
-  if (current?.itemId !== id) return;
-  if (current.playing) {
+  if (current === null) return;
+  // Another item's Play waits for the engine and will replace this one: stopping here would
+  // cancel that Play. The stored cuts apply when this item is next played.
+  if (current.waitingItemId != null && current.waitingItemId !== id) return;
+  const waiting = current.waitingItemId === id;
+  if (current.itemId !== id && !waiting) return;
+  if (current.playing || waiting) {
     const p = await planFor(id);
     if (p !== null && !p.plan.pastEnd) {
       await Native.play(id, p.title, p.plan.sentences, p.plan.startIndex);

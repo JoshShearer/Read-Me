@@ -53,7 +53,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   @Volatile private var pausedForFocus = false
   private var wakeLock: PowerManager.WakeLock? = null
   private var noisyRegistered = false
-  private var waiting: PlaybackHub.Request? = null
+  // A play request held while the engine starts. Read on the JS thread by handle().
+  @Volatile private var waiting: PlaybackHub.Request? = null
+  // REA-35: end() stops with the newest start id, so a start Android delivered since survives.
+  private var lastStartId = 0
   private var rebinding = false
   // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
   private var resumeAfterRebind = false
@@ -105,17 +108,22 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    lastStartId = startId
     // startForegroundService obliges startForeground within seconds, whatever happens next.
     goForeground(queue.snapshot())
-    when (PlaybackCommands.route(intent?.action, PlaybackHub.hasPending(), queue.snapshot().itemId != null, bridge != null)) {
-      Route.START -> PlaybackHub.take()?.let(::begin)
+    // REA-35: a play request waiting for the engine counts as an item, so a stale control intent
+    // during a cold start is handled (and mostly ignored) instead of stopping the service.
+    when (PlaybackCommands.route(intent?.action, PlaybackHub.hasPending(), hasItem(), bridge != null)) {
+      // Claimed, not taken: until begin() has held or loaded it, a Pause from the JS thread
+      // must still find it (REA-35 critique).
+      Route.START -> PlaybackHub.claim()?.let { r ->
+        try { begin(r) } finally { PlaybackHub.release() }
+      }
       Route.CONTROL -> handle(intent!!.action!!)
       Route.BRIDGE -> {
         if (intent?.action == PlaybackCommands.ACTION_BRIDGE_OFF) Settings(this).bridgeEnabled = false
         syncBridge()
-        // A play request waiting for the engine counts as an item.
-        val hasItem = queue.snapshot().itemId != null || waiting != null || PlaybackHub.hasPending()
-        if (!ServiceLife.keepAlive(hasItem, bridge != null)) {
+        if (!ServiceLife.keepAlive(hasItem(), bridge != null)) {
           end()
           return START_NOT_STICKY
         }
@@ -157,23 +165,47 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
 
   // --- requests and controls ---
 
+  /** A play request waiting for the engine, or offered and not yet started, counts as an item. */
+  private fun hasItem() = queue.snapshot().itemId != null || startingItemId() != null
+
+  // The hub is read first: begin() sets `waiting` before releasing its claim, so a reader that
+  // finds the claim gone is guaranteed to see `waiting`.
+  private fun startingItemId(): Long? = PlaybackHub.startingItemId() ?: waiting?.itemId
+
+  /**
+   * The queue's state plus the request waiting for the engine, so JS can reach it (REA-35 #4).
+   * A claimed request is left out: it is either held (then `waiting`) or loaded by now.
+   */
+  private fun withWaiting(s: PlaybackSnapshot) = s.copy(waitingItemId = waiting?.itemId ?: PlaybackHub.pendingItemId())
+
+  private fun publishState() = PlaybackHub.publish(withWaiting(queue.snapshot()))
+
+  private fun hold(r: PlaybackHub.Request) {
+    waiting = r
+    Log.i(TAG, "playback waiting item=${r.itemId}")
+    publishState()
+  }
+
   /** The engine and voice Settings asks for; the speaker is rebuilt when they change. */
   private fun choice(): Pair<String?, String?> = Settings(this).let { it.engine to it.voice }
 
   private fun begin(r: PlaybackHub.Request) {
     // A voice or engine chosen in Settings since this speaker was made applies from this play:
     // the service can outlive many plays (a paused hold, the bridge), so onCreate is not enough.
+    // REA-35 #3: a speaker whose engine failed (no engine, no voice) never recovers by itself,
+    // so each user Play on it binds a fresh one, once.
     val wanted = choice()
-    if (wanted != speakerFor && speaker.status != TtsSpeaker.EngineStatus.PENDING && !rebinding) {
+    val failed = speaker.status == TtsSpeaker.EngineStatus.NO_ENGINE || speaker.status == TtsSpeaker.EngineStatus.NO_VOICE
+    if ((wanted != speakerFor || failed) && speaker.status != TtsSpeaker.EngineStatus.PENDING && !rebinding) {
       speaker.shutdown()
       speaker = TtsSpeaker(this, this, wanted.second)
       speakerFor = wanted
       queue.swapSpeaker(speaker)
-      waiting = r
+      hold(r)
       return
     }
     when (speaker.status) {
-      TtsSpeaker.EngineStatus.PENDING -> waiting = r
+      TtsSpeaker.EngineStatus.PENDING -> hold(r)
       TtsSpeaker.EngineStatus.READY -> load(r)
       else -> end()
     }
@@ -195,8 +227,37 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
   }
 
-  /** Every control path (JS, notification, media session, noisy, focus) comes through here. */
-  private fun handle(action: String): Boolean = when (action) {
+  /**
+   * Every control path (JS, notification, media session, noisy, focus) comes through here. JS
+   * calls it on its own thread. REA-35: while a play request waits for the engine, Pause and
+   * Stop cancel it; any other control is ignored, since the request will replace the item.
+   */
+  private fun handle(action: String): Boolean {
+    if (startingItemId() == null) return control(action)
+    if (action != PlaybackCommands.ACTION_PAUSE && action != PlaybackCommands.ACTION_STOP) return false
+    // Taken here, on the caller's thread, so a Play offered after this Pause is not taken too.
+    val pending = PlaybackHub.take()
+    onMain {
+      cancelStart(pending)
+      control(action)
+    }
+    return true
+  }
+
+  private fun onMain(block: () -> Unit) {
+    if (Looper.myLooper() == main.looper) block() else main.post { if (!destroyed) block() }
+  }
+
+  private fun cancelStart(pending: PlaybackHub.Request?) {
+    val r = waiting ?: pending ?: return
+    waiting = null
+    resumeAfterRebind = false
+    Log.i(TAG, "playback start cancelled item=${r.itemId}")
+    publishState()
+    if (queue.snapshot().itemId == null) end()
+  }
+
+  private fun control(action: String): Boolean = when (action) {
     PlaybackCommands.ACTION_PAUSE -> {
       resumeAfterRebind = false
       val heldForFocus = pausedForFocus
@@ -215,9 +276,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
     PlaybackCommands.ACTION_TOGGLE ->
       if (queue.snapshot().playing) {
-        handle(PlaybackCommands.ACTION_PAUSE)
+        control(PlaybackCommands.ACTION_PAUSE)
       } else {
-        handle(PlaybackCommands.ACTION_PLAY)
+        control(PlaybackCommands.ACTION_PLAY)
       }
     PlaybackCommands.ACTION_NEXT -> queue.next()
     PlaybackCommands.ACTION_PREVIOUS -> queue.previous()
@@ -285,7 +346,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
         waiting = null
         if (r != null) load(r) else if (resumeAfterRebind) queue.resume()
       } else {
+        // REA-35 #3: a request held for this engine is dropped, the engine state reaches JS,
+        // and the foreground follows the paused item again; the next Play binds afresh (begin).
         Log.i(TAG, "playback engine ${status.wire}")
+        waiting?.let { Log.i(TAG, "playback start cancelled item=${it.itemId}") }
+        waiting = null
+        resumeAfterRebind = false
+        publishState()
+        if (queue.snapshot().itemId == null) end() else syncForeground(queue.snapshot())
       }
       return
     }
@@ -296,7 +364,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       if (r != null) load(r)
     } else {
       Log.i(TAG, "playback engine ${status.wire}")
-      PlaybackHub.publish(queue.snapshot())
+      publishState()
       end()
     }
   }
@@ -321,7 +389,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   }
 
   override fun changed(snapshot: PlaybackSnapshot) {
-    PlaybackHub.publish(snapshot)
+    PlaybackHub.publish(withWaiting(snapshot))
     main.post { if (!destroyed) onSnapshot(snapshot) }
   }
 
@@ -332,7 +400,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     shown = s
     if (s.itemId == null) {
       logStats()
-      end()
+      // REA-35 #1: an item ending (or none yet) must not drop a request waiting for the engine.
+      if (startingItemId() == null) end()
       return
     }
     if (s.playing && before?.playing != true) {
@@ -461,7 +530,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun end() {
     main.removeCallbacks(pauseExpired)
     pausedAt = -1L
-    waiting = null
+    if (waiting != null) {
+      waiting = null
+      publishState()
+    }
     releasePlayingResources(abandon = true)
     session.isActive = false
     // R-M12: an enabled bridge keeps the service, and its notification, after playback ends.
@@ -470,7 +542,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       return
     }
     stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelf()
+    // REA-35 #2: stopSelf() would also discard a start Android delivered after this one.
+    stopSelfResult(lastStartId)
   }
 
   private fun logStats() {
