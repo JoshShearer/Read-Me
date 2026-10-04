@@ -199,4 +199,24 @@ class PlaybackServiceTest {
     assertFalse(PlaybackHub.queue!!.snapshot().playing)
     c.destroy()
   }
+
+  @Test fun playAfterAVoiceChangeRebindsWithTheNewVoiceAndThenResumes() {
+    // REA-33: Play on a paused item resumed with the old engine and voice, so a change in
+    // Settings never reached it (the Huawei tablet kept speaking with iFlytek).
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    c.withIntent(Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_PAUSE)).startCommand(0, 2)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    Settings(ctx).voice = "another-voice"
+    c.withIntent(Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_PLAY)).startCommand(0, 3)
+    shadowOf(Looper.getMainLooper()).idle()
+    // A new speaker is binding; nothing resumes on the old one.
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    shadowOf(Looper.getMainLooper()).idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    Settings(ctx).voice = null
+    c.destroy()
+  }
 }

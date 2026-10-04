@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class TtsSynth(
   context: Context,
-  private val preferredVoice: String?,
+  voice: String?,
   private val log: (String) -> Unit = {},
   private val readyWaitMs: Long = READY_WAIT_MS,
   private val now: () -> Long = SystemClock::elapsedRealtime,
@@ -44,6 +44,8 @@ class TtsSynth(
   private val rebindLock = Any()
   private var lastRebindAt = NEVER // guarded by rebindLock
   @Volatile private var closed = false
+  // Settings' voice; [reselect] changes it when the owner picks another voice or engine.
+  @Volatile private var preferredVoice: String? = voice
   @Volatile private var current = Engine(null)
 
   override val engine: String get() = current.name
@@ -217,6 +219,22 @@ class TtsSynth(
 
   override fun cancel() {
     if (wait.cancel()) current.tts?.stop()
+  }
+
+  /**
+   * REA-33: Settings chose another voice or engine while the bridge runs. A new unpinned binding
+   * replaces the current one, so the plugin's next request speaks with the choice; before, the
+   * bridge kept the engine and voice it started with until it was turned off and on.
+   */
+  fun reselect(voice: String?) {
+    main.post {
+      if (closed) return@post
+      preferredVoice = voice
+      val old = current
+      current = Engine(null)
+      if (wait.cancel()) runCatching { old.tts?.stop() }
+      old.shutdown()
+    }
   }
 
   fun shutdown() {
