@@ -62,7 +62,7 @@ echo "=== STALE ===" && \
 ```
 
 Baseline for sanity: the repo began with `08888dc docs: initial SRS for Read Me`; remote
-`origin` is `git@github.com:JoshShearer/Read-Me.git` (private). A short history with no
+`origin` is `git@github.com:JoshShearer/Read-Me.git` (public; `gh repo view`, 2026-10-04). A short history with no
 `android/` or `src/` is the expected pre-scaffold state, not a broken clone.
 
 Open PRs, if `gh` is available:

@@ -520,8 +520,11 @@ Each spike answers one question on the reference device and records the answer h
   own log of the `adb shell am start ... --es token` command line the script used to deliver
   it (Read Me never logged it); the script now sends that command on stdin, which adbd logs as
   `raw:`. With port 8787 held by the prototype bridge, the spike bridge reported
-  `{"bridge":"bind-failed","error":"BindException"}` and the process stayed up; the service's
-  cache sweep ran at start (`{"deleted":0}`) (both at build 8a222f2).
+  `{"bridge":"bind-failed","error":"BindException"}` and the process stayed up: `adb shell pidof
+  io.loopstring.readme`, run right after the bind-failed result (plan Task 8 Step 6 on
+  `spike/rea-0-background-bridge`), printed pid 8731 (`.claude/scratch/SPIKE-01/step6.txt`,
+  gitignored). One check at one moment; the pid before the bind was not recorded, so a crash
+  and restart in those seconds is not excluded. The service's cache sweep ran at start (`{"deleted":0}`) (both at build 8a222f2).
   Not established: Android 14-16 (only the Android 17 reference device was available),
   targetSdk 37, screen-off bridge use while Obsidian itself is backgrounded, the real plugin's
   request pattern.

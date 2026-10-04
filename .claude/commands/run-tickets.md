@@ -816,7 +816,7 @@ Continues that run, recreating its lane from `worktree` and `runBranch`.
 | **Run lane** | `${PRIMARY}-run-<YYYYMMDD-HHMMSS>` on `run/<stamp>`, from `origin/main` with `--no-track`, removed at Step 8 only if nothing would be lost |
 | **State, device lock, archive** | `$PRIMARY/.claude/{pipeline-state.<stamp>.json, device.lock/, scratch/}`. All in the primary, all gitignored |
 | **Base branch** | `main`. The lane never checks it out |
-| **Remote** | `git@github.com:JoshShearer/Read-Me.git` (private) |
+| **Remote** | `git@github.com:JoshShearer/Read-Me.git` (public; `gh repo view`, 2026-10-04) |
 | **Tracker** | Linear workspace `read-me-tts`, MCP server `linear-rea`, team key `REA` |
 | **Gates** | `AGENTS.md` "Quality gates". None exist until the scaffold; then run once at Step 0c and in every Implement, Ship and Verify |
 | **Device** | One phone, the reference device in `srs.md`. Exactly one attached and the lock free, or `DEVICE: NOT RUN` |

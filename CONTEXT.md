@@ -115,7 +115,8 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
                              make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard,
-                             0007 item lifecycle, 0008 bridge text limit)
+                             0007 item lifecycle, 0008 bridge text limit, 0009 paused session
+                             lifetime, 0010 engine choice and fallback)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
