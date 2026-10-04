@@ -290,6 +290,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `SHA256SUMS` (`gh release view`). main since then carries unreleased REA-30 (shared .md/.txt),
   REA-28 (UI controls), REA-32 and REA-33 (engine choice, voice change), so a new release is
   needed before they reach users.
+  The published v1.0.0 APK cannot be reproduced by F-Droid (REA-38, 2026-10-04): built in the
+  primary checkout, it carries stale resources from 2026-10-01 (the template's new-app-screen
+  logos and raw/keep.xml under generated/res/react/release, which the bundle task never empties),
+  and any build differs between machines in react_native_dev_server_ip (the build host's IP) and
+  in libreact_codegen_safeareacontext.so (the Gradle cache path from an assert). `npm run repro`
+  could see none of this. F-Droid's recipe also lacked xz, g++, npx and JDK 17 for its image.
+  Fixed for 1.0.1 (pinned dev-server IP, `-ffile-prefix-map` of the Gradle home, the bundle
+  output cleared before release builds); `npm run fdroid:build` (fdroiddata's build job in
+  registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie, this machine, 2026-10-04) built
+  51b0914 identical to our tested APK apart from the signature. F-Droid merge request:
+  https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, open, its pipeline red on the
+  1.0.0 recipe until 1.0.1 is published and the MR updated.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
@@ -317,7 +329,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `io.loopstring.readme/.MainActivity`, JS component `ReadMe`. Log tags: `ReadMe` for native code,
   `ReactNativeJS` for the JS console, `ReadMeSpike` on spike branches only (see `CONTEXT.md`).
 - **The GitHub repo is public** (`JoshShearer/Read-Me`; `gh repo view`, 2026-10-04). The F-Droid
-  submission has not been made.
+  merge request is open (fdroiddata !51088, 2026-10-04; see Release above).
 
 ## Style
 
