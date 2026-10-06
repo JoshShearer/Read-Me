@@ -5,7 +5,7 @@
 # Usage: scripts/devcheck.sh [runs=3]
 # Exit: 0 parity and F17 hold, 1 mismatch/timeout/F17 miss, 2 app died, 3 no slot, 5 phone
 # locked, 6 uncommitted changes. Installs a DEVCHECK build over whatever is on the phone and
-# deletes the product APK, so product device commands refuse until npm run build:release.
+# leaves build:release's APKs alone: they live under outputs/readme/, which Gradle never writes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RUNS=${1:-3}
@@ -29,11 +29,10 @@ DEVICE_OUT="$SCR/device-$HEAD7.txt"
 npm run -s devcheck:fixtures >/dev/null
 DEVCHECK_EXPECTED_OUT="$EXPECTED" npx jest __tests__/devcheck.expected.test.ts >/dev/null
 
-(cd android && ./gradlew -q assembleRelease -PreadmeEntryFile=../../index.devcheck.js)
-APK=android/app/build/outputs/apk/release/app-release.apk
+(cd android && ./gradlew -q assembleRelease -PreadmeEntryFile=../../index.devcheck.js -PreactNativeArchitectures=arm64-v8a)
 mkdir -p android/app/build/devcheck
-mv "$APK" android/app/build/devcheck/app-devcheck.apk
-rm -f "$APK.stamp"   # product device commands now refuse until npm run build:release
+# Never under build:release's name (outputs/readme/), so no product device command installs it.
+mv android/app/build/outputs/apk/release/app-arm64-v8a-release.apk android/app/build/devcheck/app-devcheck.apk
 adb install -r android/app/build/devcheck/app-devcheck.apk >/dev/null
 printf '%s\nbranch=%s commit=%s tree=clean at=%s purpose=devcheck\n' \
   "$(git rev-parse --show-toplevel)" "$(git branch --show-current)" "$HEAD7" "$(date -Iseconds)" \

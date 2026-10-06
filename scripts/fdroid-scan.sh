@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # R-M13 / AGENTS.md 14: F-Droid-style checks. Runs all five and exits 0 only if all pass.
 #   1. fdroidserver source scan of a clean export of HEAD (what F-Droid's builder sees).
-#   2. fdroidserver binary scan of the release APK (known non-free classes).
+#   2. fdroidserver binary scan of each ABI's release APK (known non-free classes).
 #   3. No Play Services / Firebase / Crashlytics in the resolved release runtime classpath.
 #   4. Production npm licenses (scripts/check-licenses.mjs, ADR 0002).
 #   5. fdroidserver source scan of the tree after npm ci, with the recipe's deletions.
@@ -31,15 +31,17 @@ PY
 fi
 
 echo "== 2. APK binary scan"
-APK=android/app/build/outputs/apk/release/app-release.apk
-if [ ! -f "$APK" ]; then echo "missing $APK; run npm run build:release"; fail=1
-elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ] \
-     || [ "$(sed -n 2p "$APK.stamp" 2>/dev/null)" != clean ]; then
-  echo "APK not built from a clean HEAD (stamp: $(tr '\n' ' ' < "$APK.stamp" 2>/dev/null)); run npm run build:release"; fail=1
-else
-  "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1
-  require_no_extra_signing_blocks "$APK" && echo "no extra signing blocks" || fail=1
-fi
+for ABI in $READ_ME_ALL_ABIS; do
+  APK=$(readme_apk "$ABI")
+  if [ ! -f "$APK" ]; then echo "missing $APK; run npm run build:release"; fail=1
+  elif [ "$(sed -n 1p "$APK.stamp" 2>/dev/null)" != "$(git rev-parse HEAD)" ] \
+       || [ "$(sed -n 2p "$APK.stamp" 2>/dev/null)" != clean ]; then
+    echo "$APK not built from a clean HEAD (stamp: $(tr '\n' ' ' < "$APK.stamp" 2>/dev/null)); run npm run build:release"; fail=1
+  else
+    "$VENV/bin/fdroid" scanner --exit-code "$APK" || fail=1
+    require_no_extra_signing_blocks "$APK" && echo "$ABI: no extra signing blocks" || fail=1
+  fi
+done
 
 echo "== 3. non-free Gradle dependencies (resolved tree)"
 # Capture first: a failed gradlew piped straight into grep would read as "none found".

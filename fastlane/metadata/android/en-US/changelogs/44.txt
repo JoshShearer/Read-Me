@@ -1,0 +1,1 @@
+Smaller download: one APK per processor type (about 16-21 MB instead of 55 MB). The Hermes compiler is now built from a pinned copy of its source in the repository. No other changes from 1.0.2.
