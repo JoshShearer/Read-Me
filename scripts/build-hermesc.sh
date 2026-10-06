@@ -17,7 +17,7 @@ fi
 # A checkout of another version would compile the bundle with a different Hermes than the
 # runtime ships (an RN upgrade that forgot to move the submodule). Its own npm package says
 # which version it is; a tag would need the clone to have fetched tags.
-got=$(node -p "require('./$SRC/npm/hermes-compiler/package.json').version" 2>/dev/null || echo "unknown")
+got=$(node -p "require(require('path').resolve(process.argv[1])).version" "$SRC/npm/hermes-compiler/package.json" 2>/dev/null || echo "unknown")
 [ "$got" = "$V" ] || { echo "refused: $SRC is Hermes $got, not $V (hermes-compiler's version)" >&2; exit 1; }
 mkdir -p "$OUT"
 # The SDK's CMake ships Ninja; F-Droid's recipe installs both from Debian instead.
