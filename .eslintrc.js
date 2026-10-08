@@ -1,5 +1,6 @@
 module.exports = {
   root: true,
   extends: '@react-native',
-  ignorePatterns: ['android/**/build/**', '**/*.generated.ts'],
+  // external/: git submodules (Hermes, REA-40), not our code.
+  ignorePatterns: ['android/**/build/**', '**/*.generated.ts', 'external/**'],
 };

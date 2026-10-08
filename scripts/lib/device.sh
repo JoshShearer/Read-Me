@@ -6,7 +6,8 @@ PRIMARY=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 DEVICE_LOCK="$PRIMARY/.claude/device.lock"
 DEVICE_ON_EXIT=${DEVICE_ON_EXIT:-}
 DEVICE_LOCK_OURS=0   # 1 only when this process created the lock and must release it
-APK=android/app/build/outputs/apk/release/app-release.apk
+# REA-40: one APK per ABI; the reference phone is arm64-v8a (ro.product.cpu.abi).
+APK=android/app/build/outputs/readme/app-${READ_ME_DEVICE_ABI:-arm64-v8a}-release.apk
 
 _device_owner_line() {
   printf 'branch=%s commit=%s at=%s purpose=%s' "$(git branch --show-current)" \

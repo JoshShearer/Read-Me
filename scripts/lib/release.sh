@@ -16,12 +16,12 @@ require_release_cert() {
     return 1
   fi
 }
-# publish_checked <built apk> <dir> <version> <tested apk>: the APK reaches <dir>/read-me-<v>.apk,
-# with SHA256SUMS, only after the signer and the content checks pass; a refusal leaves neither
-# that name nor an older SHA256SUMS behind, so nothing refused can be uploaded by mistake.
+# publish_checked <built apk> <dir> <name> <tested apk>: the APK reaches <dir>/<name> only after
+# the signer, signing-block and content checks pass; a refusal leaves nothing under that name,
+# so nothing refused can be uploaded by mistake. release:apk writes SHA256SUMS after every ABI.
 publish_checked() {
-  local dir=$2 name="read-me-$3.apk" tmp
-  rm -f "$dir/$name" "$dir/SHA256SUMS"
+  local dir=$2 name=$3 tmp
+  rm -f "$dir/$name"
   mkdir -p "$dir"
   tmp=$(mktemp "$dir/.unchecked-XXXXXX")
   cp "$1" "$tmp"
@@ -29,11 +29,10 @@ publish_checked() {
   if ! require_no_extra_signing_blocks "$tmp"; then rm -f "$tmp"; return 1; fi
   if ! PATH="$BT:$PATH" .venv-fdroid/bin/apksigcopier compare "$tmp" "$4"; then
     rm -f "$tmp"
-    echo "refused: the signed APK's content differs from the tested build" >&2
+    echo "refused: the signed APK's content differs from the tested build $4" >&2
     return 1
   fi
   mv "$tmp" "$dir/$name"
-  ( cd "$dir" && sha256sum "$name" > SHA256SUMS )
 }
 # REA-38: v1.0.0 passed every check on this machine and still differed from F-Droid's build (the
 # build host's IP, the Gradle cache path, stale bundle output). npm run fdroid:build records a
@@ -87,4 +86,18 @@ while p < end:
 if found:
     sys.exit(f"refused: {sys.argv[1]} carries extra signing blocks F-Droid rejects: {', '.join(found)}")
 PY
+}
+# REA-40: one APK per ABI, each from its own Gradle run, as F-Droid's per-ABI build entries do.
+# A four-ABI run is not the same build: every split gets the first ABI's BuildConfig.VERSION_CODE
+# and the merged manifest's line numbers shift (seen on 1.0.3's first build), so F-Droid could
+# never match it.
+READ_ME_ALL_ABIS="armeabi-v7a arm64-v8a x86 x86_64"
+READ_ME_OUT=android/app/build/outputs/readme
+readme_apk() { echo "$READ_ME_OUT/app-$1-release.apk"; }
+gradle_apk() { echo "android/app/build/outputs/apk/release/app-$1-release.apk"; }
+# assemble_abi <abi> [gradle args...]: that ABI's release APK at $(gradle_apk <abi>).
+assemble_abi() {
+  local abi=$1; shift
+  clear_bundle_output android/app
+  ( cd android && ./gradlew --quiet assembleRelease -PreactNativeArchitectures="$abi" "$@" )
 }

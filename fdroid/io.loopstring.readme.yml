@@ -11,16 +11,18 @@ AutoName: Read Me Offline
 
 RepoType: git
 Repo: https://github.com/JoshShearer/Read-Me.git
-# F-Droid publishes our signed APK only if its own build of the tag is identical (REA-38:
-# npm run fdroid:build checks that in F-Droid's image before a release).
-Binaries: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v.apk
+
+# F-Droid publishes our signed APKs only if its own build of the tag is identical (REA-38:
+# npm run fdroid:build checks every ABI in F-Droid's image before a release). One build entry per
+# ABI (REA-40), each naming its APK in binary:.
 
 Builds:
-  - versionName: 1.0.2
-    versionCode: 3
+  - versionName: 1.0.3
+    versionCode: 41
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.0.2
+    commit: v1.0.3
     subdir: android/app
+    submodules: true
     sudo:
       - apt-get update
       # F-Droid's buildserver image has no xz, no C++ compiler and no JDK 17 (REA-38, run in
@@ -43,13 +45,14 @@ Builds:
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
-    srclibs:
-      - hermes@hermes-v250829098.0.17
+    binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-armeabi-v7a.apk
     prebuild:
-      - cd ../.. && HERMES_SRC=$$hermes$$ bash scripts/build-hermesc.sh $$hermes$$/out
+      # hermesc from the external/hermes submodule, built outside the tree (~/.cache).
+      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
       # fdroidserver joins prebuild entries with "; " into one shell, so this runs at the repo
-      # root (the cd above). gradle.properties has no final newline: start with one.
-      - printf '\nreadmeHermesc=%s\n' "$$hermes$$/out/build/bin/hermesc" >> android/gradle.properties
+      # root (the cd above). gradle.properties has no final newline: start with one. The last
+      # reactNativeArchitectures wins: React Native and the ABI split then build only armeabi-v7a.
+      - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=armeabi-v7a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
       # Publishing config for building React Native itself; this app uses the released AARs.
       - node_modules/react-native/ReactAndroid/publish.gradle
@@ -61,11 +64,125 @@ Builds:
       # The dotslash launcher and iOS-only language packs; neither is used by the Android build.
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
+      # Hermes's Android library and its Maven publishing script (an unknown maven repo to the
+      # scanner); hermesc does not use it, and prebuild has already built hermesc.
+      - external/hermes/android
+    ndk: r27b
+
+  - versionName: 1.0.3
+    versionCode: 42
+    commit: v1.0.3
+    subdir: android/app
+    submodules: true
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
+      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
+      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
+        | sha256sum -c -
+      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
+      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
+        | sha256sum -c -
+      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
+        --strip-components=1
+    init: cd ../.. && npm ci --ignore-scripts
+    gradle:
+      - yes
+    binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-arm64-v8a.apk
+    prebuild:
+      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=arm64-v8a\n' "$HERMESC" >> android/gradle.properties
+    scanignore:
+      - node_modules/react-native/ReactAndroid/publish.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+    scandelete:
+      - node_modules/hermes-compiler/hermesc
+      - node_modules/fb-dotslash/bin
+      - node_modules/react-native/React/I18n/strings
+      - external/hermes/android
+    ndk: r27b
+
+  - versionName: 1.0.3
+    versionCode: 43
+    commit: v1.0.3
+    subdir: android/app
+    submodules: true
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
+      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
+      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
+        | sha256sum -c -
+      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
+      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
+        | sha256sum -c -
+      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
+        --strip-components=1
+    init: cd ../.. && npm ci --ignore-scripts
+    gradle:
+      - yes
+    binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86.apk
+    prebuild:
+      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86\n' "$HERMESC" >> android/gradle.properties
+    scanignore:
+      - node_modules/react-native/ReactAndroid/publish.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+    scandelete:
+      - node_modules/hermes-compiler/hermesc
+      - node_modules/fb-dotslash/bin
+      - node_modules/react-native/React/I18n/strings
+      - external/hermes/android
+    ndk: r27b
+
+  - versionName: 1.0.3
+    versionCode: 44
+    commit: v1.0.3
+    subdir: android/app
+    submodules: true
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
+      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
+      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
+        | sha256sum -c -
+      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
+      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
+        | sha256sum -c -
+      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
+        --strip-components=1
+    init: cd ../.. && npm ci --ignore-scripts
+    gradle:
+      - yes
+    binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86_64.apk
+    prebuild:
+      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86_64\n' "$HERMESC" >> android/gradle.properties
+    scanignore:
+      - node_modules/react-native/ReactAndroid/publish.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+    scandelete:
+      - node_modules/hermes-compiler/hermesc
+      - node_modules/fb-dotslash/bin
+      - node_modules/react-native/React/I18n/strings
+      - external/hermes/android
     ndk: r27b
 
 AllowedAPKSigningKeys: f730c468c33f4de8ec5b6917920399169ccdef2664def86ffc4f0dbe01535bf5
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 1.0.2
-CurrentVersionCode: 3
+# versionCode is 10 x build.gradle's + the ABI's index (android/app/build.gradle, REA-40).
+VercodeOperation:
+  - 10 * %c + 1
+  - 10 * %c + 2
+  - 10 * %c + 3
+  - 10 * %c + 4
+CurrentVersion: 1.0.3
+CurrentVersionCode: 44

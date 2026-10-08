@@ -24,22 +24,26 @@ if RELEASE_CERT_FILE="$T/missing" require_release_cert "$T/d.apk" >/dev/null 2>&
 else echo "ok: no fingerprint file refuses"; fi
 echo "$want" > "$T/fp"
 RELEASE_CERT_FILE="$T/fp" require_release_cert "$T/d.apk" >/dev/null && echo "ok: the matching cert is accepted" || { echo "FAIL: matching cert refused"; fail=1; }
-# publish_checked must leave nothing under the published names when a check refuses.
-mkdir -p "$T/rel"; echo stale > "$T/rel/read-me-9.9.9.apk"; echo stale > "$T/rel/SHA256SUMS"
+# publish_checked must leave nothing under the published name when a check refuses.
+mkdir -p "$T/rel"; echo stale > "$T/rel/read-me-9.9.9-x86.apk"
 echo deadbeef > "$T/fp"
-if RELEASE_CERT_FILE="$T/fp" publish_checked "$T/d.apk" "$T/rel" 9.9.9 "$T/d.apk" >/dev/null 2>&1; then
+if RELEASE_CERT_FILE="$T/fp" publish_checked "$T/d.apk" "$T/rel" read-me-9.9.9-x86.apk "$T/d.apk" >/dev/null 2>&1; then
   echo "FAIL: publish_checked accepted a wrong signer"; fail=1
 fi
-if [ -e "$T/rel/read-me-9.9.9.apk" ] || [ -e "$T/rel/SHA256SUMS" ]; then
+if [ -e "$T/rel/read-me-9.9.9-x86.apk" ]; then
   echo "FAIL: a refused or stale APK is left under the published name"; fail=1
-else echo "ok: nothing left under the published names after a refusal"; fi
+else echo "ok: nothing left under the published name after a refusal"; fi
 if [ -x .venv-fdroid/bin/apksigcopier ]; then
   echo "$want" > "$T/fp"
-  if RELEASE_CERT_FILE="$T/fp" publish_checked "$T/d.apk" "$T/rel" 9.9.9 "$T/d.apk" >/dev/null 2>&1 \
-     && [ -s "$T/rel/read-me-9.9.9.apk" ] && grep -q 'read-me-9.9.9.apk' "$T/rel/SHA256SUMS"; then
-    echo "ok: a checked APK is published with its SHA256SUMS"
+  if RELEASE_CERT_FILE="$T/fp" publish_checked "$T/d.apk" "$T/rel" read-me-9.9.9-x86.apk "$T/d.apk" >/dev/null 2>&1 \
+     && [ -s "$T/rel/read-me-9.9.9-x86.apk" ]; then
+    echo "ok: a checked APK is published under its name"
   else echo "FAIL: a checked APK was not published"; fail=1; fi
 else echo "SKIP: publish success path (no .venv-fdroid apksigcopier)"; fi
+# REA-40: release:apk publishes every ABI or none, and one SHA256SUMS for all of them.
+grep -q 'for ABI in $READ_ME_ALL_ABIS' scripts/release-apk.sh && grep -q 'rm -f release/read-me-"$VER"-\*.apk release/SHA256SUMS' scripts/release-apk.sh \
+  && grep -q 'sha256sum read-me-"$VER"-\*.apk > SHA256SUMS' scripts/release-apk.sh \
+  && echo "ok: release:apk signs every ABI and sums them together" || { echo "FAIL: release:apk does not handle every ABI"; fail=1; }
 if grep -nE -- '-storepass|-keypass|--ks-pass|--key-pass|storePassword +["'"'"']' scripts/release-*.sh scripts/lib/release.sh android/app/build.gradle | grep -v "'android'"; then
   echo "FAIL: a password on a command line or in the build file"; fail=1
 else echo "ok: no password on a command line"; fi
@@ -64,9 +68,10 @@ if [ -e "$T/app/build/generated/res/react" ] || [ -e "$T/app/build/generated/ass
   echo "FAIL: stale bundle output survives"; fail=1
 elif [ ! -e "$T/app/build/generated/res/resValues/keep" ]; then echo "FAIL: cleared more than the bundle output"; fail=1
 else echo "ok: the bundle task's old output is cleared, nothing else"; fi
-grep -q 'clear_bundle_output' scripts/build-release.sh && grep -q 'clear_bundle_output' scripts/release-apk.sh \
-  && echo "ok: both release builds clear it" || { echo "FAIL: a release build does not clear the bundle output"; fail=1; }
-grep -q 'require_fdroid_verified "$TESTED"' scripts/release-apk.sh \
+grep -q 'assemble_abi "$ABI"' scripts/build-release.sh && grep -q 'assemble_abi "$ABI" -PreadmeSign=release' scripts/release-apk.sh \
+  && grep -A2 '^assemble_abi()' scripts/lib/release.sh | grep -q clear_bundle_output \
+  && echo "ok: both release builds clear it, one ABI per Gradle run" || { echo "FAIL: a release build does not clear the bundle output"; fail=1; }
+grep -q 'require_fdroid_verified "$TESTED/app-$ABI-release.apk"' scripts/release-apk.sh \
   && echo "ok: release:apk requires F-Droid's match" || { echo "FAIL: release:apk does not require F-Droid's match"; fail=1; }
 # REA-38: F-Droid's build is unsigned; without apksigcopier's --unsigned every F-Droid build reads
 # as different (seen on 51f837a, whose entries were all identical). apksigner re-lays out a zip

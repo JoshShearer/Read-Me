@@ -25,42 +25,46 @@ nothing for day-to-day builds, device scripts or CI.
 
 ## Per release
 
-1. Build and test one build. Keep its APK: it is the build the acceptance runs installed.
-   Build it in a fresh worktree or clone if you can (`build:release` clears React Native's
-   bundle output, which kept stale images in v1.0.0, but a fresh tree is the safe habit).
+1. Build and test one build: one APK per ABI (REA-40), each from its own Gradle run, as F-Droid's
+   per-ABI build entries do. Keep them: they are the builds the acceptance runs tested.
+   Build in a fresh worktree or clone if you can (`build:release` clears React Native's
+   bundle output, which kept stale images in v1.0.0, but a fresh tree is the safe habit), with
+   the Hermes submodule checked out (`git submodule update --init`).
    ```
-   npm run build:release
-   cp android/app/build/outputs/apk/release/app-release.apk release/tested-$(git rev-parse --short HEAD).apk
-   npm run device:bridge && npm run device:ui && npm run device:intake
+   npm run build:release              # four ABIs, about 15 min; READ_ME_ABIS=arm64-v8a for one
+   cp -r android/app/build/outputs/readme release/tested-$(git rev-parse --short HEAD)
+   npm run device:bridge && npm run device:ui && npm run device:intake   # the arm64-v8a APK
    npm run device:accept-share        # unlock the phone when it says so
    npm run device:playback
    AIRPLANE=1 GAP_MINUTES=10 npm run device:gap
    npm run device:screens
-   scripts/fdroid-scan.sh             # == result: CLEAN
-   npm run repro -- release/tested-<sha>.apk   # repro: SAME, and the recipe's build equals ours
-   npm run fdroid:build -- release/tested-<sha>.apk   # fdroid:build: SAME (about 20 min; docker)
+   scripts/fdroid-scan.sh             # == result: CLEAN (every ABI's APK)
+   npm run repro -- release/tested-<sha>/app-arm64-v8a-release.apk   # repro: SAME (arm64-v8a's recipe entry)
+   npm run fdroid:build -- release/tested-<sha>   # fdroid:build: SAME for every ABI (about an hour; docker)
    ```
    Write the results down (date, device, build); they go into `AGENTS.md` Known state by a PR
    after the release. `release:apk` refuses a dirty tree, and a commit now would move HEAD off
-   the tested commit.
-2. `npm run release:apk -- release/tested-<sha>.apk`. It refuses an APK that
-   `fdroid:build` has not matched (`release/fdroid-verified`), builds with your key, refuses any
-   other signer, checks the signed APK's content equals the tested one (apksigcopier), and
-   writes `release/read-me-<version>.apk` and `release/SHA256SUMS`.
-3. The draft release, tagged at the commit `release:apk` prints (the one F-Droid built; not whatever `main` is when you publish, so
-   the tag's source is what F-Droid's `commit: v<version>` builds):
+   the tested commit (a squash merge of it is fine: same tree, so the same build).
+2. `npm run release:apk -- release/tested-<sha>`. It refuses APKs that `fdroid:build` has not
+   matched (`release/fdroid-verified`), builds each ABI with your key, refuses any other signer
+   or an extra signing block, checks each signed APK's content equals that ABI's tested one
+   (apksigcopier), and writes `release/read-me-<version>-<abi>.apk` (four) and
+   `release/SHA256SUMS`.
+3. The draft release, tagged at the commit `release:apk` prints (the one F-Droid built, or main's
+   squash merge of it; not whatever `main` is when you publish, so the tag's source is what
+   F-Droid's `commit:` builds). No prompts, so nothing is published by accident:
    ```
-   gh release create v<version> --draft --target <full sha of the tested commit> \
-     --title "Read Me <version>" --notes-file <notes> release/read-me-<version>.apk release/SHA256SUMS
+   gh release create v<version> --draft --target <the sha release:apk printed> \
+     --title "Read Me <version>" --notes-file <notes> release/read-me-<version>-*.apk release/SHA256SUMS
    ```
 4. Optional, on the phone: a release-signed APK will not install over the debug-signed one.
    `adb uninstall io.loopstring.readme` deletes the app and its data; then
-   `adb install release/read-me-<version>.apk` and open it. From then on the device scripts
+   `adb install release/read-me-<version>-arm64-v8a.apk` and open it. From then on the device scripts
    need a release-signed build too, or another uninstall.
 
 ## Publish (yours)
 
-1. The draft release: `gh release view v<version>` shows the APK, `SHA256SUMS` and the notes.
+1. The draft release: `gh release view v<version>` shows the four APKs, `SHA256SUMS` and the notes.
    Publishing creates the tag at the commit the draft names (`--target`, the tested commit):
    `gh release edit v<version> --draft=false`.
 2. Make the repository public (F-Droid builds from public source). First check the history
@@ -71,10 +75,10 @@ nothing for day-to-day builds, device scripts or CI.
    `--accept-visibility-change-consequences`).
 3. F-Droid: the merge request is https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088
    (branch `io.loopstring.readme` of `gitlab.com/Joshshearer/fdroiddata`). For each release,
-   in that fork's `metadata/io.loopstring.readme.yml`, replace the build entry with the one in
-   `fdroid/io.loopstring.readme.yml`, with `commit:` set to the tag's full hash
-   (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there), and set
-   `CurrentVersion`/`CurrentVersionCode`. Then `fdroid rewritemeta io.loopstring.readme` (it
+   in that fork's `metadata/io.loopstring.readme.yml`, replace the four build entries (one per
+   ABI) with the ones in `fdroid/io.loopstring.readme.yml`, each with `commit:` set to the tag's
+   full hash (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there), and set
+   `CurrentVersion`/`CurrentVersionCode` (the x86_64 entry's, the highest). Then `fdroid rewritemeta io.loopstring.readme` (it
    strips the comments, which fdroiddata's CI requires) and `fdroid lint io.loopstring.readme`,
    commit and push; the merge request's pipeline reruns. Before the first merge only the latest
    version may be listed. After it is merged, `AutoUpdateMode: Version` and `UpdateCheckMode:

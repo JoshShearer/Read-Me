@@ -121,7 +121,7 @@ STUB
   chmod +x "$T/smoke/bin/adb"; rm -f "$T/smoke/pidof-calls" "$T/smoke/installed"
   cp "$ROOT/scripts/lib/device.sh" "$T/smoke/repo/scripts/lib/"; cp "$ROOT/scripts/device-smoke.sh" "$T/smoke/repo/scripts/"
   ( cd "$T/smoke/repo" && { [ -d .git ] || { git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i && git checkout -q -b t; }; }
-    a=android/app/build/outputs/apk/release/app-release.apk; touch "$a"
+    a=android/app/build/outputs/readme/app-arm64-v8a-release.apk; mkdir -p "${a%/*}"; touch "$a"
     if [ "${STUB_STAMP:-}" = stale ]; then printf '0000000000000000000000000000000000000000\nclean\n' > "$a.stamp"
     else printf '%s\nclean\n' "$(git rev-parse HEAD)" > "$a.stamp"; fi
     PATH="$T/smoke/bin:$PATH" bash scripts/device-smoke.sh 2>&1 ) > "$T/smoke/out"; echo $?

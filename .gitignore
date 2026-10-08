@@ -104,3 +104,4 @@ release/SHA256SUMS
 .env
 .env.*
 release/fdroid-verified
+release/tested-*/

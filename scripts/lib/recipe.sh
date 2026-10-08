@@ -1,31 +1,37 @@
 # The F-Droid recipe's prebuild, run the way fdroidserver runs it (REA-26 review): every entry
-# joined with "; " into one bash -c from the build's subdir, with $$hermes$$ replaced by the
-# srclib's path. repro-check.sh and its test use it, so the recipe itself is what gets tested.
+# joined with "; " into one bash -c from the build's subdir. One ABI's build entry (REA-40): the
+# one whose binary: is that ABI's APK. repro-check.sh and its test use it, so the recipe itself
+# is what gets tested.
 # PyYAML: the F-Droid venv's, else the system python's (CI).
 recipe_py() { if [ -x .venv-fdroid/bin/python ]; then echo .venv-fdroid/bin/python; else echo python3; fi; }
-recipe_prebuild() { # recipe_prebuild <repo root> <hermes srclib dir>
-  local root=$1 hermes=$2 cmd
-  cmd=$($(recipe_py) - fdroid/io.loopstring.readme.yml "$hermes" <<'PY'
+recipe_prebuild() { # recipe_prebuild <repo root> <abi>
+  local root=$1 abi=$2 out subdir cmd
+  out=$($(recipe_py) - fdroid/io.loopstring.readme.yml "$abi" <<'PY'
 import sys, yaml
-build = yaml.safe_load(open(sys.argv[1]))["Builds"][-1]
-print("; ".join(build.get("prebuild", [])).replace("$$hermes$$", sys.argv[2]))
+builds = [b for b in yaml.safe_load(open(sys.argv[1]))["Builds"] if b["binary"].endswith("-%s.apk" % sys.argv[2])]
+if len(builds) != 1:
+    sys.exit("recipe_prebuild: %d build entries for %s" % (len(builds), sys.argv[2]))
+print(builds[0]["subdir"])
+print("; ".join(builds[0].get("prebuild", [])))
 PY
-)
-  ( cd "$root/$($(recipe_py) -c "import yaml; print(yaml.safe_load(open('fdroid/io.loopstring.readme.yml'))['Builds'][-1]['subdir'])")" && bash -c "$cmd" )
+) || return 1
+  subdir=$(sed -n 1p <<<"$out"); cmd=$(sed -n '2,$p' <<<"$out")
+  ( cd "$root/$subdir" && bash -c "$cmd" )
 }
 # recipe_local_metadata <recipe> <repo> <commit>: the recipe for fdroid:build (REA-38), building
-# <commit> of a local clone. The Binaries/AllowedAPKSigningKeys lines go: the release they name
-# is published after this check, not before. Edited as text: a YAML round trip turns the
-# gradle: entry "yes" into true, which fdroidserver (YAML 1.2) reads as a flavor named True.
+# <commit> of a local clone. The Binaries/binary:/AllowedAPKSigningKeys lines go: the release
+# they name is published after this check, not before. Edited as text: a YAML round trip turns
+# the gradle: entry "yes" into true, which fdroidserver (YAML 1.2) reads as a flavor named True.
 recipe_local_metadata() {
   $(recipe_py) - "$1" "$2" "$3" <<'PY'
 import re, sys
 lines = open(sys.argv[1]).read().splitlines()
-if sum(1 for l in lines if l.startswith("  - versionName:")) != 1:
-    sys.exit("recipe_local_metadata: the recipe must list exactly one build")
+names = {l.split(":", 1)[1].strip() for l in lines if l.startswith("  - versionName:")}
+if len(names) != 1:
+    sys.exit("recipe_local_metadata: the recipe must build exactly one version, not %s" % sorted(names))
 out = []
 for l in lines:
-    if re.match(r"(Binaries|AllowedAPKSigningKeys):", l):
+    if re.match(r"(Binaries|AllowedAPKSigningKeys):", l) or l.startswith("    binary:"):
         continue
     if l.startswith("Repo:"):
         l = "Repo: " + sys.argv[2]

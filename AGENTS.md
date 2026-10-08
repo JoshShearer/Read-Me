@@ -33,7 +33,7 @@ npm test                                    # Jest
 npm run test:scripts                        # node:test + bash tests for scripts/ (license parser, lock rules, manifest)
 node scripts/check-licenses.mjs             # OSI licenses, ADR 0002 exceptions
 (cd android && ./gradlew testDebugUnitTest) # Kotlin unit tests
-npm run build:release                       # assembleRelease
+npm run build:release                       # assembleRelease once per ABI (REA-40); READ_ME_ABIS=arm64-v8a for the phone's only
 scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolved Gradle tree, licenses
 npm run device:install                      # takes the device slot, installs the release build
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
@@ -50,10 +50,10 @@ npm run device:ui         # every Phase 4 screen: list states, Trim on first ope
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:settings   # REA-27 guard: bridge on, then LOOPS (default 20) x List to Settings, alternating with Reader, Home and /health; fails on a missing bridge control, stuck "Checking...", viewState error, crash, or token/item text in logcat (clears app data)
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
-npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's way; must print repro: SAME (about 4 min)
-npm run fdroid:build -- <tested apk>  # REA-38: fdroiddata's own build job in F-Droid's buildserver image (docker) on a clean clone of HEAD; must print fdroid:build: SAME. release:apk requires it (about 20 min)
+npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's arm64-v8a entry (REPRO_ABI); must print repro: SAME (about 4 min)
+npm run fdroid:build -- release/tested-<sha>  # REA-38: fdroiddata's own build job in F-Droid's buildserver image (docker) on a clean clone of HEAD, every ABI's entry; must print fdroid:build: SAME for each. release:apk requires it (about an hour)
 npm run release:keystore  # the owner, once: creates the release key interactively (docs/release.md)
-npm run release:apk -- release/tested-<sha>.apk  # the signed APK, checked against release/signing-cert.sha256 and the tested build; SHA256SUMS
+npm run release:apk -- release/tested-<sha>  # one signed APK per ABI, each checked against release/signing-cert.sha256 and its tested build; SHA256SUMS
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
 npm run device:screenshots  # F-Droid phone screenshots of the real app (light mode, demo status bar; clears app data).
                             # SCREENSHOT_MASK=x0,y0,x1,y1 hides another app's floating overlay; refuses if it would hide content
