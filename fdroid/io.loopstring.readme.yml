@@ -64,13 +64,8 @@ Builds:
       # The dotslash launcher and iOS-only language packs; neither is used by the Android build.
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
-      # Hermes parts that hermesc does not build from, removed after prebuild built it: npm
-      # package manifests without lock files, benchmarks, an inspector code generator, asmjit's
-      # instruction database tooling, and the Android library's Maven publishing script.
-      - external/hermes/npm
-      - external/hermes/benchmarks
-      - external/hermes/API/hermes/cdp/tools
-      - external/hermes/external/asmjit/asmjit/db
+      # Hermes's Android library and its Maven publishing script (an unknown maven repo to the
+      # scanner); hermesc does not use it, and prebuild has already built hermesc.
       - external/hermes/android
     ndk: r27b
 
@@ -106,10 +101,6 @@ Builds:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
-      - external/hermes/npm
-      - external/hermes/benchmarks
-      - external/hermes/API/hermes/cdp/tools
-      - external/hermes/external/asmjit/asmjit/db
       - external/hermes/android
     ndk: r27b
 
@@ -145,10 +136,6 @@ Builds:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
-      - external/hermes/npm
-      - external/hermes/benchmarks
-      - external/hermes/API/hermes/cdp/tools
-      - external/hermes/external/asmjit/asmjit/db
       - external/hermes/android
     ndk: r27b
 
@@ -184,10 +171,6 @@ Builds:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
-      - external/hermes/npm
-      - external/hermes/benchmarks
-      - external/hermes/API/hermes/cdp/tools
-      - external/hermes/external/asmjit/asmjit/db
       - external/hermes/android
     ndk: r27b
 
