@@ -61,7 +61,7 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -103,8 +103,8 @@ android {
         applicationId "io.loopstring.readme"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.0.3"
+        versionCode 5
+        versionName "1.0.4"
         // REA-26: reproducible native libraries. The GNU build ID hashes the unstripped library,
         // whose debug info holds the checkout's path, so two clones (ours, F-Droid's) differed
         // only in it. RN adds its own CMake arguments without replacing this one.

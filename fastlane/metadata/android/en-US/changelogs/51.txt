@@ -1,0 +1,1 @@
+A smaller app: code it never uses is now removed when it is built (R8), about 3 MB less. Node.js for the build now comes from Debian. No other changes from 1.0.3.
