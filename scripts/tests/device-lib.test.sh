@@ -44,6 +44,31 @@ rm -rf "$L"
 check "a free slot is taken" "$(take)" 0
 check "and released on exit" "$([ -d "$L" ] && echo kept || echo released)" released
 
+# device_clear_app in a /run-tickets lane: refused (exit 7, no pm clear) unless the owner has
+# created .claude/device-data-disposable in the primary. The lane is a linked worktree, so
+# $PRIMARY (from --git-common-dir) is the repo above, as in a real run.
+cat > "$T/bin/adb" <<'STUB'
+#!/bin/sh
+[ -n "${STUB_CALLS:-}" ] && echo "$*" >> "$STUB_CALLS"
+case "$1" in
+  devices) printf 'List of devices attached\nX\tdevice\n\n' ;;
+  logcat) [ -f "$STUB_LOGCAT" ] && cat "$STUB_LOGCAT" ;;
+  *) : ;;
+esac
+STUB
+git add -A >/dev/null 2>&1; git -c user.email=t@t -c user.name=t commit -q -m lib
+git worktree add -q -b run/x "$T/repo-run-20261008-140000" HEAD
+git worktree add -q -b feature/rea-1-x "$T/repo-rea-1" HEAD
+clear_in() { ( cd "$1" && STUB_CALLS="$T/calls" bash -c '. scripts/lib/device.sh; device_clear_app' >/dev/null 2>&1; echo $? ); }
+rm -f "$T/calls"
+check "a run lane refuses to clear the app" "$(clear_in "$T/repo-run-20261008-140000")" 7
+check "and never sends pm clear" "$(grep -c 'pm clear' "$T/calls" 2>/dev/null || echo 0)" 0
+touch .claude/device-data-disposable
+check "the owner's opt-in in the primary allows it" "$(clear_in "$T/repo-run-20261008-140000")" 0
+check "and pm clear is sent" "$(grep -c 'pm clear' "$T/calls")" 1
+rm -f .claude/device-data-disposable "$T/calls"
+check "an interactive worktree still clears" "$(clear_in "$T/repo-rea-1")" 0
+
 # device_require_unlocked: Android 13+ prints isKeyguardShowing in `dumpsys window`; Android 10
 # (the Huawei VRD-W09 tablet, 2026-10-03) prints only KeyguardStateMonitor's mIsShowing.
 mkdir -p "$T/kg"
