@@ -30,7 +30,10 @@ for ABI in ${READ_ME_ABIS:-$READ_ME_ALL_ABIS}; do
   # (android/app/.cxx) configured before package.json had codegenConfig silently leaves it out,
   # and the app then dies at TurboModuleRegistry.getEnforcing (reproduced 2026-10-02, 964fef0).
   SPEC=$(node -e "console.log((require('./package.json').codegenConfig||{}).name||'')")
-  if [ -n "$SPEC" ]; then
+  # Only ARM keeps those names as whole strings: x86_64 builds them from 8-byte and x86 from
+  # 4-byte immediates (checked 2026-10-08, 1.0.3), so a grep cannot see them there. The x86
+  # builds share the codegen and the spec stamp below with the ARM ones that were checked.
+  if [ -n "$SPEC" ] && [[ $ABI == arm* ]]; then
     SO=$(mktemp)
     unzip -p "$APK" "lib/$ABI/libappmodules.so" > "$SO"
     missing=""
