@@ -23,11 +23,11 @@ grep -qx 'reactNativeDevServerIp=localhost' "$T/repo/android/gradle.properties" 
   && echo "ok: the last existing property is intact" || { echo "FAIL: reactNativeDevServerIp corrupted"; fail=1; }
 # REA-40: four build entries, one per ABI. Each must build the ABI its binary: names, with the
 # versionCode build.gradle gives that ABI's split, or F-Droid's APK and ours differ in both.
-$(recipe_py) - <<'PY' && echo "ok: each build entry's ABI, versionCode and binary agree with build.gradle" || fail=1
+$(recipe_py) - <<'PY' && echo "ok: each build entry's ABI, versionCode and binary agree with build.gradle" || { echo "FAIL: a build entry disagrees with build.gradle"; fail=1; }
 import re, yaml
 m = yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))
 g = open("android/app/build.gradle").read()
-base = int(re.search(r"versionCode (\d+)", g).group(1))
+base = int(re.search(r"^\s+versionCode (\d+)$", g, re.M).group(1))
 codes = {a: int(c) for a, c in re.findall(r"'([\w-]+)': (\d)", re.search(r"readmeAbiCodes = \[(.*?)\]", g).group(1))}
 assert len(m["Builds"]) == len(codes) == 4, (len(m["Builds"]), codes)
 for b in m["Builds"]:
@@ -77,7 +77,7 @@ PY
 # round trip writes it back as true, and F-Droid then builds a flavor named "True".
 diff <(grep -vE '^(Repo|Binaries|AllowedAPKSigningKeys):|^    (commit|binary):|^#|^ *#' fdroid/io.loopstring.readme.yml) <(grep -vE '^(Repo|Binaries|AllowedAPKSigningKeys):|^    (commit|binary):|^#|^ *#' "$T/local.yml") >/dev/null \
   && echo "ok: local metadata keeps every other recipe line as written" || { echo "FAIL: local metadata rewrote recipe lines"; fail=1; }
-$(recipe_py) - <<'PY' && echo "ok: every build names our signed APK and the version is package.json's" || fail=1
+$(recipe_py) - <<'PY' && echo "ok: every build names our signed APK and the version is package.json's" || { echo "FAIL: a build's binary or version is wrong"; fail=1; }
 import json, yaml
 m = yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))
 v = json.load(open("package.json"))["version"]
