@@ -31,15 +31,21 @@ ln -sfn "$CI_PROJECT_DIR/tmp" "$home_vagrant/tmp"
 ln -sfn "$CI_PROJECT_DIR/srclibs" "$home_vagrant/srclibs"
 export GRADLE_USER_HOME=$home_vagrant/.gradle
 fdroid="sudo --preserve-env --user vagrant env PATH=$fdroidserver:$PATH env PYTHONPATH=$fdroidserver:$fdroidserver/examples env PYTHONUNBUFFERED=true env TERM=$TERM env HOME=$home_vagrant fdroid"
-apt-get install -y -qq sudo openjdk-21-jdk-headless >/dev/null
-update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java
-appid=${1%:*}
-cp -R "$CI_PROJECT_DIR/build" "$home_vagrant/build"
-cp -R "metadata/$appid.yml" "$home_vagrant/metadata"
-chown -R vagrant "$home_vagrant" "$CI_PROJECT_DIR"
-cd "$home_vagrant"
-ln -s "$CI_PROJECT_DIR" "$home_vagrant/fdroiddata"
-ln -s "$CI_PROJECT_DIR/../.gitconfig" "$home_vagrant/.gitconfig"
-$fdroid fetchsrclibs "$@" --verbose
-rm "$home_vagrant/fdroiddata" "$home_vagrant/.gitconfig"
-(unset CI; $fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "$@")
+# One build at a time, as the job's loop does: each `fdroid build --on-server` uninstalls sudo
+# after its sudo: step, so the job reinstalls it before the next build (REA-40, 4 ABI entries).
+for build in "$@"; do
+  apt-get install -y -qq sudo openjdk-21-jdk-headless >/dev/null
+  update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java
+  cp -R "$CI_PROJECT_DIR/build" "$home_vagrant/build"
+  appid=${build%:*}
+  cp -R "$CI_PROJECT_DIR/metadata/$appid.yml" "$home_vagrant/metadata"
+  chown -R vagrant "$home_vagrant" "$CI_PROJECT_DIR"
+  pushd "$home_vagrant"
+  ln -s "$CI_PROJECT_DIR" "$home_vagrant/fdroiddata"
+  ln -s "$CI_PROJECT_DIR/../.gitconfig" "$home_vagrant/.gitconfig"
+  $fdroid fetchsrclibs "$build" --verbose
+  rm "$home_vagrant/fdroiddata" "$home_vagrant/.gitconfig"
+  (unset CI; $fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "$build")
+  apt-get install -y -qq sudo >/dev/null
+  popd
+done
