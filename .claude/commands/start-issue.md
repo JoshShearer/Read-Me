@@ -52,7 +52,7 @@ Enter a number, or an issue ID:
 `get_issue`: title, description, labels, state, assignee, parent, and `url`. Use the returned
 `url` verbatim; do not build one.
 
-Pull the ID out of the title or description (`R-M01`-`R-M14`, `R-S01`-`R-S04`,
+Pull the ID out of the title or description (`R-M01`-`R-M14`, `R-S01`-`R-S05`,
 `R-C01`-`R-C04`, `SPIKE-01`-`SPIKE-06`). If there is one, read its text out of `srs.md` and
 show it. The ticket is a pointer; `srs.md` is the acceptance criteria.
 

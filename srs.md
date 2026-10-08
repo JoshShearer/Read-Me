@@ -352,6 +352,17 @@ Android share sheet. This is the data path the later "Save to Obsidian" (R-C01) 
 A `readme://bridge/start` deep link (or equivalent intent) that the plugin can open to start
 the bridge when it is not running. Feasibility from Obsidian's WebView is unverified.
 
+### R-S05 - Continuous play
+Added 2026-10-08 (owner request, REA-41). A Settings switch, off by default. With it on, when
+an item reaches its last kept sentence it is archived as R-M11 requires, and the service then
+starts the next unread item in List order (the next row down) without user action, from its
+saved position or its start. Items that are not `ready`, or are archived, are skipped; when no
+unread item is left, playback stops. Trim never interrupts the chain: an item that has never
+been opened is read with all paragraphs kept, and R-M05's first-open Trim applies only when the
+user opens an item. The service makes the handover itself (R-M07: screen off, JS not
+involved). R-S02's "at the end of the current item" overrides it. With the switch off,
+behaviour is R-M11's: archive and stop.
+
 ## Could Have
 
 ### R-C01 - Save to Obsidian

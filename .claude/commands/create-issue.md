@@ -47,7 +47,7 @@ nothing can regress yet.
 ## Step 2: Requirement or spike ID
 
 **Ask for or infer the `srs.md` ID.** IDs run `R-M01` through `R-M14`, `R-S01` through
-`R-S04`, `R-C01` through `R-C04`, and `SPIKE-01` through `SPIKE-06`. Find the text with
+`R-S05`, `R-C01` through `R-C04`, and `SPIKE-01` through `SPIKE-06`. Find the text with
 `grep -n "### R-M07" srs.md` (spikes: `grep -n "SPIKE-05" srs.md`).
 
 - Put the primary ID in the **title** as a trailing tag and in the `## Requirement` body
