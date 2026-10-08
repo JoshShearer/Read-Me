@@ -93,4 +93,16 @@ printf 'E: Failed to fetch something\n' > "$T/early.log"
 out=$(bash -c 'set -euo pipefail; source scripts/lib/recipe.sh; fdroid_build_failed "$1"' _ "$T/early.log" 2>&1 || true)
 grep -q "F-Droid's build FAILED (log: $T/early.log)" <<<"$out" && grep -q 'E: Failed to fetch' <<<"$out" \
   && echo "ok: an early build failure is reported with its log" || { echo "FAIL: an early build failure went unreported: $out"; fail=1; }
+# REA-42 review: Node.js comes from Debian (forky has the version we build with), never a download.
+$(recipe_py) - <<'PY' && echo "ok: every build installs Node.js and npm from Debian forky" || { echo "FAIL: a build gets Node.js elsewhere"; fail=1; }
+import yaml
+m = yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))
+for b in m["Builds"]:
+    sudo = " ; ".join(b["sudo"])
+    assert "nodejs.org" not in sudo and "/opt/node" not in sudo, b["versionCode"]
+    assert "apt-get install -y -t forky nodejs npm" in b["sudo"], b["versionCode"]
+PY
+# REA-42 review: F-Droid asks for R8 on release builds.
+grep -qE '^def enableProguardInReleaseBuilds = true$' android/app/build.gradle \
+  && echo "ok: R8 is on for release builds" || { echo "FAIL: R8 is off for release builds"; fail=1; }
 exit $fail

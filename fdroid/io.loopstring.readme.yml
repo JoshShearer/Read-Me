@@ -17,23 +17,22 @@ Repo: https://github.com/JoshShearer/Read-Me.git
 # ABI (REA-40), each naming its APK in binary:.
 
 Builds:
-  - versionName: 1.0.3
-    versionCode: 41
+  - versionName: 1.0.4
+    versionCode: 51
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.0.3
+    commit: v1.0.4
     subdir: android/app
     submodules: true
     sudo:
       - apt-get update
-      # F-Droid's buildserver image has no xz, no C++ compiler and no JDK 17 (REA-38, run in
+      # F-Droid's buildserver image has no C++ compiler and no JDK 17 (REA-38, run in
       # registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie). g++ builds hermesc.
-      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
-      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
-      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
-        | sha256sum -c -
-      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
-      # Gradle's React Native settings plugin runs npx.
-      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - apt-get install -y cmake ninja-build libicu-dev g++
+      # Trixie has Node.js 20, below React Native's ^22.13 || ^24.3; forky has 24.21.0, the
+      # version our releases are built with (REA-42). Its npm also provides the npx Gradle runs.
+      - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+      - apt-get update
+      - apt-get install -y -t forky nodejs npm
       # React Native's Gradle plugin wants a JDK 17 toolchain; Debian trixie has only 21. This is
       # the Temurin build our releases use (Gradle provisions the same one here), so nothing
       # is patched to 21 and the output stays identical.
@@ -69,19 +68,17 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.3
-    versionCode: 42
-    commit: v1.0.3
+  - versionName: 1.0.4
+    versionCode: 52
+    commit: v1.0.4
     subdir: android/app
     submodules: true
     sudo:
       - apt-get update
-      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
-      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
-      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
-        | sha256sum -c -
-      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
-      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - apt-get install -y cmake ninja-build libicu-dev g++
+      - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+      - apt-get update
+      - apt-get install -y -t forky nodejs npm
       - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
       - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
         | sha256sum -c -
@@ -104,19 +101,17 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.3
-    versionCode: 43
-    commit: v1.0.3
+  - versionName: 1.0.4
+    versionCode: 53
+    commit: v1.0.4
     subdir: android/app
     submodules: true
     sudo:
       - apt-get update
-      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
-      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
-      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
-        | sha256sum -c -
-      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
-      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - apt-get install -y cmake ninja-build libicu-dev g++
+      - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+      - apt-get update
+      - apt-get install -y -t forky nodejs npm
       - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
       - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
         | sha256sum -c -
@@ -139,19 +134,17 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.3
-    versionCode: 44
-    commit: v1.0.3
+  - versionName: 1.0.4
+    versionCode: 54
+    commit: v1.0.4
     subdir: android/app
     submodules: true
     sudo:
       - apt-get update
-      - apt-get install -y cmake ninja-build libicu-dev xz-utils g++
-      - curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz
-      - echo "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6  /tmp/node.tar.xz"
-        | sha256sum -c -
-      - mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
-      - ln -sf /opt/node/bin/node /opt/node/bin/npm /opt/node/bin/npx /usr/local/bin/
+      - apt-get install -y cmake ninja-build libicu-dev g++
+      - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
+      - apt-get update
+      - apt-get install -y -t forky nodejs npm
       - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
       - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
         | sha256sum -c -
@@ -184,5 +177,5 @@ VercodeOperation:
   - 10 * %c + 2
   - 10 * %c + 3
   - 10 * %c + 4
-CurrentVersion: 1.0.3
-CurrentVersionCode: 44
+CurrentVersion: 1.0.4
+CurrentVersionCode: 54
