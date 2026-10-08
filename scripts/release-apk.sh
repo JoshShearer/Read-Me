@@ -35,4 +35,7 @@ done
 done=1
 cat release/SHA256SUMS
 echo "signer $(cert_sha256 "release/read-me-$VER-arm64-v8a.apk" | cut -c1-16)..."
-echo "tag the commit F-Droid built: gh release create v$VER --draft --target ${commits# } ..."
+TARGET=$(sed 's/^ *//; s/ .*//' <<<"$commits")
+# A squash merge of the commit F-Droid built has the same tree, so the same build: tag main's.
+[ "$(git rev-parse "$TARGET^{tree}")" = "$(git rev-parse 'HEAD^{tree}')" ] && TARGET=$(git rev-parse HEAD)
+echo "tag this commit: gh release create v$VER --draft --target $TARGET ..."
