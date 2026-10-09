@@ -17,15 +17,15 @@ Repo: https://github.com/JoshShearer/Read-Me.git
 # ABI (REA-40), each naming its APK in binary:.
 
 Builds:
-  - versionName: 1.0.4
-    versionCode: 51
+  - versionName: 1.0.5
+    versionCode: 61
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.0.4
+    commit: v1.0.5
     subdir: android/app
     submodules: true
     sudo:
       - apt-get update
-      # F-Droid's buildserver image has no C++ compiler and no JDK 17 (REA-38, run in
+      # F-Droid's buildserver image has no C++ compiler (REA-38, run in
       # registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie). g++ builds hermesc.
       - apt-get install -y cmake ninja-build libicu-dev g++
       # Trixie has Node.js 20, below React Native's ^22.13 || ^24.3; forky has 24.21.0, the
@@ -33,14 +33,6 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-      # React Native's Gradle plugin wants a JDK 17 toolchain; Debian trixie has only 21. This is
-      # the Temurin build our releases use (Gradle provisions the same one here), so nothing
-      # is patched to 21 and the output stays identical.
-      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
-      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
-        | sha256sum -c -
-      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
-        --strip-components=1
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
@@ -48,6 +40,10 @@ Builds:
     prebuild:
       # hermesc from the external/hermes submodule, built outside the tree (~/.cache).
       - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      # React Native's Gradle plugin hardcodes a JDK 17 toolchain; this sets it to the image's
+      # JDK 21, the app's bytecode target staying 17. Our release builds run the same script
+      # (npm postinstall), so both builds have the same inputs (REA-43).
+      - node scripts/patch-rn-jdk21.mjs
       # fdroidserver joins prebuild entries with "; " into one shell, so this runs at the repo
       # root (the cd above). gradle.properties has no final newline: start with one. The last
       # reactNativeArchitectures wins: React Native and the ABI split then build only armeabi-v7a.
@@ -68,9 +64,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.4
-    versionCode: 52
-    commit: v1.0.4
+  - versionName: 1.0.5
+    versionCode: 62
+    commit: v1.0.5
     subdir: android/app
     submodules: true
     sudo:
@@ -79,17 +75,13 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
-      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
-        | sha256sum -c -
-      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
-        --strip-components=1
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-arm64-v8a.apk
     prebuild:
       - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=arm64-v8a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
       - node_modules/react-native/ReactAndroid/publish.gradle
@@ -101,9 +93,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.4
-    versionCode: 53
-    commit: v1.0.4
+  - versionName: 1.0.5
+    versionCode: 63
+    commit: v1.0.5
     subdir: android/app
     submodules: true
     sudo:
@@ -112,17 +104,13 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
-      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
-        | sha256sum -c -
-      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
-        --strip-components=1
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86.apk
     prebuild:
       - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86\n' "$HERMESC" >> android/gradle.properties
     scanignore:
       - node_modules/react-native/ReactAndroid/publish.gradle
@@ -134,9 +122,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.4
-    versionCode: 54
-    commit: v1.0.4
+  - versionName: 1.0.5
+    versionCode: 64
+    commit: v1.0.5
     subdir: android/app
     submodules: true
     sudo:
@@ -145,17 +133,13 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-      - curl -fsSLo /tmp/jdk17.tar.gz https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
-      - echo "3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e  /tmp/jdk17.tar.gz"
-        | sha256sum -c -
-      - mkdir -p /usr/lib/jvm/temurin-17 && tar -xzf /tmp/jdk17.tar.gz -C /usr/lib/jvm/temurin-17
-        --strip-components=1
     init: cd ../.. && npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86_64.apk
     prebuild:
       - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86_64\n' "$HERMESC" >> android/gradle.properties
     scanignore:
       - node_modules/react-native/ReactAndroid/publish.gradle
@@ -177,5 +161,5 @@ VercodeOperation:
   - 10 * %c + 2
   - 10 * %c + 3
   - 10 * %c + 4
-CurrentVersion: 1.0.4
-CurrentVersionCode: 54
+CurrentVersion: 1.0.5
+CurrentVersionCode: 64

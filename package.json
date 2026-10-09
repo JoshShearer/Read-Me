@@ -1,6 +1,6 @@
 {
   "name": "io.loopstring.readme",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -17,7 +17,7 @@
     "release:apk": "bash scripts/release-apk.sh",
     "repro": "bash scripts/repro-check.sh",
     "devcheck:fixtures": "node scripts/make-devcheck-fixtures.mjs",
-    "postinstall": "node scripts/make-devcheck-fixtures.mjs",
+    "postinstall": "node scripts/patch-rn-jdk21.mjs && node scripts/make-devcheck-fixtures.mjs",
     "pretest": "node scripts/make-devcheck-fixtures.mjs",
     "pretypecheck": "node scripts/make-devcheck-fixtures.mjs",
     "device:devcheck": "scripts/devcheck.sh",

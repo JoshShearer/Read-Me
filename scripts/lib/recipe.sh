@@ -16,7 +16,8 @@ print("; ".join(builds[0].get("prebuild", [])))
 PY
 ) || return 1
   subdir=$(sed -n 1p <<<"$out"); cmd=$(sed -n '2,$p' <<<"$out")
-  ( cd "$root/$subdir" && bash -c "$cmd" )
+  # fdroidserver runs it with -e -u -o pipefail: a failing entry stops the build there too.
+  ( cd "$root/$subdir" && bash -e -u -o pipefail -c "$cmd" )
 }
 # recipe_local_metadata <recipe> <repo> <commit>: the recipe for fdroid:build (REA-38), building
 # <commit> of a local clone. The Binaries/binary:/AllowedAPKSigningKeys lines go: the release
