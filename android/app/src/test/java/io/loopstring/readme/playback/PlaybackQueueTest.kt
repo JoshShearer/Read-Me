@@ -45,10 +45,13 @@ class PlaybackQueueTest {
     val nextAsked = mutableListOf<Pair<Long, Set<Long>>>()
     // Runs inside nextItem: stands in for a user action on another thread during the handover.
     var during: (() -> Unit)? = null
+    // REA-46: thrown from nextItem, as segmenting a large item could (StackOverflowError, OOM).
+    var failNext: Throwable? = null
     override fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? {
       nextAsked += finishedId to skip.toSet()
       events += "next:$finishedId"
       during?.invoke()
+      failNext?.let { throw it }
       return next.also { next = null }
     }
     val handovers = mutableListOf<Triple<Long, Long, Long>>()
@@ -541,6 +544,55 @@ class PlaybackQueueTest {
     assertNull(queue.snapshot().itemId)
     assertTrue(sink.snapshots.none { it.itemId == 8L })
     assertTrue(speaker.spoken.all { gen(it) == g })
+  }
+
+  // --- REA-46: a failure while building the next item ends the chain like no next item ---
+
+  /** Sentences whose every read throws [t]: Utterances.fit fails on them. */
+  private fun failingRows(t: Throwable) = object : AbstractList<SentenceRow>() {
+    override val size = 1
+    override fun get(index: Int): SentenceRow = throw t
+  }
+
+  /** Finishes 7 with nothing escaping onDone, then checks the queue ended as with no next item. */
+  private fun assertTheChainEndsLikeNoNextItem() {
+    try {
+      finishSeven()
+    } catch (t: Throwable) {
+      throw AssertionError("escaped onDone: ${t.javaClass.simpleName}", t)
+    }
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(listOf(7L), sink.nextAsked.map { it.first })
+    assertEquals("snapshot:null:false", sink.events.last())
+    val s = queue.snapshot()
+    assertNull(s.itemId)
+    assertFalse(s.playing)
+    // The handover is over: the queue is idle, not "playing" with nothing queued.
+    speaker.speaking = false
+    repeat(PlaybackQueue.STALL_TICKS + 1) { assertFalse(queue.checkStall()) }
+    assertFalse(queue.pause())
+    assertFalse(queue.resume())
+    assertEquals(0, sink.lost)
+    // And a later play starts normally.
+    assertTrue(queue.load(9, rows8, 0, 2.0f))
+    assertEquals(9L, queue.snapshot().itemId)
+  }
+
+  @Test fun anErrorFromNextItemEndsTheChain() {
+    sink.failNext = StackOverflowError()
+    assertTheChainEndsLikeNoNextItem()
+  }
+
+  @Test fun anErrorWhileFittingTheNextItemEndsTheChain() {
+    sink.next = NextItem(8, failingRows(OutOfMemoryError()), 0)
+    assertTheChainEndsLikeNoNextItem()
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+  }
+
+  @Test fun anExceptionWhileFittingTheNextItemEndsTheChain() {
+    sink.next = NextItem(8, failingRows(IllegalStateException()), 0)
+    assertTheChainEndsLikeNoNextItem()
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
   }
 
   @Test fun aNextItemWithABadStartIsRefused() {

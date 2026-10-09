@@ -232,13 +232,17 @@ class PlaybackQueue(
   private fun handOver(p: Pending) {
     // Store reads and whole-item segmentation run outside the lock, so the main thread (stall
     // checks, session and notification controls, JS's getPlayback) never waits on them.
-    val next = try {
+    // Throwable, not RuntimeException: an Error escaping here (StackOverflowError or OOM while
+    // segmenting a big item) left the queue playing silently with the wake lock held (REA-46).
+    val built = try {
       sink.nextItem(p.finishedId, p.skip)
-    } catch (e: RuntimeException) {
+        ?.takeIf { it.startIndex in it.sentences.indices }
+        ?.let { it to Utterances.fit(it.sentences, it.startIndex, maxChars) }
+    } catch (t: Throwable) {
       null
     }
-    val fitted = next?.takeIf { it.startIndex in it.sentences.indices }
-      ?.let { Utterances.fit(it.sentences, it.startIndex, maxChars) }
+    val next = built?.first
+    val fitted = built?.second
     synchronized(lock) {
       // A pause, stop, play or deletion of the finished item took over meanwhile.
       if (handover != p.token) return
