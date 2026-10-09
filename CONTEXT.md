@@ -33,8 +33,9 @@ Rules of the layering:
 - **Kotlin owns the database** (ADR 0001). Intake, `Fetcher` and `PlaybackService`
   write while JS may not be running, so JS reads and writes only through `ReadMeSpeech`.
 - **The bridge knows nothing about items.** It turns POSTed text into WAV, nothing more.
-- **Segmentation lives only in `segment`.** Everything persisted addresses text by
-  (paragraph index, character offset).
+- **Segmentation lives in `segment`**, plus one Kotlin port (`playback/Segmenter`) for
+  continuous play's handover with no JS (ADR 0011); a shared golden keeps the two identical.
+  Everything persisted addresses text by (paragraph index, character offset).
 
 ## Data flow
 
@@ -98,7 +99,8 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
   wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; TtsOpen: which engine to bind, a refused bind as no-engine (ADR 0010); EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and
-  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats),
+  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats;
+  ContinuousPlay: the next unread item for R-S05; Segmenter: the Kotlin port of `segment`),
   bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
   server, caps, token, CORS, drain; Http: request-head parsing; TtsSynth: the bridge's own
   TextToSpeech; BridgeFiles: cache WAVs and the start-up sweep; BridgeView: Settings state and
@@ -116,7 +118,7 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard,
                              0007 item lifecycle, 0008 bridge text limit, 0009 paused session
-                             lifetime, 0010 engine choice and fallback)
+                             lifetime, 0010 engine choice and fallback, 0011 continuous play handover)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
