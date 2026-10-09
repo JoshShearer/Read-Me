@@ -1,1 +1,1 @@
-Builds with Java 21 instead of downloading Java 17. No changes to the app from 1.0.4.
+New in Settings: Continuous play. When an item ends, Read Me goes on to the next unread item in the list. It is off by default. The app is now built with Java 21.
