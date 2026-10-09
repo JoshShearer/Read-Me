@@ -7,6 +7,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # R-M13: the Licenses screen's asset must match this tree's dependencies.
 node scripts/make-notices.mjs --check || { echo "refused: run npm run notices and commit the asset" >&2; exit 1; }
+# REA-43: the JDK 21 toolchain, as F-Droid's prebuild applies it; a build without it never
+# matches theirs. postinstall normally has already, so this is a no-op.
+node scripts/patch-rn-jdk21.mjs
 # A spec change needs a fresh codegen; a CMake cache from before it silently keeps the old one
 # (the 964fef0 trap). The stamp records which spec the cache was built from.
 SPEC_TS=src/native/NativeReadMeSpeech.ts

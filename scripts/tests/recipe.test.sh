@@ -11,6 +11,8 @@ git archive HEAD | tar -x -C "$T/repo"
 # build-hermesc.sh needs node_modules/hermes-compiler for its version; a stub is enough here, and
 # a hermesc already in its cache (under $HOME) stands in for building one.
 mkdir -p "$T/repo/node_modules/hermes-compiler" && echo '{"version":"0.0.0-test"}' > "$T/repo/node_modules/hermes-compiler/package.json"
+# The JDK 21 patch (REA-43) needs React Native's Gradle plugin; the installed one is already patched.
+mkdir -p "$T/repo/node_modules/@react-native" && cp -r node_modules/@react-native/gradle-plugin "$T/repo/node_modules/@react-native/"
 FAKE=$T/home/.cache/read-me/hermesc-0.0.0-test/build/bin/hermesc
 mkdir -p "$(dirname "$FAKE")" && printf '#!/bin/sh\necho fake\n' > "$FAKE" && chmod +x "$FAKE"
 HOME=$T/home recipe_prebuild "$T/repo" x86 >/dev/null 2>&1
@@ -105,4 +107,29 @@ PY
 # REA-42 review: F-Droid asks for R8 on release builds.
 grep -qE '^def enableProguardInReleaseBuilds = true$' android/app/build.gradle \
   && echo "ok: R8 is on for release builds" || { echo "FAIL: R8 is off for release builds"; fail=1; }
+# REA-43 review: the image's JDK 21, never a downloaded JDK; every entry patches React Native's
+# Gradle plugin to it, as our own installs do (postinstall), or the two builds differ.
+$(recipe_py) - <<'PY' && echo "ok: every build uses the image's JDK and patches the plugin as postinstall does" || { echo "FAIL: a build downloads a JDK or skips the JDK 21 patch"; fail=1; }
+import json, yaml
+m = yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))
+for b in m["Builds"]:
+    sudo = " ; ".join(b["sudo"])
+    assert "jdk" not in sudo.lower() and "temurin" not in sudo.lower(), b["versionCode"]
+    assert "node scripts/patch-rn-jdk21.mjs" in b["prebuild"], b["versionCode"]
+assert "node scripts/patch-rn-jdk21.mjs" in json.load(open("package.json"))["scripts"]["postinstall"]
+PY
+# The recipe's prebuild runs as fdroidserver runs it: a failing entry stops it.
+mkdir -p "$T/stop/sub"
+cat > "$T/stop.yml" <<'YML'
+Builds:
+  - subdir: sub
+    binary: x-stop.apk
+    prebuild:
+      - "false"
+      - touch reached
+YML
+( cd "$T" && cp -r "$OLDPWD/scripts" . && mkdir -p fdroid && cp stop.yml fdroid/io.loopstring.readme.yml \
+  && source scripts/lib/recipe.sh && recipe_prebuild "$T/stop" stop ) >/dev/null 2>&1
+[ ! -e "$T/stop/sub/reached" ] && echo "ok: a failing prebuild entry stops the prebuild" \
+  || { echo "FAIL: the prebuild ran on past a failing entry"; fail=1; }
 exit $fail

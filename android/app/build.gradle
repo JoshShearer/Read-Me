@@ -103,8 +103,8 @@ android {
         applicationId "io.loopstring.readme"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0.4"
+        versionCode 6
+        versionName "1.0.5"
         // REA-26: reproducible native libraries. The GNU build ID hashes the unstripped library,
         // whose debug info holds the checkout's path, so two clones (ours, F-Droid's) differed
         // only in it. RN adds its own CMake arguments without replacing this one.
