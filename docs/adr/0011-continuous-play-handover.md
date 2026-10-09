@@ -38,20 +38,32 @@ Two smaller facts shaped the handover itself:
   kept sentence, evaluated at the handover. No wrap to the top: items shared during the chain
   (newer, above) are not picked up, and the bottom of the list stops playback. An item played
   from Archive uses the same key. Items stopped for deletion are skipped.
-- **Archive, then load, in one queue step.** The queue archives (`finishReading`), asks the
-  sink for the next item and loads it under its lock, with no `itemId=null` snapshot between.
-  Audio focus, the wake lock (its timeout restarted), the media session and the foreground are
-  kept; the notification and session title follow the new item. The queue's rate is kept and
-  not applied again (AGENTS.md 9). The bridge's 503-while-playing rule (ADR 0004) covers the
-  whole chain, since playback never stops between items.
-- **What ends the chain.** A user pause or Stop, an engine error run at the end (which pauses
+- **Archive, then load, with no empty snapshot between.** Under its lock the queue archives
+  (`finishReading`) and enters a handover: still "playing" the finished item, nothing queued,
+  nothing published. It then asks the sink for the next item WITHOUT the lock (Store reads and
+  whole-item segmentation, which the main thread must not wait on), and takes the lock again to
+  load it only if nothing happened meanwhile. Audio focus, the wake lock (its timeout
+  restarted), the media session and the foreground are kept. The queue's rate is kept and not
+  applied again (AGENTS.md 9). The bridge's 503-while-playing rule (ADR 0004) covers the whole
+  chain, since playback never stops between items.
+- **During the handover** (between the archive and the next item's load): a pause or Stop ends
+  the chain, as an item end with the switch off does, and writes no position into either item
+  (the finished one is archived; the next was never started); a user play wins and the built
+  item is dropped; a rate change applies to the next item; next, previous and back-paragraph
+  do nothing; the stall check does not count the silence as a lost engine; an item deleted
+  meanwhile is refused and ends the chain.
+- **Title.** `nextItem` only offers the next item's title; it becomes the notification and
+  session title when a snapshot of that item reaches the main thread, so an earlier snapshot
+  never shows it and an offer the queue dropped never does.
+- **What ends the chain.** A user pause or Stop (also during the handover), an engine error run at the end (which pauses
   instead of archiving), a failed archive, the switch turned off (read at each handover), or
   no next item.
 - **Trim state is left alone.** An item read by continuous play keeps `opened_at` NULL and gets
   no cuts (AGENTS.md 12), so the user's own first open still shows Trim. Its saved position is
   kept and remapped as for any play.
 - **Logs** carry ids and counts only (AGENTS.md 1): `playback continue from=<id> item=<id>
-  sentences=<n> start=<i>`, `playback continue none after=<id>`, and `playback handover
+  sentences=<n> start=<i> ms=<n>` (ms: the time to build it), `playback continue none
+  after=<id> ms=<n>`, and `playback handover
   from=<id> item=<id> ms=<n>` (the time from the last sentence's end to the next item's first
   sentence; information, not an R-M07 inter-utterance gap).
 
@@ -63,5 +75,8 @@ Two smaller facts shaped the handover itself:
 - R-S02 (sleep timer) is not built. When it is, its "at the end of the current item" must win
   over continuous play: the sink's `nextItem` returns null while that timer is armed.
 - The device check (`npm run device:continuous`) runs on the owner's library without clearing
-  it, so "stops after the last" is observed there only when no other unread item exists; the
-  queue and service unit tests cover it.
+  it, so the chain must never reach one of the owner's items: the script identifies its three
+  items by List position and sentence count, turns the switch off through Settings while the
+  last (long) one plays, which needs the owner to unlock, and otherwise force-stops Read Me
+  while that item still plays. "Stops after the last unread item" is covered by the queue and
+  service unit tests, not on the phone.

@@ -43,7 +43,9 @@ interface PlaybackSink {
   /**
    * R-S05 continuous play, asked only after [finished] returned: the next item to read, never
    * one in [skip] (stopped for deletion), or null to stop as before. Null by default, and
-   * whenever the setting is off.
+   * whenever the setting is off. The one call made WITHOUT the queue's lock (it reads the Store
+   * and segments a whole item): the queue may drop the result if a pause, stop, play or
+   * deletion came first, so an implementation must not act on it beyond building it.
    */
   fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? = null
 

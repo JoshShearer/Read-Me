@@ -70,8 +70,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       main.postDelayed(this, STALL_TICK_MS)
     }
   }
-  // Written by nextItem on a TTS binder thread at a continuous-play handover (R-S05).
-  @Volatile private var title = ""
+  private var title = ""
+  // R-S05: the title of the item nextItem offered (TTS binder thread). It becomes [title] only
+  // when a snapshot of that item reaches the main thread, so an earlier item's snapshot never
+  // shows it and an offer the queue dropped never does (ADR 0011).
+  @Volatile private var offered: Pair<Long, String>? = null
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
   // Written on the main thread; read on TTS binder threads by preemptOnPlay.
@@ -392,14 +395,16 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
    */
   override fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? {
     if (!Settings(this).continuousPlay) return null
+    val began = SystemClock.elapsedRealtime()
     val found = ContinuousPlay.next(store, finishedId, skip)
+    val ms = SystemClock.elapsedRealtime() - began
     if (found == null) {
-      Log.i(TAG, "playback continue none after=$finishedId")
+      Log.i(TAG, "playback continue none after=$finishedId ms=$ms")
       return null
     }
-    title = found.item.title
+    offered = found.item.id to found.item.title
     val n = found.next
-    Log.i(TAG, "playback continue from=$finishedId item=${n.itemId} sentences=${n.sentences.size} start=${n.startIndex}")
+    Log.i(TAG, "playback continue from=$finishedId item=${n.itemId} sentences=${n.sentences.size} start=${n.startIndex} ms=$ms")
     return n
   }
 
@@ -421,6 +426,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   private fun onSnapshot(s: PlaybackSnapshot) {
     val before = shown
     shown = s
+    if (s.itemId != null && s.itemId != before?.itemId) {
+      offered?.takeIf { it.first == s.itemId }?.let { title = it.second }
+    }
     if (s.itemId == null) {
       logStats()
       // REA-35 #1: an item ending (or none yet) must not drop a request waiting for the engine.

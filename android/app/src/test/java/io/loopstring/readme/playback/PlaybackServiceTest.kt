@@ -464,4 +464,27 @@ class PlaybackServiceTest {
     assertTrue(shadowOf(c.get()).isStoppedBySelf)
     c.destroy()
   }
+
+  private fun shownTitle(c: org.robolectric.android.controller.ServiceController<PlaybackService>): String {
+    val nm = ApplicationProvider.getApplicationContext<Context>().getSystemService(NotificationManager::class.java)
+    val n = shadowOf(nm).allNotifications.lastOrNull() ?: shadowOf(c.get()).lastForegroundNotification
+    return n.extras.getCharSequence(Notification.EXTRA_TITLE).toString()
+  }
+
+  @Test fun aNextItemTheQueueNeverTakesDoesNotChangeTheTitle() {
+    // ADR 0011: nextItem builds B outside the queue lock and the queue may drop it (a pause,
+    // stop, play or deletion first). The title follows the queue's item, not the offer.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    store.insertText("Second title", listOf("Never read."), 100L)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    Settings(ctx).continuousPlay = true
+    val c = playingItem(first)
+    assertTrue(c.get().nextItem(first, emptySet()) != null)
+    PlaybackHub.queue!!.pause()
+    idle()
+    assertEquals(first, PlaybackHub.queue!!.snapshot().itemId)
+    assertEquals("First title", shownTitle(c))
+    c.destroy()
+  }
 }
