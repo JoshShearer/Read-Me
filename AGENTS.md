@@ -323,8 +323,28 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   profile's dex checksum), so 1.0.1's acceptance stands; on the reference device `device:smoke`
   and `device:playback` passed (gaps n=24 p50=12 p95=21 max=24 ms); `fdroid:build` SAME on
   40515c6; `fdroid-scan.sh` CLEAN. F-Droid merge request:
-  https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, open, on the 1.0.2 recipe; its pipeline
+  https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, open; its pipeline on the 1.0.2 recipe
   (#2910982485, 2026-10-04) passed every job, `fdroid build` and `check apk` included.
+  1.0.3 (tag at e6100ef: Hermes as a submodule, one APK per ABI) and 1.0.4 (tag at c0fabce: R8
+  on, Node.js from Debian forky) answered review on the MR.
+  Release 1.0.5 (2026-10-09, tag at 4f5a807, four APKs and `SHA256SUMS`): continuous play (R-S05,
+  below) and builds on JDK 21 (REA-43, the reviewer's request). Acceptance on 77a8d15 (same tree):
+  `fdroid:build` SAME on all four ABIs on the image's JDK 21 (no JDK downloaded), `repro` SAME,
+  `fdroid-scan.sh` CLEAN; on the reference device `device:intake`, `ui`, `screens`, `playback`
+  (n=20 p50=11 p95=19 max=20 ms), `bridge` (Supertonic as default: Marmalade was too slow for its
+  timing, REA-44), `accept-share` (resumed at sentence 16, list "2% read"), `continuous`, and
+  `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=101 p50=8 p95=17 max=27 ms, stalls 0, errors 0);
+  each signed APK equals its tested build. The MR branch carries the 1.0.5 recipe (898bbc04e);
+  its pipeline was still running when this was written.
+- **Continuous play (R-S05, REA-41, ADR 0011):** a Settings switch, off by default. When an
+  item ends, `PlaybackQueue` hands over to the next unread item in List order with no JS:
+  `ContinuousPlay` picks it and `Segmenter` (a Kotlin port of `segment`'s fallback, pinned to the
+  TS code by a shared golden) builds its sentences from the saved position. An item read this way
+  keeps `opened_at` NULL, so its first open still shows Trim. Any failure building the next item,
+  an `Error` included, ends the chain as if there were none (REA-46, PR #38). Verified 2026-10-09
+  on the reference device, build 77a8d15: `npm run device:continuous` (three test items read in
+  List order with the screen off, handovers 35 and 20 ms, each archived; Trim on the first open
+  from Archive). Open: REA-47.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
