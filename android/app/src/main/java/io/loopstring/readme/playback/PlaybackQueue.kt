@@ -34,6 +34,15 @@ class PlaybackQueue(
   private var stallTicks = 0
   // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
   private val deleted = HashSet<Long>()
+  // R-S05: set at a continuous-play handover until the next item's first sentence starts.
+  private var handoverFrom = -1L
+  private var handoverAt = -1L
+  // R-S05: non-zero while the sink builds the next item outside the lock (ADR 0011). Any
+  // pause, stop, play or deletion meanwhile clears it, and the built item is then dropped.
+  private var handover = 0L
+  private var handoverSeq = 0L
+
+  private class Pending(val token: Long, val finishedId: Long, val skip: Set<Long>)
 
   fun load(itemId: Long, sentences: List<SentenceRow>, startIndex: Int, rate: Float): Boolean =
     synchronized(lock) {
@@ -50,6 +59,12 @@ class PlaybackQueue(
 
   fun pause(): Boolean = synchronized(lock) {
     if (!playing) return false
+    if (handover != 0L) {
+      // ADR 0011: the finished item is archived and the next has not started, so a pause here
+      // ends the chain like an item end with the switch off; no position goes into either.
+      clearLocked()
+      return true
+    }
     flushLocked()
     playing = false
     saveLocked()
@@ -64,20 +79,20 @@ class PlaybackQueue(
   }
 
   fun next(): Boolean = synchronized(lock) {
-    if (itemId == null || current + 1 >= rows.size) return false
+    if (itemId == null || handover != 0L || current + 1 >= rows.size) return false
     jumpLocked(current + 1)
     true
   }
 
   fun previous(): Boolean = synchronized(lock) {
-    if (itemId == null) return false
+    if (itemId == null || handover != 0L) return false
     jumpLocked(maxOf(current - 1, 0))
     true
   }
 
   /** To the first sentence of the previous paragraph; at the first paragraph, to its start. */
   fun backParagraph(): Boolean = synchronized(lock) {
-    if (itemId == null) return false
+    if (itemId == null || handover != 0L) return false
     val here = rows[current].paragraphIndex
     val before = (current - 1 downTo 0).firstOrNull { rows[it].paragraphIndex < here }
     val target = if (before == null) {
@@ -96,7 +111,8 @@ class PlaybackQueue(
     speaker.setRate(rate)
     // REA-35: with no item an empty snapshot reads as "the item ended", and the service dropped
     // a play request waiting for the engine. load() takes the rate from Settings.
-    if (itemId == null) return
+    // During a handover the next item starts at this rate; the finished one is not restarted.
+    if (itemId == null || handover != 0L) return
     if (playing) restartLocked(current) else publishLocked()
   }
 
@@ -121,29 +137,39 @@ class PlaybackQueue(
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
     current = i
+    if (handoverAt >= 0) {
+      sink.handedOver(handoverFrom, itemId!!, clock() - handoverAt)
+      handoverAt = -1
+    }
     publishLocked()
   }
 
-  fun onDone(id: String) = synchronized(lock) {
-    val i = indexOf(id) ?: return
-    stallTicks = 0
-    consecutiveErrors = 0
-    lastDoneAt = clock()
-    advanceLocked(i)
+  fun onDone(id: String) {
+    val pending = synchronized(lock) {
+      val i = indexOf(id) ?: return
+      stallTicks = 0
+      consecutiveErrors = 0
+      lastDoneAt = clock()
+      advanceLocked(i)
+    }
+    if (pending != null) handOver(pending)
   }
 
-  fun onError(id: String) = synchronized(lock) {
-    val i = indexOf(id) ?: return
-    stallTicks = 0
-    errors++
-    lastDoneAt = -1
-    if (consecutiveErrors == 0) firstErrorIndex = i
-    consecutiveErrors++
-    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-      pauseAtLocked(firstErrorIndex)
-      return
+  fun onError(id: String) {
+    val pending = synchronized(lock) {
+      val i = indexOf(id) ?: return
+      stallTicks = 0
+      errors++
+      lastDoneAt = -1
+      if (consecutiveErrors == 0) firstErrorIndex = i
+      consecutiveErrors++
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        pauseAtLocked(firstErrorIndex)
+        return
+      }
+      advanceLocked(i)
     }
-    advanceLocked(i)
+    if (pending != null) handOver(pending)
   }
 
   /** Stops at [index] and saves it, so the user resumes where the engine started failing. */
@@ -166,29 +192,68 @@ class PlaybackQueue(
     s
   }
 
-  private fun advanceLocked(i: Int) {
-    val id = itemId ?: return
+  /** Non-null when the item was read to the end and archived: the caller runs [handOver]. */
+  private fun advanceLocked(i: Int): Pending? {
+    val id = itemId ?: return null
     val next = i + 1
     if (next >= rows.size) {
       if (consecutiveErrors > 0) {
         // The last sentences failed: that is not reading to the end (R-M11 archives only then).
         pauseAtLocked(firstErrorIndex)
-        return
+        return null
       }
       flushLocked()
-      playing = false
       // A failed archive must still clear the queue, or the session shows "Reading" forever.
+      // It also ends a continuous-play chain: an item that did not archive is not "read".
       try {
         sink.finished(id)
       } catch (e: RuntimeException) {
         saveErrors++
+        clearLocked()
+        return null
       }
-      clearLocked()
-      return
+      // Still "playing" the finished item, with nothing queued, until handOver decides: no
+      // snapshot is published here, so the service keeps focus, the session and the foreground.
+      handover = ++handoverSeq
+      return Pending(handover, id, HashSet(deleted))
     }
     current = next
     saveRowLocked(id, rows[next])
     topUpLocked()
+    return null
+  }
+
+  /**
+   * R-S05, ADR 0011: archive-then-load in one step. No itemId=null snapshot is published
+   * between the two items, so the service keeps focus, the wake lock, the session and the
+   * foreground (Android 12+ refuses a new foreground start from the background). The rate is
+   * the queue's own and is not applied again (AGENTS.md 9).
+   */
+  private fun handOver(p: Pending) {
+    // Store reads and whole-item segmentation run outside the lock, so the main thread (stall
+    // checks, session and notification controls, JS's getPlayback) never waits on them.
+    val next = try {
+      sink.nextItem(p.finishedId, p.skip)
+    } catch (e: RuntimeException) {
+      null
+    }
+    val fitted = next?.takeIf { it.startIndex in it.sentences.indices }
+      ?.let { Utterances.fit(it.sentences, it.startIndex, maxChars) }
+    synchronized(lock) {
+      // A pause, stop, play or deletion of the finished item took over meanwhile.
+      if (handover != p.token) return
+      handover = 0L
+      if (next == null || fitted == null || next.itemId in deleted) {
+        clearLocked()
+        return
+      }
+      itemId = next.itemId
+      rows = fitted.rows
+      restartLocked(fitted.startIndex)
+      // After the restart: its flush clears a handover time in progress.
+      handoverFrom = p.finishedId
+      handoverAt = clock()
+    }
   }
 
   private fun jumpLocked(i: Int) {
@@ -202,6 +267,8 @@ class PlaybackQueue(
   }
 
   private fun restartLocked(index: Int) {
+    // A user play during a handover wins over it (ADR 0011).
+    handover = 0L
     flushLocked()
     stallTicks = 0
     // A new generation: errors before a jump or another item are not this run's.
@@ -214,6 +281,8 @@ class PlaybackQueue(
   }
 
   private fun flushLocked() {
+    // A pause, jump or stop before the next item's first sentence: no handover time to report.
+    handoverAt = -1
     generation++
     speaker.stop()
     lastDoneAt = -1
@@ -231,7 +300,8 @@ class PlaybackQueue(
 
   /** Called every few seconds by the service while playing. True when the engine is lost. */
   fun checkStall(): Boolean = synchronized(lock) {
-    if (!playing || speaker.isSpeaking()) {
+    // Nothing is queued during a handover by design: that is not a lost engine.
+    if (!playing || handover != 0L || speaker.isSpeaking()) {
       stallTicks = 0
       return false
     }
@@ -256,6 +326,8 @@ class PlaybackQueue(
   }
 
   private fun saveLocked() {
+    // During a handover the item is archived; a position written now would bring it back.
+    if (handover != 0L) return
     val id = itemId ?: return
     val r = rows.getOrNull(current) ?: return
     saveRowLocked(id, r)
@@ -271,6 +343,7 @@ class PlaybackQueue(
   }
 
   private fun clearLocked() {
+    handover = 0L
     itemId = null
     rows = emptyList()
     current = 0

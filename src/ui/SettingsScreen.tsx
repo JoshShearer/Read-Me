@@ -20,7 +20,17 @@ import {
   type Bridge,
 } from '../library/bridge';
 import { deleteItem, listItems, onItemsChanged, type Item } from '../library/library';
-import { engineBlocked, getEngine, NO_ENGINE, setEngine as chooseEngine, setRate, setVoice, type Engine } from '../library/playback';
+import {
+  engineBlocked,
+  getContinuousPlay,
+  getEngine,
+  NO_ENGINE,
+  setContinuousPlay,
+  setEngine as chooseEngine,
+  setRate,
+  setVoice,
+  type Engine,
+} from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
 import { bridgeStatus, formatRate, parsePort, RATE_MAX, RATE_MIN, stepRate, visibleItems } from './model';
 import { ui } from './ui';
@@ -49,6 +59,8 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const [copied, setCopied] = useState(false);
   const [notifyOff, setNotifyOff] = useState(false);
   const [refused, setRefused] = useState(false);
+  // R-S05: null while loading; the switch is there from the first frame, disabled (REA-28).
+  const [continuous, setContinuous] = useState<boolean | null>(null);
 
   useEffect(() => {
     getBridge().then(b => {
@@ -89,6 +101,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
     loadEngine();
     loadItems();
     Native.getRate().then(setRateState, () => undefined);
+    getContinuousPlay().then(setContinuous, () => setContinuous(false));
     return onItemsChanged(loadItems);
   }, [loadEngine, loadItems]);
 
@@ -188,6 +201,20 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           decreaseLabel="default slower"
           increaseLabel="default faster"
         />
+      </View>
+
+      <View collapsable={false} style={[ui.row, ui.stack]}>
+        <Toggle
+          label="Continuous play"
+          disabled={continuous === null}
+          value={continuous ?? false}
+          onValueChange={on => {
+            setContinuousPlay(on).then(setContinuous, () => undefined);
+          }}
+        />
+        <Text tone="secondary" style={ui.small}>
+          When an item ends, go on to the next unread item in the list, without opening Trim.
+        </Text>
       </View>
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Obsidian bridge</Text>

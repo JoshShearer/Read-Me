@@ -4,7 +4,7 @@
 import { NativeEventEmitter } from 'react-native';
 import Native, { type NativeEngine, type NativePlayback } from '../native/NativeReadMeSpeech';
 import { sentenceIndexAt } from '../segment/locate';
-import { segment } from '../segment/segment';
+import { segment, type SegmentOptions } from '../segment/segment';
 import { remapPosition } from '../trim/cuts';
 import type { Paragraph, Position, Sentence } from '../types';
 import { getItem, setCuts, type Item } from './library';
@@ -31,9 +31,11 @@ export function plan(
   paragraphs: readonly Paragraph[],
   cuts: readonly number[],
   saved: Position | null,
+  // Tests only: the parity golden (ADR 0011) pins the fallback path that Hermes runs.
+  options: SegmentOptions = {},
 ): Plan | null {
   const cutSet = new Set(cuts);
-  const sentences = segment(paragraphs, cutSet);
+  const sentences = segment(paragraphs, cutSet, options);
   if (sentences.length === 0) return null;
   const moved = saved && remapPosition(saved, cutSet, paragraphs.length);
   const i = moved ? sentenceIndexAt(sentences, moved) : 0;
@@ -153,6 +155,10 @@ export const NO_ENGINE: Engine = {
   engines: [],
 };
 export const getNotices = () => Native.getNotices();
+
+/** R-S05: whether PlaybackService goes on to the next unread item when one ends. */
+export const getContinuousPlay = (): Promise<boolean> => Native.getContinuousPlay();
+export const setContinuousPlay = (on: boolean): Promise<boolean> => Native.setContinuousPlay(on);
 
 /** R-M06 / R-M10: no engine bound, or no offline voice. */
 export function engineBlocked(status: string | undefined): boolean {

@@ -34,11 +34,29 @@ class PlaybackQueueTest {
       saves += Triple(itemId, paragraphIndex, charOffset)
     }
     var failFinish = false
+    // R-S05: the order of finish, next-item and snapshot events across a handover.
+    val events = mutableListOf<String>()
     override fun finished(itemId: Long) {
       if (failFinish) throw RuntimeException("disk I/O")
       finished += itemId
+      events += "finished:$itemId"
     }
-    override fun changed(snapshot: PlaybackSnapshot) { snapshots += snapshot }
+    var next: NextItem? = null
+    val nextAsked = mutableListOf<Pair<Long, Set<Long>>>()
+    // Runs inside nextItem: stands in for a user action on another thread during the handover.
+    var during: (() -> Unit)? = null
+    override fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? {
+      nextAsked += finishedId to skip.toSet()
+      events += "next:$finishedId"
+      during?.invoke()
+      return next.also { next = null }
+    }
+    val handovers = mutableListOf<Triple<Long, Long, Long>>()
+    override fun handedOver(fromId: Long, toId: Long, ms: Long) { handovers += Triple(fromId, toId, ms) }
+    override fun changed(snapshot: PlaybackSnapshot) {
+      snapshots += snapshot
+      events += "snapshot:${snapshot.itemId}:${snapshot.playing}"
+    }
     var lost = 0
     override fun engineLost() { lost++ }
   }
@@ -401,5 +419,232 @@ class PlaybackQueueTest {
     queue.onDone("$g:0")
     assertEquals(null, queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
+  }
+
+  // --- R-S05 continuous play: the sink offers the next item after the archive ---
+
+  private val rows8 = listOf(SentenceRow(0, 0, 4, "E0."), SentenceRow(0, 5, 9, "E1."), SentenceRow(1, 0, 4, "F0."))
+
+  /** Plays item 7's last two sentences to the end; returns the generation they ran in. */
+  private fun finishSeven(): String {
+    queue.load(7, rows, 4, 2.0f)
+    val g = gen(lastId())
+    queue.onStart("$g:4")
+    queue.onDone("$g:4")
+    queue.onStart("$g:5")
+    queue.onDone("$g:5")
+    return g
+  }
+
+  @Test fun withNoNextItemTheEndIsUnchanged() {
+    finishSeven()
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(listOf(7L to emptySet<Long>()), sink.nextAsked)
+    assertNull(queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
+  }
+
+  @Test fun theNextItemLoadsAfterTheArchiveWithNoEmptySnapshotBetween() {
+    sink.next = NextItem(8, rows8, 1)
+    val g = finishSeven()
+    assertEquals(listOf(7L), sink.finished)
+    val tail = sink.events.dropWhile { it != "finished:7" }
+    assertEquals(listOf("finished:7", "next:7", "snapshot:8:true"), tail)
+    assertTrue(sink.snapshots.none { it.itemId == null })
+    assertTrue(sink.snapshots.none { !it.playing })
+    val s = queue.snapshot()
+    assertEquals(8L, s.itemId)
+    assertTrue(s.playing)
+    assertEquals(rows8[1], s.sentence)
+    // A new generation from the saved start: indices 1 and 2 of item 8.
+    val g2 = gen(lastId())
+    assertTrue(g2 != g)
+    assertEquals(listOf("1", "2"), speaker.spoken.filter { gen(it) == g2 }.map { it.substringAfter(':') })
+  }
+
+  @Test fun theHandoverKeepsTheRateWithoutApplyingItAgain() {
+    sink.next = NextItem(8, rows8, 0)
+    finishSeven()
+    assertEquals(listOf(2.0f), speaker.rates)
+    assertEquals(2.0f, queue.snapshot().rate)
+  }
+
+  @Test fun theChainGoesOnUntilNoItemIsLeft() {
+    sink.next = NextItem(8, rows8, 2)
+    finishSeven()
+    val g = gen(lastId())
+    queue.onStart("$g:2")
+    queue.onDone("$g:2")
+    assertEquals(listOf(7L, 8L), sink.finished)
+    assertEquals(listOf(7L, 8L), sink.nextAsked.map { it.first })
+    assertNull(queue.snapshot().itemId)
+  }
+
+  @Test fun theFirstSentenceOfTheNextItemReportsTheHandoverTime() {
+    sink.next = NextItem(8, rows8, 0)
+    finishSeven()
+    now = 250
+    queue.onStart("${gen(lastId())}:0")
+    assertEquals(listOf(Triple(7L, 8L, 250L)), sink.handovers)
+    // The handover is not an R-M07 sentence gap: only 7's sentence 4 to 5 (0 ms) is counted.
+    val gaps = queue.takeStats().gaps
+    assertEquals(1, gaps.count)
+    assertEquals(0L, gaps.max)
+  }
+
+  @Test fun aFailedArchiveEndsTheChain() {
+    sink.failFinish = true
+    sink.next = NextItem(8, rows8, 0)
+    finishSeven()
+    assertTrue(sink.nextAsked.isEmpty())
+    assertNull(queue.snapshot().itemId)
+  }
+
+  @Test fun errorsAtTheEndPauseAndDoNotContinue() {
+    sink.next = NextItem(8, rows8, 0)
+    queue.load(7, rows, 5, 2.0f)
+    val g = gen(lastId())
+    queue.onError("$g:5")
+    assertTrue(sink.nextAsked.isEmpty())
+    assertEquals(7L, queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
+  }
+
+  @Test fun aPauseHoldsTheCurrentItemAndLateCallbacksDoNotContinue() {
+    sink.next = NextItem(8, rows8, 0)
+    queue.load(7, rows, 5, 2.0f)
+    val g = gen(lastId())
+    queue.onStart("$g:5")
+    queue.pause()
+    queue.onDone("$g:5") // the engine's late report for the flushed utterance
+    assertTrue(sink.nextAsked.isEmpty())
+    assertEquals(7L, queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
+  }
+
+  @Test fun aStopEndsTheChain() {
+    sink.next = NextItem(8, rows8, 0)
+    queue.load(7, rows, 5, 2.0f)
+    val g = gen(lastId())
+    queue.stop()
+    queue.onDone("$g:5")
+    assertTrue(sink.nextAsked.isEmpty())
+    assertNull(queue.snapshot().itemId)
+  }
+
+  @Test fun aNextItemStoppedForDeletionIsOfferedAsSkipAndEndsTheChainIfStillReturned() {
+    queue.stopItem(8) // deleted while 7 played
+    sink.next = NextItem(8, rows8, 0)
+    val g = finishSeven()
+    // The sink is told to skip 8 (ContinuousPlay.next does); a sink that returns it anyway is refused.
+    assertEquals(setOf(8L), sink.nextAsked.single().second)
+    assertNull(queue.snapshot().itemId)
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+    assertTrue(speaker.spoken.all { gen(it) == g })
+  }
+
+  @Test fun aNextItemWithABadStartIsRefused() {
+    sink.next = NextItem(8, rows8, 9)
+    finishSeven()
+    assertNull(queue.snapshot().itemId)
+  }
+
+  // --- R-S05: the next item is built outside the queue lock; actions during that window ---
+
+  /** Runs [action] on another thread while the sink builds the next item; true if it finished. */
+  private fun duringHandover(action: () -> Unit): () -> Boolean {
+    var done = false
+    sink.during = {
+      val t = Thread { action(); done = true }
+      t.start()
+      t.join(2_000)
+    }
+    return { done }
+  }
+
+  @Test fun theNextItemIsBuiltWithoutHoldingTheQueueLock() {
+    sink.next = NextItem(8, rows8, 0)
+    var seen: PlaybackSnapshot? = null
+    val done = duringHandover { seen = queue.snapshot() }
+    finishSeven()
+    assertTrue("the main thread waited on the lock during the handover", done())
+    // Between the two items the queue still reads as 7 playing: no empty snapshot.
+    assertEquals(7L, seen!!.itemId)
+    assertTrue(seen!!.playing)
+    assertEquals(8L, queue.snapshot().itemId)
+  }
+
+  @Test fun aPauseDuringTheHandoverEndsTheChainAndWritesNoPosition() {
+    sink.next = NextItem(8, rows8, 1)
+    val done = duringHandover { assertTrue(queue.pause()) }
+    finishSeven()
+    assertTrue(done())
+    assertTrue(sink.saves.none { it.first == 8L })
+    assertEquals(listOf(7L), sink.finished)
+    assertNull(queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+    assertFalse(queue.resume())
+  }
+
+  @Test fun aStopDuringTheHandoverEndsTheChain() {
+    sink.next = NextItem(8, rows8, 0)
+    var saves = -1
+    val done = duringHandover { saves = sink.saves.size; queue.stop() }
+    finishSeven()
+    assertTrue(done())
+    assertEquals(saves, sink.saves.size)
+    assertNull(queue.snapshot().itemId)
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+  }
+
+  @Test fun aDeletionOfTheNextItemDuringTheHandoverRefusesIt() {
+    sink.next = NextItem(8, rows8, 0)
+    val done = duringHandover { queue.stopItem(8) }
+    val g = finishSeven()
+    assertTrue(done())
+    assertNull(queue.snapshot().itemId)
+    assertTrue(speaker.spoken.all { gen(it) == g })
+  }
+
+  @Test fun aUserPlayDuringTheHandoverWins() {
+    sink.next = NextItem(8, rows8, 0)
+    var saves = -1
+    val done = duringHandover { saves = sink.saves.size; assertTrue(queue.load(9, rows8, 2, 2.0f)) }
+    finishSeven()
+    assertTrue(done())
+    assertEquals(9L, queue.snapshot().itemId)
+    assertEquals(rows8[2], queue.snapshot().sentence)
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+    // The user's play saved nothing into the archived 7.
+    assertTrue(sink.saves.drop(saves).none { it.first == 7L })
+  }
+
+  @Test fun aRateChangeDuringTheHandoverAppliesToTheNextItemOnce() {
+    sink.next = NextItem(8, rows8, 0)
+    val done = duringHandover { queue.setRate(1.5f) }
+    val g = finishSeven()
+    assertTrue(done())
+    assertEquals(listOf(2.0f, 1.5f), speaker.rates)
+    assertEquals(8L, queue.snapshot().itemId)
+    assertEquals(1.5f, queue.snapshot().rate)
+    // 7's last sentence was not restarted.
+    assertEquals(listOf("4", "5"), speaker.spoken.filter { gen(it) == g }.map { it.substringAfter(':') })
+  }
+
+  @Test fun transportAndStallChecksAreIgnoredDuringTheHandover() {
+    sink.next = NextItem(8, rows8, 0)
+    speaker.speaking = false
+    val done = duringHandover {
+      assertFalse(queue.next())
+      assertFalse(queue.previous())
+      assertFalse(queue.backParagraph())
+      repeat(PlaybackQueue.STALL_TICKS + 1) { assertFalse(queue.checkStall()) }
+    }
+    finishSeven()
+    assertTrue(done())
+    assertEquals(0, sink.lost)
+    assertEquals(8L, queue.snapshot().itemId)
+    assertEquals(rows8[0], queue.snapshot().sentence)
   }
 }

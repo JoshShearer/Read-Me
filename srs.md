@@ -212,6 +212,10 @@ carry its paragraph index and character offsets so highlight and resume are exac
 Segmentation is not assumed stable across app or runtime versions, so nothing persisted may
 address a sentence by its index (R-M11).
 
+Amended 2026-10-09 (REA-41, ADR 0011): the regex fallback also exists in Kotlin
+(`playback/Segmenter.kt`), used only when continuous play (R-S05) loads the next item with no
+JS. A parity test holds it to the TS fallback's exact offsets on the committed fixtures.
+
 ### R-M09 - Privacy and network
 
 These are promises. Breaking one is a release blocker.
@@ -363,6 +367,13 @@ user opens an item. The service makes the handover itself (R-M07: screen off, JS
 involved). R-S02's "at the end of the current item" overrides it. With the switch off,
 behaviour is R-M11's: archive and stop.
 
+Amended 2026-10-09 (REA-41, ADR 0011): "List order" is `created_at DESC, id DESC`, and the next
+item is the first unarchived `ready` item after the finished one under that order that has at
+least one kept sentence, evaluated at the handover; it never wraps to the top, so items shared
+during the chain are not picked up. An item read this way keeps `opened_at` unset and gets no
+cuts. A pause, Stop, engine error or failed archive ends the chain; an item being deleted is
+skipped. The service segments the next item itself with a Kotlin port of R-M08's fallback.
+
 ## Could Have
 
 ### R-C01 - Save to Obsidian
@@ -465,6 +476,12 @@ play (or again after a trim change). From then on the service is authoritative: 
 least 3 utterances queued, `onStart` emits a sentence-start event (to JS if attached) and
 `onDone` writes the position (R-M11) and tops up the queue. JS is a view of the service, not
 its driver, so screen-off playback does not depend on the JS runtime.
+
+Continuous play (R-S05, ADR 0011): when the switch is on and the last kept sentence finishes,
+the service archives the item and, in the same queue step, loads the next unread item with
+sentences from its own Kotlin segmenter, without leaving the foreground or releasing focus,
+the wake lock or the media session in between. This is the one case where the service builds a
+sentence list itself.
 
 Pause = `stop()` on the playback engine plus remembering the current sentence; resume
 re-queues from that sentence's start (Android TTS has no true pause). A rate change flushes

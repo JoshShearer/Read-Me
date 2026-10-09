@@ -75,4 +75,12 @@ class SettingsTest {
   @Test fun generatedTokensDiffer() {
     assertEquals(50, (1..50).map { BridgeToken.generate() }.toSet().size)
   }
+
+  @Test fun continuousPlayIsOffByDefaultAndPersists() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    assertEquals(false, Settings(ctx).continuousPlay)
+    Settings(ctx).continuousPlay = true
+    assertEquals(true, Settings(ctx).continuousPlay)
+    Settings(ctx).continuousPlay = false
+  }
 }

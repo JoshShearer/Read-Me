@@ -120,6 +120,8 @@ export interface Spec extends TurboModule {
   setVoice(name: string | null): Promise<void>;
   setEngine(pkg: string | null): Promise<void>;
   getNotices(): Promise<string>;
+  getContinuousPlay(): Promise<boolean>;
+  setContinuousPlay(enabled: boolean): Promise<boolean>;
   getBridge(): Promise<NativeBridge>;
   setBridgeEnabled(enabled: boolean): Promise<NativeBridge>;
   setBridgePort(port: number): Promise<NativeBridge>;
