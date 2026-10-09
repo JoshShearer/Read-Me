@@ -219,6 +219,10 @@ adb shell input keyevent KEYCODE_BACK
 for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
 device_has "$(ui)" 'content-desc="close voice"' && { echo "FAIL: Back did not close the voice sheet"; fail=1; }
 on_screen 'content-desc="licenses"' || { echo "FAIL: Back left Settings instead of closing the sheet"; fail=1; }
+# Licenses is the last row and, since Continuous play (REA-41), starts below the fold on the
+# reference phone: its node is in the dump but a tap at its centre hits nothing. Scroll first.
+read -r W H < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
+adb shell input swipe $((W / 2)) $((H * 4 / 5)) $((W / 2)) $((H / 5)) 300
 tap_node content-desc 'licenses'
 # Alphabetical, so check what is on screen: packages with a license line.
 on_screen 'text="(MIT|Apache-2.0|ISC|BSD-3-Clause)"' || fail=1
