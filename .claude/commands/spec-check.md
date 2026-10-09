@@ -92,6 +92,7 @@ it once the scaffold sets the real tree.
 | R-S02 | 301 | Sleep timer | DEVICE |
 | R-S03 | 304 | Markdown export via share sheet | CODE + DEVICE |
 | R-S04 | 308 | Bridge launch from Obsidian | DEVICE |
+| R-S05 | 355 | Continuous play: archive, then start the next unread item, no Trim, screen off | CODE + DEVICE |
 
 ### Could Have
 

@@ -97,7 +97,7 @@ device per R-M14, with date, device and build.
 grep -n -E '^### R-|^- \*\*SPIKE-' srs.md
 ```
 
-Requirements are `R-M01`...`R-M14`, `R-S01`...`R-S04`, `R-C01`...`R-C04`; spikes are
+Requirements are `R-M01`...`R-M14`, `R-S01`...`R-S05`, `R-C01`...`R-C04`; spikes are
 `SPIKE-01`...`SPIKE-06`.
 
 - **A spike ran.** Its branch code is throwaway; what ships is the answer. It belongs under its
