@@ -130,6 +130,16 @@ device_crash_seen() {
 # ... remove task", reference device, 2026-10-02, build 5695d8b, after device:bridge left
 # tasks open). Waits at most 10 s.
 device_clear_app() {
+  # A /run-tickets lane (a worktree named <primary>-run-<YYYYMMDD-HHMMSS>) never wipes the phone's
+  # Read Me data: the reference phone is the owner's own and its library is app-private, so a clear
+  # is unrecoverable, and nobody is watching a run. The owner opts in by creating
+  # .claude/device-data-disposable in the primary checkout (a file no ticket branch can create).
+  if [[ "$(basename "$(git rev-parse --show-toplevel)")" =~ -run-[0-9]{8}-[0-9]{6}$ ]] \
+     && [ ! -e "$PRIMARY/.claude/device-data-disposable" ]; then
+    echo "refused: a /run-tickets lane does not clear the phone's Read Me data" \
+      "(the owner's library); create $PRIMARY/.claude/device-data-disposable to allow it" >&2
+    exit 7
+  fi
   # From the home screen: clearing an app that is on screen relaunched it into a new task
   # (2026-10-03, after device:bridge left Settings open), so the wait below never ended.
   adb shell input keyevent KEYCODE_HOME

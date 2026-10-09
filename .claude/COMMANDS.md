@@ -44,7 +44,7 @@ verdict.
 | Command | Purpose |
 |---|---|
 | `/worktrees` | Parallel sessions - list, inspect, create, remove; file overlap and device-slot ownership. Owns the `Read-Me-rea-*` pool only |
-| `/run-tickets` | Run a batch of tickets end to end in fresh subagents, fully autonomously, in a disposable `Read-Me-run-*` lane; anything needing a human blocks that ticket and is reported at the end |
+| `/run-tickets` | Run a batch of tickets end to end, fully autonomously, in a disposable `Read-Me-run-*` lane: scripted start/ship/merge/finish (`scripts/run-tickets/ticket-ops.mjs`), Build, Critic and Verify agents and a Fix loop; anything needing a human blocks that ticket and is reported at the end |
 
 ---
 
@@ -87,8 +87,9 @@ degradation rule.
 
 ## Running the pipeline without a human
 
-`opencode.json` sets `git push *`, `git branch -D *`, `git reset --hard*` and `rm -rf *` to
-`ask`, and `/run-tickets` runs all four. Launch it so nothing prompts:
+`opencode.json` asks before every command not on its allowlist (`node`, `gh`, `git push`,
+`git reset --hard`, `rm -rf` among them), and `/run-tickets` runs all of those. Launch it so
+nothing prompts:
 
 ```bash
 opencode run --auto --command run-tickets "REA-1,REA-2,REA-3"
