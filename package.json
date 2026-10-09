@@ -34,6 +34,7 @@
     "device:screenshots": "bash scripts/device-screenshots.sh",
     "device:themes": "bash scripts/device-themes.sh",
     "device:lifecycle": "bash scripts/device-lifecycle.sh",
+    "device:continuous": "bash scripts/device-continuous.sh",
     "fdroid:build": "bash scripts/fdroid-build.sh"
   },
   "dependencies": {

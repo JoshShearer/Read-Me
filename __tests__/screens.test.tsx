@@ -15,6 +15,7 @@ const mockState = {
     engines: [] as unknown[],
   },
   bridge: { enabled: false, state: 'off', port: 8787, token: null as string | null, error: null as string | null },
+  continuous: false,
 };
 const base: NativeItem = {
   id: 1, kind: 'link', url: 'https://example.com/a', title: 'An article', site: null, byline: null,
@@ -43,6 +44,11 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     setBridgePort: jest.fn(async () => mockState.bridge),
     regenerateBridgeToken: jest.fn(async () => mockState.bridge),
     copyBridgeToken: jest.fn(async () => undefined),
+    getContinuousPlay: jest.fn(async () => mockState.continuous),
+    setContinuousPlay: jest.fn(async (on: boolean) => {
+      mockState.continuous = on;
+      return on;
+    }),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   },
@@ -431,4 +437,28 @@ describe('theme on the screens (REA-24)', () => {
     expect(input.props.placeholderTextColor).toBe(p.onSurfaceVariant);
     expect(input.props.selectionColor).toBe(p.primary);
   });
+});
+
+// --- R-S05: the Continuous play switch ---
+
+const continuousSwitch = (r: ReactTestRenderer.ReactTestRenderer) =>
+  r.root.find(n => n.props.accessibilityRole === 'switch' && n.props.accessibilityLabel === 'Continuous play');
+
+test('Settings has a Continuous play switch, off by default, that goes through the module', async () => {
+  mockState.continuous = false;
+  const r = await settings();
+  expect(continuousSwitch(r).props.accessibilityState).toMatchObject({ checked: false, disabled: false });
+  expect(strings(r.toJSON()).join('\n')).toContain('go on to the next unread item');
+  await ReactTestRenderer.act(async () => {
+    continuousSwitch(r).props.onPress();
+  });
+  expect(Native.setContinuousPlay).toHaveBeenCalledWith(true);
+  expect(continuousSwitch(r).props.accessibilityState).toMatchObject({ checked: true });
+  mockState.continuous = false;
+});
+
+test('the Continuous play switch is there and disabled before the setting loads (REA-28)', async () => {
+  (Native.getContinuousPlay as jest.Mock).mockReturnValueOnce(new Promise<never>(() => {}));
+  const r = await settings();
+  expect(continuousSwitch(r).props.disabled).toBe(true);
 });

@@ -57,6 +57,13 @@ class Settings(context: Context) {
       prefs.edit().putBoolean(KEY_BRIDGE, value).apply()
     }
 
+  /** R-S05: when an item ends, PlaybackService goes on to the next unread one. Off by default. */
+  var continuousPlay: Boolean
+    get() = prefs.getBoolean(KEY_CONTINUOUS, false)
+    set(value) {
+      prefs.edit().putBoolean(KEY_CONTINUOUS, value).apply()
+    }
+
   /** R-M12: 8787 unless the user chose another port in 1024..65535. */
   var bridgePort: Int
     get() = prefs.getInt(KEY_BRIDGE_PORT, BRIDGE_PORT_DEFAULT)
@@ -84,6 +91,7 @@ class Settings(context: Context) {
     private const val KEY_BRIDGE = "bridge"
     private const val KEY_BRIDGE_PORT = "bridgePort"
     private const val KEY_BRIDGE_TOKEN = "bridgeToken"
+    private const val KEY_CONTINUOUS = "continuousPlay"
     private val LOCK = Any()
   }
 }

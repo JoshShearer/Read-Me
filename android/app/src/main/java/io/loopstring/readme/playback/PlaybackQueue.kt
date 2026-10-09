@@ -34,6 +34,9 @@ class PlaybackQueue(
   private var stallTicks = 0
   // Items stopped for deletion. Ids are AUTOINCREMENT (Store.kt), never reused.
   private val deleted = HashSet<Long>()
+  // R-S05: set at a continuous-play handover until the next item's first sentence starts.
+  private var handoverFrom = -1L
+  private var handoverAt = -1L
 
   fun load(itemId: Long, sentences: List<SentenceRow>, startIndex: Int, rate: Float): Boolean =
     synchronized(lock) {
@@ -121,6 +124,10 @@ class PlaybackQueue(
     if (lastDoneAt >= 0) gaps += clock() - lastDoneAt
     lastDoneAt = -1
     current = i
+    if (handoverAt >= 0) {
+      sink.handedOver(handoverFrom, itemId!!, clock() - handoverAt)
+      handoverAt = -1
+    }
     publishLocked()
   }
 
@@ -178,17 +185,43 @@ class PlaybackQueue(
       flushLocked()
       playing = false
       // A failed archive must still clear the queue, or the session shows "Reading" forever.
+      // It also ends a continuous-play chain: an item that did not archive is not "read".
       try {
         sink.finished(id)
       } catch (e: RuntimeException) {
         saveErrors++
+        clearLocked()
+        return
       }
-      clearLocked()
+      if (!continueLocked(id)) clearLocked()
       return
     }
     current = next
     saveRowLocked(id, rows[next])
     topUpLocked()
+  }
+
+  /**
+   * R-S05, ADR 0011: archive-then-load in one step. No itemId=null snapshot is published
+   * between the two items, so the service keeps focus, the wake lock, the session and the
+   * foreground (Android 12+ refuses a new foreground start from the background). The rate is
+   * the queue's own and is not applied again (AGENTS.md 9).
+   */
+  private fun continueLocked(finishedId: Long): Boolean {
+    val next = try {
+      sink.nextItem(finishedId, HashSet(deleted))
+    } catch (e: RuntimeException) {
+      null
+    } ?: return false
+    if (next.itemId in deleted || next.startIndex !in next.sentences.indices) return false
+    val fitted = Utterances.fit(next.sentences, next.startIndex, maxChars)
+    itemId = next.itemId
+    rows = fitted.rows
+    restartLocked(fitted.startIndex)
+    // After the restart: its flush clears a handover in progress.
+    handoverFrom = finishedId
+    handoverAt = clock()
+    return true
   }
 
   private fun jumpLocked(i: Int) {
@@ -214,6 +247,8 @@ class PlaybackQueue(
   }
 
   private fun flushLocked() {
+    // A pause, jump or stop before the next item's first sentence: no handover time to report.
+    handoverAt = -1
     generation++
     speaker.stop()
     lastDoneAt = -1

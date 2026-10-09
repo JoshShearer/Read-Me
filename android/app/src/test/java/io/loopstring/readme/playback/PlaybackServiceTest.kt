@@ -22,6 +22,7 @@ import org.robolectric.Shadows.shadowOf
 class PlaybackServiceTest {
   @After fun tearDown() {
     Settings(ApplicationProvider.getApplicationContext()).bridgeEnabled = false
+    Settings(ApplicationProvider.getApplicationContext()).continuousPlay = false
     PlaybackHub.resetForTest()
     Store.resetForTest()
   }
@@ -381,6 +382,85 @@ class PlaybackServiceTest {
     c.get().onReady(TtsSpeaker.EngineStatus.READY)
     idle()
     assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  // --- R-S05 continuous play: the service hands over to the next unread item ---
+
+  /** Every generation's last sentence reported done: only the live one counts (the queue drops the rest). */
+  private fun finishCurrent(c: org.robolectric.android.controller.ServiceController<PlaybackService>, last: Int) {
+    val item = PlaybackHub.queue!!.snapshot().itemId
+    for (g in 0..20) {
+      c.get().onDone("$g:$last")
+      if (PlaybackHub.queue?.snapshot()?.itemId != item) break
+    }
+    idle()
+  }
+
+  /** Plays [first] (two sentences) on a ready engine. */
+  private fun playingItem(first: Long): org.robolectric.android.controller.ServiceController<PlaybackService> {
+    PlaybackHub.offer(PlaybackHub.Request(first, "First title", listOf(SentenceRow(0, 0, 5, "Hello"), SentenceRow(0, 6, 11, "World")), 1))
+    val c = Robolectric.buildService(PlaybackService::class.java, intent(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(first, PlaybackHub.queue!!.snapshot().itemId)
+    return c
+  }
+
+  @Test fun withContinuousPlayTheNextUnreadItemStartsAfterTheArchive() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val older = store.insertText("Second title", listOf("Never opened. Read as is."), 100L)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    Settings(ctx).continuousPlay = true
+    val c = playingItem(first)
+    val seen = mutableListOf<PlaybackSnapshot>()
+    PlaybackHub.addListener { seen += it }
+    finishCurrent(c, 1)
+    val s = PlaybackHub.queue!!.snapshot()
+    assertEquals(older, s.itemId)
+    assertTrue(s.playing)
+    assertEquals(SentenceRow(0, 0, 13, "Never opened."), s.sentence)
+    assertTrue(store.item(first)!!.archivedAt != null)
+    assertEquals(null, store.item(older)!!.archivedAt)
+    // Trim's first open is the user's: continuous play neither opens nor cuts (R-M05, ADR 0011).
+    assertEquals(null, store.item(older)!!.openedAt)
+    assertTrue(store.cuts(older).isEmpty())
+    assertTrue(seen.none { it.itemId == null || !it.playing })
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    assertFalse(shadowOf(c.get()).isForegroundStopped)
+    val n = shadowOf(c.get()).lastForegroundNotification
+    assertEquals("Second title", n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    c.destroy()
+  }
+
+  @Test fun withContinuousPlayOffTheItemArchivesAndPlaybackStops() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val older = store.insertText("Second title", listOf("Not read."), 100L)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val c = playingItem(first)
+    finishCurrent(c, 1)
+    assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
+    assertTrue(store.item(first)!!.archivedAt != null)
+    assertEquals(null, store.item(older)!!.archivedAt)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun theChainStopsAfterTheLastUnreadItem() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val older = store.insertText("Second title", listOf("Only one."), 100L)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    Settings(ctx).continuousPlay = true
+    val c = playingItem(first)
+    finishCurrent(c, 1)
+    assertEquals(older, PlaybackHub.queue!!.snapshot().itemId)
+    finishCurrent(c, 0)
+    assertTrue(store.item(older)!!.archivedAt != null)
     assertTrue(shadowOf(c.get()).isStoppedBySelf)
     c.destroy()
   }

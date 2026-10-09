@@ -156,6 +156,23 @@ class Store private constructor(context: Context) :
       out
     }
 
+  /**
+   * R-S05: the unarchived ready items that sort after [id] in the List (created_at DESC, id
+   * DESC), nearest first. Never wraps to the top; empty when [id] is gone. Ids only.
+   */
+  fun unreadAfter(id: Long): List<Long> =
+    readableDatabase.rawQuery(
+      """SELECT i.id FROM items i, (SELECT created_at AS c, id AS d FROM items WHERE id = ?) f
+         WHERE i.archived_at IS NULL AND i.state = ?
+           AND (i.created_at < f.c OR (i.created_at = f.c AND i.id < f.d))
+         ORDER BY i.created_at DESC, i.id DESC""",
+      arrayOf(id.toString(), States.READY),
+    ).use {
+      val out = ArrayList<Long>(it.count)
+      while (it.moveToNext()) out.add(it.getLong(0))
+      out
+    }
+
   fun paragraphs(id: Long): List<ParagraphRow> =
     readableDatabase.rawQuery(
       "SELECT kind, text FROM paragraphs WHERE item_id = ? ORDER BY idx",

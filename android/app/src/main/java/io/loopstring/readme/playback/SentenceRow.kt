@@ -19,6 +19,9 @@ data class PlaybackSnapshot(
   val waitingItemId: Long? = null,
 )
 
+/** R-S05: an item continuous play reads next, segmented in Kotlin (ADR 0011). Carries item text. */
+data class NextItem(val itemId: Long, val sentences: List<SentenceRow>, val startIndex: Int)
+
 /** The engine side of the queue. PlaybackService backs it with a TextToSpeech instance. */
 interface Speaker {
   /** False when the engine refused the utterance: it is not bound, or its process died. */
@@ -36,6 +39,16 @@ interface Speaker {
 interface PlaybackSink {
   fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int)
   fun finished(itemId: Long)
+
+  /**
+   * R-S05 continuous play, asked only after [finished] returned: the next item to read, never
+   * one in [skip] (stopped for deletion), or null to stop as before. Null by default, and
+   * whenever the setting is off.
+   */
+  fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? = null
+
+  /** R-S05: the next item's first sentence started [ms] after the last one ended (a log line). */
+  fun handedOver(fromId: Long, toId: Long, ms: Long) {}
   fun changed(snapshot: PlaybackSnapshot)
   /** The engine refused work or stopped speaking while the queue played; the queue has paused. */
   fun engineLost()

@@ -70,7 +70,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       main.postDelayed(this, STALL_TICK_MS)
     }
   }
-  private var title = ""
+  // Written by nextItem on a TTS binder thread at a continuous-play handover (R-S05).
+  @Volatile private var title = ""
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
   // Written on the main thread; read on TTS binder threads by preemptOnPlay.
@@ -384,6 +385,28 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     Log.i(TAG, "playback finished item=$itemId")
   }
 
+  /**
+   * R-S05, ADR 0011: with Settings' switch on, the next unread item in List order, segmented
+   * here with no JS (AGENTS.md 11). Read at each handover, so a toggle applies at the next end.
+   * Ids and counts only in the log (AGENTS.md 1); the title goes to the notification.
+   */
+  override fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? {
+    if (!Settings(this).continuousPlay) return null
+    val found = ContinuousPlay.next(store, finishedId, skip)
+    if (found == null) {
+      Log.i(TAG, "playback continue none after=$finishedId")
+      return null
+    }
+    title = found.item.title
+    val n = found.next
+    Log.i(TAG, "playback continue from=$finishedId item=${n.itemId} sentences=${n.sentences.size} start=${n.startIndex}")
+    return n
+  }
+
+  override fun handedOver(fromId: Long, toId: Long, ms: Long) {
+    Log.i(TAG, "playback handover from=$fromId item=$toId ms=$ms")
+  }
+
   override fun engineLost() {
     main.post { if (!destroyed) recoverEngine() }
   }
@@ -407,6 +430,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     if (s.playing && before?.playing != true) {
       if (before?.itemId == s.itemId) Log.i(TAG, "playback resumed item=${s.itemId}")
       if (!startPlaying()) return
+    } else if (s.playing && before?.itemId != null && before.itemId != s.itemId) {
+      // R-S05: a continuous-play handover keeps focus, the session and the foreground; the
+      // wake lock's timeout restarts so a long chain is not cut at WAKE_LOCK_MS.
+      wakeLock?.acquire(WAKE_LOCK_MS)
     } else if (!s.playing && before?.playing == true) {
       Log.i(TAG, "playback paused item=${s.itemId} paragraph=${s.sentence?.paragraphIndex} offset=${s.sentence?.start}")
       logStats()
