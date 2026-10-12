@@ -22,14 +22,19 @@ data class PlaybackSnapshot(
 /** R-S05: an item continuous play reads next, segmented in Kotlin (ADR 0011). Carries item text. */
 data class NextItem(val itemId: Long, val sentences: List<SentenceRow>, val startIndex: Int)
 
-/** The engine side of the queue. PlaybackService backs it with a TextToSpeech instance. */
-interface Speaker {
-  /** False when the engine refused the utterance: it is not bound, or its process died. */
-  fun speak(id: String, text: String): Boolean
+/**
+ * The engine side of the queue (REA-31, ADR 0012): playback's own TextToSpeech writes each
+ * sentence to a file; Read Me's player plays it. Answers arrive as PlaybackQueue.onSynthDone
+ * and onSynthError.
+ */
+interface SentenceSynth {
+  /** False when the engine refused the request: it is not bound, or its process died. */
+  fun synthesize(id: String, text: String, file: java.io.File): Boolean
+  /** Cancels every request in flight. */
   fun stop()
   fun setRate(rate: Float)
-  /** Whether the engine is speaking or has utterances queued. */
-  fun isSpeaking(): Boolean
+  /** Whether the engine's binding answers. A binder call: never under the queue's lock. */
+  fun alive(): Boolean
 }
 
 /**
@@ -52,6 +57,10 @@ interface PlaybackSink {
   /** R-S05: the next item's first sentence started [ms] after the last one ended (a log line). */
   fun handedOver(fromId: Long, toId: Long, ms: Long) {}
   fun changed(snapshot: PlaybackSnapshot)
-  /** The engine refused work or stopped speaking while the queue played; the queue has paused. */
+  /** The engine refused work or died while the queue played; the queue has paused. */
   fun engineLost()
+  /** Milliseconds from a play request to the first frame heard (REA-31, logged). */
+  fun firstAudio(itemId: Long, ms: Long) {}
+  /** A gap over GapStats.STALL_MS and where it fell: ids, offsets, counts and durations only. */
+  fun stall(detail: String) {}
 }

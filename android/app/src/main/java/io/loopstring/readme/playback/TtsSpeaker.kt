@@ -2,11 +2,13 @@ package io.loopstring.readme.playback
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import java.io.File
 import java.util.Locale
 
 /**
@@ -14,13 +16,17 @@ import java.util.Locale
  * (AGENTS.md 9). The engine's voice is chosen by VoicePicker so a network voice is never used
  * (AGENTS.md 5). Construct on the main thread; callbacks other than onReady arrive on the
  * engine's binder thread.
+ *
+ * REA-31 (ADR 0012): it never speaks. Each sentence is synthesized to a file that Read Me plays
+ * on its own output, because audio the engine plays is the engine's: Android then gave media
+ * keys to the engine's session (Supertonic's), not Read Me's.
  */
-class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val preferredVoice: String? = null) : Speaker {
+class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val preferredVoice: String? = null) : SentenceSynth {
   interface Callbacks {
     fun onReady(status: EngineStatus)
-    fun onStart(id: String)
-    fun onDone(id: String)
-    fun onError(id: String)
+    fun onSynthDone(id: String)
+    /** [lost]: ERROR_SERVICE, the engine's process is gone. */
+    fun onSynthError(id: String, lost: Boolean)
   }
 
   enum class EngineStatus(val wire: String) {
@@ -42,13 +48,16 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
     val tts = tts
     status = if (result != TextToSpeech.SUCCESS || tts == null) EngineStatus.NO_ENGINE else chooseVoice(tts)
     if (status == EngineStatus.READY && tts != null) {
-      tts.setAudioAttributes(ATTRIBUTES)
       tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-        override fun onStart(id: String?) { if (id != null) callbacks.onStart(id) }
-        override fun onDone(id: String?) { if (id != null) callbacks.onDone(id) }
+        override fun onStart(id: String?) {}
+        override fun onDone(id: String?) { if (id != null) callbacks.onSynthDone(id) }
         @Deprecated("Deprecated in Java")
-        override fun onError(id: String?) { if (id != null) callbacks.onError(id) }
-        override fun onError(id: String?, errorCode: Int) { if (id != null) callbacks.onError(id) }
+        override fun onError(id: String?) { if (id != null) callbacks.onSynthError(id, lost = false) }
+        override fun onError(id: String?, errorCode: Int) {
+          if (id != null) callbacks.onSynthError(id, lost = errorCode == TextToSpeech.ERROR_SERVICE)
+        }
+        // Only after stop(), whose generation the queue has already left behind.
+        override fun onStop(id: String?, interrupted: Boolean) { if (id != null) callbacks.onSynthError(id, lost = false) }
       })
     }
     callbacks.onReady(status)
@@ -59,13 +68,14 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
     return if (tts.setVoice(voice) == TextToSpeech.SUCCESS) EngineStatus.READY else EngineStatus.NO_VOICE
   }
 
-  override fun speak(id: String, text: String): Boolean =
-    tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+  override fun synthesize(id: String, text: String, file: File): Boolean =
+    runCatching { tts?.synthesizeToFile(text, Bundle(), file, id) == TextToSpeech.SUCCESS }.getOrDefault(false)
 
-  override fun isSpeaking(): Boolean = runCatching { tts?.isSpeaking == true }.getOrDefault(false)
+  /** getVoice goes to the engine; with the binding gone it answers null (as TtsSynth.alive). */
+  override fun alive(): Boolean = runCatching { tts?.voice }.getOrNull() != null
 
   override fun stop() {
-    tts?.stop()
+    runCatching { tts?.stop() }
   }
 
   override fun setRate(rate: Float) {

@@ -1,32 +1,65 @@
 package io.loopstring.readme.playback
 
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * REA-31 (ADR 0012): the queue synthesizes sentences to files ahead of Read Me's own player.
+ * A sentence starts and ends when the player says so, never when the engine does.
+ */
 class PlaybackQueueTest {
-  private class FakeSpeaker : Speaker {
-    val spoken = mutableListOf<String>() // utterance ids, in order
+  private inner class FakeSynth : SentenceSynth {
+    val requested = mutableListOf<String>() // utterance ids, in order
+    val files = mutableMapOf<String, File>()
     var stops = 0
     val rates = mutableListOf<Float>()
     var refuse = false
-    var speaking = true
-    override fun speak(id: String, text: String): Boolean {
+    var alive = true
+    var aliveCheck: () -> Unit = {}
+    /** Answer inside synthesize, as an engine on the same thread could. */
+    var answerAtOnce = false
+    override fun synthesize(id: String, text: String, file: File): Boolean {
       if (refuse) return false
-      spoken += id
+      requested += id
+      files[id] = file
+      // TextToSpeech opens (creates) the file in this process before the engine writes it.
+      file.writeText("wav")
+      if (answerAtOnce) queue.onSynthDone(id)
       return true
     }
     override fun stop() { stops++ }
     override fun setRate(rate: Float) { rates += rate }
-    override fun isSpeaking() = speaking
+    override fun alive(): Boolean { aliveCheck(); return alive }
+  }
+
+  private class FakePlayer : Player {
+    val enqueued = mutableListOf<String>()
+    val files = mutableListOf<File>()
+    var plays = 0
+    var pauses = 0
+    var flushes = 0
+    var progress = 0L
+    var underruns = 0
+    override fun enqueue(id: String, file: File) { enqueued += id; files += file }
+    override fun play() { plays++ }
+    override fun pause() { pauses++ }
+    override fun flush() { flushes++ }
+    override fun progress() = progress
+    override fun takeUnderruns() = underruns.also { underruns = 0 }
   }
 
   private class FakeSink : PlaybackSink {
     val saves = mutableListOf<Triple<Long, Int, Int>>()
     val finished = mutableListOf<Long>()
     val snapshots = mutableListOf<PlaybackSnapshot>()
+    val firstAudio = mutableListOf<Pair<Long, Long>>()
     var failSaves = false
     override fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int) {
       // Stands in for SQLiteDiskIOException, a RuntimeException that Store.savePosition rethrows.
@@ -62,12 +95,16 @@ class PlaybackQueueTest {
     }
     var lost = 0
     override fun engineLost() { lost++ }
+    override fun firstAudio(itemId: Long, ms: Long) { firstAudio += itemId to ms }
   }
 
   private var now = 0L
-  private val speaker = FakeSpeaker()
+  private val synth = FakeSynth()
+  private val player = FakePlayer()
   private val sink = FakeSink()
-  private val queue = PlaybackQueue(speaker, sink, { now })
+  private val dir = File(Files.createTempDirectory("q").toFile(), "playback")
+  // Count-only prefetch (no audio target, no chunking) for the tests written before the gap fix.
+  private val queue: PlaybackQueue = PlaybackQueue(synth, player, PlaybackFiles(dir), sink, { now }, aheadMs = 0, chunkChars = 0)
 
   // Paragraph 0: sentences 0,1. Paragraph 1: 2,3. Paragraph 3: 4,5 (paragraph 2 cut).
   private val rows = listOf(
@@ -76,92 +113,161 @@ class PlaybackQueueTest {
     SentenceRow(3, 0, 4, "D0."), SentenceRow(3, 5, 9, "D1."),
   )
 
-  private fun lastId() = speaker.spoken.last()
-  private fun gen(id: String) = id.substringBefore(':')
+  private fun g() = synth.requested.last().substringBefore(':')
+  private fun indices(ids: List<String>) = ids.map { it.substringAfter(':') }
+  private fun synthDone(vararg i: Int) { val g = g(); i.forEach { queue.onSynthDone("$g:$it") } }
+  private fun start(i: Int) = queue.onPlayerStart("${g()}:$i")
+  private fun done(i: Int) = queue.onPlayerDone("${g()}:$i")
+  private fun leftover() = dir.listFiles().orEmpty().map { it.name }.sorted()
 
-  @Test fun loadAppliesTheRateOnceAndQueuesThreeAhead() {
+  @Test fun loadAppliesTheRateOnceAndPrefetchesThreeAhead() {
     assertTrue(queue.load(7, rows, 0, 2.0f))
-    assertEquals(listOf(2.0f), speaker.rates)
-    assertEquals(3, speaker.spoken.size)
-    assertEquals(listOf("0", "1", "2"), speaker.spoken.map { it.substringAfter(':') })
+    assertEquals(listOf(2.0f), synth.rates)
+    assertEquals(listOf("0", "1", "2", "3"), indices(synth.requested))
+    // The player starts once there is audio to play (REA-31 start buffer).
+    assertEquals(0, player.plays)
+    synthDone(0)
+    assertEquals(1, player.plays)
     assertTrue(queue.snapshot().playing)
     assertEquals(7L, queue.snapshot().itemId)
+  }
+
+  @Test fun fileNamesCarryTheItemGenerationAndOffsetNeverText() {
+    queue.load(7, rows, 2, 2.0f)
+    val f = synth.files.getValue(synth.requested.first())
+    assertEquals("play-7-${g()}-1-0.wav", f.name)
+    assertEquals(dir, f.parentFile)
   }
 
   @Test fun loadRefusesAnEmptyListOrABadStart() {
     assertFalse(queue.load(7, emptyList(), 0, 2.0f))
     assertFalse(queue.load(7, rows, 6, 2.0f))
-    assertTrue(speaker.spoken.isEmpty())
+    assertTrue(synth.requested.isEmpty())
   }
 
-  @Test fun eachDoneSavesTheNextSentenceStartAndTopsUp() {
+  @Test fun finishedFilesGoToThePlayerInOrder() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0")
-    queue.onDone("$g:0")
+    synthDone(1)
+    assertTrue(player.enqueued.isEmpty())
+    synthDone(0)
+    assertEquals(listOf("0", "1"), indices(player.enqueued))
+    assertEquals(synth.files.getValue(player.enqueued[0]), player.files[0])
+  }
+
+  @Test fun theEngineFinishingASentenceIsNotItsStart() {
+    queue.load(7, rows, 0, 2.0f)
+    val before = sink.snapshots.size
+    synthDone(0, 1)
+    assertEquals(before, sink.snapshots.size)
+    start(0)
+    assertEquals(SentenceRow(0, 0, 4, "A0."), sink.snapshots.last().sentence)
+  }
+
+  @Test fun eachPlayerDoneSavesTheNextSentenceStartAndPrefetchesOneMore() {
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0)
+    start(0)
+    done(0)
     assertEquals(Triple(7L, 0, 5), sink.saves.last())
-    assertEquals("$g:3", lastId())
-    assertEquals(4, speaker.spoken.size)
+    assertEquals(listOf("0", "1", "2", "3", "4"), indices(synth.requested))
+  }
+
+  @Test fun everySentenceStartIsPublished() {
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0, 1)
+    start(0); done(0); start(1)
+    assertEquals(SentenceRow(0, 5, 9, "A1."), sink.snapshots.last().sentence)
+    assertTrue(sink.snapshots.last().playing)
   }
 
   @Test fun theLastSentenceFinishesTheItem() {
     queue.load(7, rows, 4, 2.0f)
-    val g = gen(lastId())
-    queue.onDone("$g:4")
-    queue.onDone("$g:5")
+    synthDone(4, 5)
+    start(4); done(4); start(5)
+    assertTrue(sink.finished.isEmpty())
+    done(5)
     assertEquals(listOf(7L), sink.finished)
     assertNull(queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
     assertFalse(queue.resume())
+    assertEquals(1, player.flushes)
   }
 
-  @Test fun pauseStopsAndSavesTheCurrentSentenceAndResumeRequeuesFromIt() {
+  @Test fun pauseIsATruePauseAndResumeGoesOnMidSentence() {
+    // D1: the player pauses where it is; nothing is synthesized again.
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0"); queue.onDone("$g:0"); queue.onStart("$g:1")
-    val stopsBefore = speaker.stops
+    synthDone(0, 1)
+    start(0); done(0); start(1)
+    val requested = synth.requested.size
     assertTrue(queue.pause())
-    assertEquals(stopsBefore + 1, speaker.stops)
+    assertEquals(1, player.pauses)
+    assertEquals(0, player.flushes)
+    assertEquals(0, synth.stops)
     assertEquals(Triple(7L, 0, 5), sink.saves.last())
     assertFalse(queue.snapshot().playing)
     assertEquals(SentenceRow(0, 5, 9, "A1."), queue.snapshot().sentence)
-    val spokenBefore = speaker.spoken.size
     assertTrue(queue.resume())
-    val resumed = speaker.spoken.drop(spokenBefore)
-    assertEquals(listOf("1", "2", "3"), resumed.map { it.substringAfter(':') })
-    assertTrue(gen(resumed[0]) != g)
+    assertEquals(2, player.plays)
+    assertEquals(requested, synth.requested.size)
+    assertTrue(queue.snapshot().playing)
+    // The same generation goes on: the player's events still count.
+    done(1)
+    assertEquals(Triple(7L, 1, 0), sink.saves.last())
+  }
+
+  @Test fun nothingMoreIsSynthesizedWhilePaused() {
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0)
+    start(0)
+    queue.pause()
+    val requested = synth.requested.size
+    done(0) // the last frames already in the output
+    assertEquals(requested, synth.requested.size)
+    queue.resume()
+    assertEquals(listOf("0", "1", "2", "3", "4"), indices(synth.requested))
   }
 
   @Test fun aLateCallbackFromFlushedWorkIsIgnored() {
-    // Review Focus 1: TextToSpeech can deliver onDone for an utterance stop() discarded.
+    // Review Focus 1: callbacks can arrive for work a flush discarded.
     queue.load(7, rows, 0, 2.0f)
-    val old = gen(lastId())
-    queue.onStart("$old:0")
-    queue.pause()
+    val old = g()
+    synthDone(0)
+    start(0)
+    queue.next()
     val saves = sink.saves.size
-    val spoken = speaker.spoken.size
-    queue.onDone("$old:0")
-    queue.onError("$old:1")
-    queue.onStart("$old:2")
+    val requested = synth.requested.size
+    val enqueued = player.enqueued.size
+    queue.onPlayerDone("$old:0")
+    queue.onSynthError("$old:1", lost = false)
+    queue.onPlayerStart("$old:2")
+    queue.onSynthDone("$old:3")
+    queue.onSynthError("$old:3", lost = true)
     assertEquals(saves, sink.saves.size)
-    assertEquals(spoken, speaker.spoken.size)
-    assertEquals(SentenceRow(0, 0, 4, "A0."), queue.snapshot().sentence)
+    assertEquals(requested, synth.requested.size)
+    assertEquals(enqueued, player.enqueued.size)
+    assertEquals(SentenceRow(0, 5, 9, "A1."), queue.snapshot().sentence)
     assertEquals(0, queue.takeStats().errors)
+    assertEquals(0, sink.lost)
   }
 
-  @Test fun aRateChangeWhilePausedDoesNotSpeak() {
-    // Review Focus 5.
+  @Test fun aRateChangeWhilePausedDiscardsThePrefetchAndStaysPaused() {
+    // Review Focus 5, and AGENTS.md 9: the rate lives in the files, so they go.
     queue.load(7, rows, 0, 2.0f)
+    val g0 = g()
+    synthDone(0)
     queue.pause()
-    val spoken = speaker.spoken.size
+    assertEquals(4, leftover().size)
     queue.setRate(3.0f)
-    assertEquals(spoken, speaker.spoken.size)
+    assertEquals(1, player.flushes)
+    assertEquals(1, synth.stops)
+    assertEquals("the unplayed files are deleted", listOf("play-7-$g0-0-0.wav"), leftover()) // handed to the player, which deletes its own
     assertFalse(queue.snapshot().playing)
     assertEquals(3.0f, queue.snapshot().rate)
-    assertEquals(3.0f, speaker.rates.last())
+    val requested = synth.requested.size
+    assertEquals(requested, synth.requested.size)
     queue.resume()
-    assertEquals(spoken + 3, speaker.spoken.size)
-    assertEquals(listOf(2.0f, 3.0f), speaker.rates) // never applied twice
+    assertEquals(listOf("0", "1", "2", "3"), indices(synth.requested.drop(requested)))
+    assertEquals(listOf(2.0f, 3.0f), synth.rates) // never applied twice
   }
 
   @Test fun aRateChangeWithNoItemPublishesNothing() {
@@ -172,15 +278,18 @@ class PlaybackQueueTest {
     assertEquals(2.1f, queue.snapshot().rate)
   }
 
-  @Test fun aRateChangeWhilePlayingFlushesAndRefillsFromTheCurrentSentence() {
+  @Test fun aRateChangeWhilePlayingRestartsFromTheCurrentSentenceStart() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0"); queue.onDone("$g:0"); queue.onStart("$g:1")
-    val stops = speaker.stops
-    val spoken = speaker.spoken.size
+    val first = g()
+    synthDone(0, 1)
+    start(0); done(0); start(1)
+    val requested = synth.requested.size
     queue.setRate(1.5f)
-    assertEquals(stops + 1, speaker.stops)
-    assertEquals(listOf("1", "2", "3"), speaker.spoken.drop(spoken).map { it.substringAfter(':') })
+    assertEquals(1, synth.stops)
+    assertEquals(1, player.flushes)
+    assertEquals(listOf("1", "2", "3", "4"), indices(synth.requested.drop(requested)))
+    assertTrue(g() != first)
+    assertTrue(queue.snapshot().playing)
   }
 
   @Test fun nextPreviousAndBackParagraph() {
@@ -201,18 +310,30 @@ class PlaybackQueueTest {
     assertEquals(Triple(7L, 0, 0), sink.saves.last())
   }
 
-  @Test fun aJumpWhilePausedMovesWithoutSpeaking() {
+  @Test fun aJumpWhilePlayingRestartsAtTheTargetSentence() {
     queue.load(7, rows, 0, 2.0f)
-    queue.pause()
-    val spoken = speaker.spoken.size
+    val requested = synth.requested.size
     queue.next()
-    assertEquals(spoken, speaker.spoken.size)
-    assertFalse(queue.snapshot().playing)
-    assertEquals(Triple(7L, 0, 5), sink.saves.last())
+    assertEquals(listOf("1", "2", "3", "4"), indices(synth.requested.drop(requested)))
+    assertEquals(1, player.flushes)
   }
 
-  @Test fun stopItemClearsWithoutSaving() {
-    // Review Focus 2: the item is being deleted; there is nothing to save into.
+  @Test fun aJumpWhilePausedMovesWithoutSynthesizingAndDropsThePrefetch() {
+    queue.load(7, rows, 0, 2.0f)
+    queue.pause()
+    val requested = synth.requested.size
+    queue.next()
+    assertEquals(requested, synth.requested.size)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 5), sink.saves.last())
+    assertEquals(1, player.flushes)
+    assertTrue(leftover().isEmpty())
+    queue.resume()
+    assertEquals(listOf("1", "2", "3", "4"), indices(synth.requested.drop(requested)))
+  }
+
+  @Test fun stopItemClearsWithoutSavingAndDeletesTheFiles() {
+    // Review Focus 2: the item is being deleted; there is nothing to save into (AGENTS.md 3).
     queue.load(7, rows, 0, 2.0f)
     queue.stopItem(8)
     assertEquals(7L, queue.snapshot().itemId)
@@ -220,6 +341,16 @@ class PlaybackQueueTest {
     queue.stopItem(7)
     assertNull(queue.snapshot().itemId)
     assertEquals(saves, sink.saves.size)
+    assertTrue(leftover().isEmpty())
+    assertEquals(1, player.flushes)
+  }
+
+  @Test fun stopSavesAndDeletesTheFiles() {
+    queue.load(7, rows, 2, 2.0f)
+    queue.stop()
+    assertEquals(Triple(7L, 1, 0), sink.saves.last())
+    assertTrue(leftover().isEmpty())
+    assertNull(queue.snapshot().itemId)
   }
 
   @Test fun loadingAnotherItemSavesTheFirstOnesPosition() {
@@ -227,40 +358,64 @@ class PlaybackQueueTest {
     queue.load(9, rows, 0, 2.0f)
     assertEquals(Triple(7L, 1, 0), sink.saves.last())
     assertEquals(9L, queue.snapshot().itemId)
+    assertTrue(leftover().all { it.startsWith("play-9-") })
   }
 
-  @Test fun anEngineErrorSkipsTheSentenceAndCounts() {
+  @Test fun aSynthesisErrorSkipsTheSentenceAndCounts() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0")
-    queue.onError("$g:0")
-    assertEquals(Triple(7L, 0, 5), sink.saves.last())
+    queue.onSynthError("${g()}:0", lost = false)
+    synthDone(1)
+    assertEquals(listOf("1"), indices(player.enqueued))
+    assertFalse("the failed file is deleted", leftover().contains("play-7-${g()}-0-0.wav"))
     assertEquals(1, queue.takeStats().errors)
   }
 
-  @Test fun gapsAreDoneToNextStartInContinuousPlayOnly() {
+  @Test fun aPlayerErrorCountsAndTheNextSentencePlays() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    now = 100; queue.onStart("$g:0")
-    now = 1000; queue.onDone("$g:0")
-    now = 1030; queue.onStart("$g:1")
-    now = 2000; queue.onDone("$g:1")
+    synthDone(0, 1)
+    queue.onPlayerError("${g()}:0")
+    start(1)
+    assertTrue(queue.snapshot().playing)
+    assertEquals(SentenceRow(0, 5, 9, "A1."), queue.snapshot().sentence)
+    assertEquals(1, queue.takeStats().errors)
+  }
+
+  @Test fun gapsArePlayerDoneToNextPlayerStartInContinuousPlayOnly() {
+    // D3: R-M07's gap is what the listener hears, on Read Me's own clock.
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0, 1, 2)
+    now = 100; start(0)
+    now = 1000; done(0)
+    now = 1030; start(1)
+    now = 2000; done(1)
     queue.pause()
     now = 9000; queue.resume()
-    val g2 = gen(lastId())
-    now = 9100; queue.onStart("$g2:2")
+    now = 9100; start(2)
     val s = queue.takeStats().gaps
     assertEquals(1, s.count)
     assertEquals(30L, s.max)
     assertEquals(0, queue.takeStats().gaps.count) // taking resets
   }
 
-  @Test fun everySentenceStartIsPublished() {
+  @Test fun synthesisTimesAndUnderrunsAreReported() {
+    now = 1000
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0"); queue.onDone("$g:0"); queue.onStart("$g:1")
-    assertEquals(SentenceRow(0, 5, 9, "A1."), sink.snapshots.last().sentence)
-    assertTrue(sink.snapshots.last().playing)
+    now = 1800; synthDone(0)
+    now = 2000; synthDone(1)
+    player.underruns = 3
+    val st = queue.takeStats()
+    assertEquals(800L, st.synthP50)
+    assertEquals(1000L, st.synthP95)
+    assertEquals(3, st.underruns)
+  }
+
+  @Test fun firstAudioIsTimedFromLoadToThePlayersFirstStartOnce() {
+    now = 1000
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0, 1)
+    now = 2500; start(0)
+    done(0); start(1)
+    assertEquals(listOf(7L to 1500L), sink.firstAudio)
   }
 
   @Test fun anItemStoppedForDeletionCannotBeLoadedAfterwards() {
@@ -268,7 +423,7 @@ class PlaybackQueueTest {
     // item exists just before and load it just after.
     queue.stopItem(7)
     assertFalse(queue.load(7, rows, 0, 2.0f))
-    assertTrue(speaker.spoken.isEmpty())
+    assertTrue(synth.requested.isEmpty())
     assertNull(queue.snapshot().itemId)
   }
 
@@ -280,14 +435,14 @@ class PlaybackQueueTest {
     assertTrue(queue.load(9, rows, 0, 2.0f))
   }
 
-  @Test fun aFailedSaveStillQueuesTheNextSentenceAndIsCounted() {
+  @Test fun aFailedSaveStillPrefetchesTheNextSentenceAndIsCounted() {
     // REA-18: Store.savePosition rethrows anything but a constraint error; a throw before the
     // top-up left the queue playing with nothing queued.
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
+    synthDone(0)
     sink.failSaves = true
-    queue.onDone("$g:0")
-    assertEquals("$g:3", lastId())
+    start(0); done(0)
+    assertEquals("4", indices(synth.requested).last())
     assertTrue(queue.snapshot().playing)
     assertTrue(queue.pause())
     assertFalse(queue.snapshot().playing)
@@ -296,48 +451,63 @@ class PlaybackQueueTest {
 
   @Test fun threeErrorsInARowPauseAtTheFirstFailedSentence() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onError("$g:0")
-    queue.onError("$g:1")
-    queue.onError("$g:2")
+    val g = g()
+    queue.onSynthError("$g:0", lost = false)
+    queue.onSynthError("$g:1", lost = false)
+    queue.onSynthError("$g:2", lost = false)
     assertFalse(queue.snapshot().playing)
     assertEquals(7L, queue.snapshot().itemId)
     assertEquals(Triple(7L, 0, 0), sink.saves.last()) // sentence 0 starts paragraph 0 at 0
     assertTrue(sink.finished.isEmpty())
+    assertEquals(0, sink.lost)
   }
 
-  @Test fun anErrorBetweenGoodSentencesStillAdvances() {
+  @Test fun anErrorBetweenGoodSentencesStillPlays() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onError("$g:0")
-    queue.onStart("$g:1")
-    queue.onDone("$g:1")
-    queue.onError("$g:2")
+    val g = g()
+    queue.onSynthError("$g:0", lost = false)
+    synthDone(1)
+    queue.onSynthError("$g:2", lost = false)
+    synthDone(3)
     assertTrue(queue.snapshot().playing)
+    assertEquals(listOf("1", "3"), indices(player.enqueued))
   }
 
   @Test fun errorsAtTheEndPauseInsteadOfArchiving() {
     queue.load(7, rows, 4, 2.0f)
-    val g = gen(lastId())
-    queue.onDone("$g:4")
-    queue.onError("$g:5")
+    synthDone(4)
+    queue.onSynthError("${g()}:5", lost = false)
+    start(4); done(4)
     assertTrue(sink.finished.isEmpty())
     assertFalse(queue.snapshot().playing)
     assertEquals(Triple(7L, 3, 5), sink.saves.last()) // sentence 5 is paragraph 3 offset 5
   }
 
-  @Test fun aRefusedSpeakPausesAndReportsTheEngineLost() {
+  @Test fun aRefusedSynthesisPausesAndReportsTheEngineLost() {
     // REA-18: after the engine process died, resume "played" silently with the wake lock held.
-    speaker.refuse = true
+    synth.refuse = true
     queue.load(7, rows, 2, 2.0f)
     assertFalse(queue.snapshot().playing)
     assertEquals(1, sink.lost)
     assertEquals(Triple(7L, 1, 0), sink.saves.last())
+    assertTrue(leftover().isEmpty())
   }
 
-  @Test fun anEngineThatStopsSpeakingIsLostAfterThreeChecks() {
+  @Test fun aServiceErrorIsTheEngineLostNotASkippedSentence() {
+    // D5: ERROR_SERVICE means the engine's process is gone.
     queue.load(7, rows, 0, 2.0f)
-    speaker.speaking = false
+    synthDone(0)
+    start(0)
+    queue.onSynthError("${g()}:1", lost = true)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(1, sink.lost)
+    assertEquals(0, queue.takeStats().errors)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+  }
+
+  @Test fun noAudioProgressWithADeadEngineIsLostAfterThreeChecks() {
+    queue.load(7, rows, 0, 2.0f)
+    synth.alive = false
     assertFalse(queue.checkStall())
     assertFalse(queue.checkStall())
     assertTrue(queue.checkStall())
@@ -345,71 +515,85 @@ class PlaybackQueueTest {
     assertEquals(1, sink.lost)
   }
 
-  @Test fun aSlowFirstSentenceIsNotAStall() {
-    // A cold engine took 8 s to first audio (AGENTS.md); progress or speaking resets the count.
+  @Test fun aSlowSynthesisOnALiveEngineIsNotAStall() {
+    // A cold engine took 8 s to first audio (AGENTS.md); a long sentence takes longer still.
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    speaker.speaking = false
-    queue.checkStall()
-    queue.checkStall()
-    queue.onStart("$g:0")
+    repeat(PlaybackQueue.HUNG_TICKS - 1) { assertFalse(queue.checkStall()) }
+    assertTrue(queue.snapshot().playing)
+    assertEquals(0, sink.lost)
+  }
+
+  @Test fun anEngineThatAnswersButNeverFinishesIsLostInTheEnd() {
+    queue.load(7, rows, 0, 2.0f)
+    repeat(PlaybackQueue.HUNG_TICKS - 1) { queue.checkStall() }
+    assertTrue(queue.checkStall())
+    assertEquals(1, sink.lost)
+  }
+
+  @Test fun audioPlayingOrAnyEventResetsTheStallCount() {
+    queue.load(7, rows, 0, 2.0f)
+    synth.alive = false
+    queue.checkStall(); queue.checkStall()
+    player.progress = 500 // a long sentence playing
+    assertFalse(queue.checkStall())
+    queue.checkStall(); queue.checkStall()
+    synthDone(0)
     assertFalse(queue.checkStall())
     assertFalse(queue.checkStall())
     assertTrue(queue.snapshot().playing)
-    assertEquals(0, sink.lost)
+  }
+
+  @Test fun theEngineIsAskedOutsideTheQueueLock() {
+    // getVoice is a binder call into the engine; under the lock it would block every callback.
+    queue.load(7, rows, 0, 2.0f)
+    var free = false
+    synth.aliveCheck = {
+      val t = Thread { queue.snapshot() }
+      t.start(); t.join(2_000)
+      free = !t.isAlive
+    }
+    repeat(PlaybackQueue.STALL_TICKS) { queue.checkStall() }
+    assertTrue(free)
   }
 
   @Test fun aPausedQueueIsNeverStalled() {
     queue.load(7, rows, 0, 2.0f)
     queue.pause()
-    speaker.speaking = false
-    repeat(5) { assertFalse(queue.checkStall()) }
+    synth.alive = false
+    repeat(PlaybackQueue.HUNG_TICKS + 1) { assertFalse(queue.checkStall()) }
   }
 
-  @Test fun aSwappedSpeakerGetsTheRateAndTheNextResume() {
+  @Test fun aSwappedSynthGetsTheRateAndTheNextResume() {
     queue.load(7, rows, 2, 1.5f)
-    speaker.refuse = true
+    synth.refuse = true
     queue.next() // refused: lost
-    val fresh = FakeSpeaker()
-    queue.swapSpeaker(fresh)
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh)
     assertEquals(listOf(1.5f), fresh.rates)
     assertTrue(queue.resume())
-    assertEquals(3, fresh.spoken.size)
-  }
-
-  @Test fun errorsReportedAfterAStartStillCountAsARun() {
-    // Final review: Android delivers onStart then onError when an engine starts an utterance
-    // before failing it; resetting the run on onStart let a failing engine read silence to the end.
-    queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    for (i in 0..2) {
-      queue.onStart("$g:$i")
-      queue.onError("$g:$i")
-    }
-    assertFalse(queue.snapshot().playing)
-    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    assertEquals(listOf("3", "4", "5"), indices(fresh.requested))
   }
 
   @Test fun aJumpEndsTheErrorRun() {
     // Critique: two errors, Next, Next, then one error paused back at sentence 0.
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onError("$g:0")
-    queue.onError("$g:1")
+    val g = g()
+    queue.onSynthError("$g:0", lost = false)
+    queue.onSynthError("$g:1", lost = false)
     queue.next()
     queue.next()
-    queue.onError("${gen(lastId())}:4")
+    queue.onSynthError("${g()}:4", lost = false)
     assertTrue(queue.snapshot().playing)
   }
 
   @Test fun aNewItemStartsWithNoErrorRun() {
     queue.load(7, rows, 0, 2.0f)
-    val g = gen(lastId())
-    queue.onError("$g:0")
-    queue.onError("$g:1")
+    val g = g()
+    queue.onSynthError("$g:0", lost = false)
+    queue.onSynthError("$g:1", lost = false)
     queue.pause()
     queue.load(8, rows.take(2), 0, 2.0f)
-    queue.onError("${gen(lastId())}:0")
+    queue.onSynthError("${g()}:0", lost = false)
     assertTrue(queue.snapshot().playing)
     assertEquals(8L, queue.snapshot().itemId)
   }
@@ -417,25 +601,201 @@ class PlaybackQueueTest {
   @Test fun aFailedArchiveStillClearsTheQueue() {
     sink.failFinish = true
     queue.load(7, rows.take(1), 0, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:0")
-    queue.onDone("$g:0")
+    synthDone(0)
+    start(0)
+    done(0)
     assertEquals(null, queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
   }
 
-  // --- R-S05 continuous play: the sink offers the next item after the archive ---
+  @Test fun dropPrefetchKeepsThePositionAndResumeRestartsAtTheSentenceStart() {
+    // ADR 0009's window ended: the service may be stopped, so nothing is kept but the position.
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0, 1)
+    start(0); done(0); start(1)
+    queue.pause()
+    queue.dropPrefetch()
+    assertEquals(1, player.flushes)
+    assertEquals(1, synth.stops)
+    assertTrue(leftover().all { it in player.files.map { f -> f.name } })
+    val requested = synth.requested.size
+    queue.resume()
+    assertEquals(listOf("1", "2", "3", "4"), indices(synth.requested.drop(requested)))
+  }
+
+  @Test fun anEngineAnsweringInsideSynthesizeIsNotAskedTwice() {
+    synth.answerAtOnce = true
+    queue.load(7, rows, 0, 2.0f)
+    assertEquals(listOf("0", "1", "2", "3"), indices(synth.requested))
+    assertEquals(listOf("0", "1", "2", "3"), indices(player.enqueued))
+  }
+
+  // --- REA-31 gap fix: prefetch by buffered audio, chunked synthesis, stall diagnostics ---
+
+  private val durations = HashMap<String, Long>() // file name -> ms of audio
+  private fun audioQueue(synth: FakeSynth, aheadMs: Long = 10_000, chunk: Int = 0) =
+    PlaybackQueue(synth, player, PlaybackFiles(dir), sink, { now }, aheadMs = aheadMs, chunkChars = chunk,
+      audioMs = { f -> durations[f.name] ?: -1L })
+
+  private fun many(n: Int) = (0 until n).map { SentenceRow(it, 0, 3, "S$it.") }
+
+  @Test fun shortSentencesAreSynthesizedUntilTenSecondsAreBufferedUpToEight() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(20), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    // Every sentence turns out to be half a second: 3 ahead is 1.5 s, far under the target.
+    for (i in 0 until 20) {
+      val id = "$g:$i"
+      if (id !in s.requested) break
+      durations[s.files.getValue(id).name] = 500
+      q.onSynthDone(id)
+    }
+    // While sentence 0 plays, the engine is kept busy without waiting for the player.
+    assertEquals((0..8).map { "$it" }, indices(s.requested))
+  }
+
+  @Test fun aLongSentenceAheadMeetsTheTargetWithThreeAhead() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(20), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    durations[s.files.getValue("$g:1").name] = 20_000
+    // The long one is measured first; then nothing estimates the ones after it as short.
+    for (i in listOf(1, 0, 2, 3)) { durations.putIfAbsent(s.files.getValue("$g:$i").name, 500); q.onSynthDone("$g:$i") }
+    assertEquals((0..3).map { "$it" }, indices(s.requested))
+  }
+
+  @Test fun aLongSentenceAfterShortOnesIsAskedForBeforeTheShortOnesRunOut() {
+    // The device:gap stall (2026-10-04): short sentences, then a long one whose synthesis took
+    // longer than the audio ahead of it. Counting sentences asked for it too late.
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    val rows = many(12)
+    q.load(7, rows, 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0..3) { durations[s.files.getValue("$g:$i").name] = 400; q.onSynthDone("$g:$i") }
+    assertTrue("sentence 6 is asked for while sentence 0 still plays", "$g:6" in s.requested)
+  }
+
+  @Test fun theBufferTargetIsCappedByBytesToo() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(20), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0..3) {
+      val f = s.files.getValue("$g:$i")
+      f.writeBytes(ByteArray(PlaybackQueue.AHEAD_BYTES / 3 + 1))
+      durations[f.name] = 100
+      q.onSynthDone("$g:$i")
+    }
+    assertEquals((0..3).map { "$it" }, indices(s.requested))
+  }
+
+  @Test fun aLongSentenceIsSynthesizedInChunksButHighlightedWhole() {
+    val s = FakeSynth()
+    val q = audioQueue(s, chunk = 40)
+    val long = SentenceRow(1, 10, 10 + 100, "This first part is a clause, and here comes a second clause; then a third bit.".padEnd(100, 'x'))
+    val rows = listOf(SentenceRow(0, 0, 4, "One."), long, SentenceRow(2, 0, 4, "Two."))
+    q.load(7, rows, 1, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    assertTrue(s.requested.size >= 3)
+    assertEquals(long, q.snapshot().sentence)
+    // Fitted rows: "One." is 0, the long sentence's chunks start at 1.
+    q.onSynthDone("$g:1"); q.onPlayerStart("$g:1"); q.onPlayerDone("$g:1")
+    q.onSynthDone("$g:2"); q.onPlayerStart("$g:2")
+    assertEquals(long, q.snapshot().sentence) // the second chunk: still the whole sentence
+    assertTrue(sink.saves.last().third > 10) // the position is the chunk's own offset
+    assertEquals(1, sink.saves.last().second)
+  }
+
+  @Test fun aStallIsLoggedWithWhereItFellAndWhatWasBuffered() {
+    val s = FakeSynth()
+    val stalls = mutableListOf<String>()
+    val q = PlaybackQueue(s, player, PlaybackFiles(dir), object : PlaybackSink by sink {
+      override fun stall(detail: String) { stalls += detail }
+    }, { now }, aheadMs = 0, chunkChars = 0, audioMs = { f -> durations[f.name] ?: -1L })
+    q.load(7, rows, 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    now = 0; durations[s.files.getValue("$g:0").name] = 900; q.onSynthDone("$g:0")
+    now = 100; q.onPlayerStart("$g:0")
+    now = 1000; q.onPlayerDone("$g:0")
+    now = 2400; durations[s.files.getValue("$g:1").name] = 900; q.onSynthDone("$g:1")
+    now = 2500; q.onPlayerStart("$g:1")
+    assertEquals(1, stalls.size)
+    val d = stalls[0]
+    assertTrue(d, d.contains("ms=1500") && d.contains("index=1") && d.contains("paragraph=0") && d.contains("offset=5"))
+    assertTrue(d, d.contains("synthMs=") && d.contains("chars=") && d.contains("aheadMsAtRequest=") && d.contains("depth="))
+    assertFalse(d.contains("A1"))
+  }
+
+  // --- REA-31: start buffer (device:gap 2026-10-04 09:23: a 1154 ms stall at index 1, a short
+  // first sentence played while the cold engine was still writing the second) ---
+
+  @Test fun aShortFirstSentenceWaitsForTheNextBeforePlaying() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(10), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    durations[s.files.getValue("$g:0").name] = 600
+    q.onSynthDone("$g:0")
+    assertEquals("not yet: 600 ms would run out before the next is written", 0, player.plays)
+    durations[s.files.getValue("$g:1").name] = 3_000
+    q.onSynthDone("$g:1")
+    assertEquals(1, player.plays)
+    assertEquals(listOf("0", "1"), indices(player.enqueued))
+  }
+
+  @Test fun aLongFirstSentencePlaysAtOnce() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(10), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    durations[s.files.getValue("$g:0").name] = PlaybackQueue.START_MS
+    q.onSynthDone("$g:0")
+    assertEquals(1, player.plays)
+  }
+
+  @Test fun aShortLastSentencePlaysWithNothingAfterIt() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(1), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    durations[s.files.getValue("$g:0").name] = 300
+    q.onSynthDone("$g:0")
+    assertEquals(1, player.plays)
+  }
+
+  @Test fun aPauseBeforeTheStartBufferFillsStaysPausedAndPlayWaitsForIt() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(10), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    durations[s.files.getValue("$g:0").name] = 600
+    q.onSynthDone("$g:0")
+    q.pause()
+    q.resume()
+    assertEquals(0, player.plays)
+    durations[s.files.getValue("$g:1").name] = 3_000
+    q.onSynthDone("$g:1")
+    assertEquals(1, player.plays)
+  }
+
+  // --- R-S05 continuous play (ADR 0011) on REA-31's pipeline (ADR 0012): the sink offers the
+  // next item after the archive, and loading it is a new generation whose synthesis starts then ---
 
   private val rows8 = listOf(SentenceRow(0, 0, 4, "E0."), SentenceRow(0, 5, 9, "E1."), SentenceRow(1, 0, 4, "F0."))
 
-  /** Plays item 7's last two sentences to the end; returns the generation they ran in. */
+  /** Item 7's last two sentences, synthesized and played to the end; returns their generation. */
   private fun finishSeven(): String {
     queue.load(7, rows, 4, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:4")
-    queue.onDone("$g:4")
-    queue.onStart("$g:5")
-    queue.onDone("$g:5")
+    val g = g()
+    queue.onSynthDone("$g:4")
+    queue.onSynthDone("$g:5")
+    queue.onPlayerStart("$g:4")
+    queue.onPlayerDone("$g:4")
+    queue.onPlayerStart("$g:5")
+    queue.onPlayerDone("$g:5")
     return g
   }
 
@@ -445,6 +805,7 @@ class PlaybackQueueTest {
     assertEquals(listOf(7L to emptySet<Long>()), sink.nextAsked)
     assertNull(queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
+    assertEquals(1, player.flushes)
   }
 
   @Test fun theNextItemLoadsAfterTheArchiveWithNoEmptySnapshotBetween() {
@@ -459,40 +820,90 @@ class PlaybackQueueTest {
     assertEquals(8L, s.itemId)
     assertTrue(s.playing)
     assertEquals(rows8[1], s.sentence)
-    // A new generation from the saved start: indices 1 and 2 of item 8.
-    val g2 = gen(lastId())
+    // A new generation from the saved start: indices 1 and 2 of item 8 are asked for.
+    val g2 = g()
     assertTrue(g2 != g)
-    assertEquals(listOf("1", "2"), speaker.spoken.filter { gen(it) == g2 }.map { it.substringAfter(':') })
+    assertEquals(listOf("1", "2"), indices(synth.requested.filter { it.startsWith("$g2:") }))
+  }
+
+  @Test fun theFinishedItemsPipelineIsDiscardedAndTheNextItemsFilesAreItsOwn() {
+    sink.next = NextItem(8, rows8, 0)
+    val g = finishSeven()
+    // The engine is stopped and the player flushed once, at 7's end; 7's files the queue held are
+    // deleted, and the ones it gave the player are the player's to delete (TrackPlayer does).
+    assertEquals(1, synth.stops)
+    assertEquals(1, player.flushes)
+    val given = player.files.map { it.name }.toSet()
+    assertTrue(leftover().filter { it.startsWith("play-7-") }.all { it in given })
+    val g2 = g()
+    assertEquals(
+      listOf("play-8-$g2-0-0.wav", "play-8-$g2-0-5.wav", "play-8-$g2-1-0.wav"),
+      leftover().filter { it.startsWith("play-8-") },
+    )
+    // Nothing of 8 was asked for before 7 ended: no prefetch across the item boundary.
+    assertEquals(listOf("4", "5"), indices(synth.requested.filter { it.startsWith("$g:") }))
+    // The player starts 8 only once its audio is ready, as after any load (start buffer).
+    val plays = player.plays
+    queue.onSynthDone("$g2:0")
+    assertEquals(plays + 1, player.plays)
+    assertEquals(listOf("$g2:0"), player.enqueued.filter { it.startsWith("$g2:") })
+  }
+
+  @Test fun lateAnswersForTheFinishedItemAreIgnoredAfterTheHandover() {
+    sink.next = NextItem(8, rows8, 0)
+    val g = finishSeven()
+    val requested = synth.requested.size
+    val enqueued = player.enqueued.size
+    queue.onPlayerDone("$g:5")
+    queue.onPlayerStart("$g:5")
+    queue.onSynthDone("$g:5")
+    queue.onSynthError("$g:4", lost = true)
+    queue.onPlayerError("$g:4")
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(1, sink.nextAsked.size)
+    assertEquals(requested, synth.requested.size)
+    assertEquals(enqueued, player.enqueued.size)
+    assertEquals(0, sink.lost)
+    assertEquals(8L, queue.snapshot().itemId)
+    assertEquals(rows8[0], queue.snapshot().sentence)
   }
 
   @Test fun theHandoverKeepsTheRateWithoutApplyingItAgain() {
     sink.next = NextItem(8, rows8, 0)
     finishSeven()
-    assertEquals(listOf(2.0f), speaker.rates)
+    assertEquals(listOf(2.0f), synth.rates)
     assertEquals(2.0f, queue.snapshot().rate)
   }
 
   @Test fun theChainGoesOnUntilNoItemIsLeft() {
     sink.next = NextItem(8, rows8, 2)
     finishSeven()
-    val g = gen(lastId())
-    queue.onStart("$g:2")
-    queue.onDone("$g:2")
+    val g = g()
+    queue.onSynthDone("$g:2")
+    queue.onPlayerStart("$g:2")
+    queue.onPlayerDone("$g:2")
     assertEquals(listOf(7L, 8L), sink.finished)
     assertEquals(listOf(7L, 8L), sink.nextAsked.map { it.first })
     assertNull(queue.snapshot().itemId)
+    assertEquals(2, player.flushes)
   }
 
   @Test fun theFirstSentenceOfTheNextItemReportsTheHandoverTime() {
     sink.next = NextItem(8, rows8, 0)
     finishSeven()
+    val g = g()
+    now = 100
+    queue.onSynthDone("$g:0")
     now = 250
-    queue.onStart("${gen(lastId())}:0")
+    queue.onPlayerStart("$g:0")
+    // From the next item's load to its first frame heard: its synthesis is inside it.
     assertEquals(listOf(Triple(7L, 8L, 250L)), sink.handovers)
     // The handover is not an R-M07 sentence gap: only 7's sentence 4 to 5 (0 ms) is counted.
     val gaps = queue.takeStats().gaps
     assertEquals(1, gaps.count)
     assertEquals(0L, gaps.max)
+    // first-audio is a user play's: 7's load only.
+    assertEquals(listOf(7L), sink.firstAudio.map { it.first })
   }
 
   @Test fun aFailedArchiveEndsTheChain() {
@@ -506,31 +917,36 @@ class PlaybackQueueTest {
   @Test fun errorsAtTheEndPauseAndDoNotContinue() {
     sink.next = NextItem(8, rows8, 0)
     queue.load(7, rows, 5, 2.0f)
-    val g = gen(lastId())
-    queue.onError("$g:5")
+    queue.onSynthError("${g()}:5", lost = false)
     assertTrue(sink.nextAsked.isEmpty())
     assertEquals(7L, queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
   }
 
-  @Test fun aPauseHoldsTheCurrentItemAndLateCallbacksDoNotContinue() {
+  @Test fun aPauseOnTheLastSentenceEndsTheChainEvenIfItsLastFramesFinishIt() {
+    // D1 keeps the generation across a pause, so the player can still report the end of frames
+    // heard before it. The item was read to the end (R-M11); the user's pause ends the chain.
     sink.next = NextItem(8, rows8, 0)
     queue.load(7, rows, 5, 2.0f)
-    val g = gen(lastId())
-    queue.onStart("$g:5")
-    queue.pause()
-    queue.onDone("$g:5") // the engine's late report for the flushed utterance
+    val g = g()
+    queue.onSynthDone("$g:5")
+    queue.onPlayerStart("$g:5")
+    assertTrue(queue.pause())
+    queue.onPlayerDone("$g:5")
+    assertEquals(listOf(7L), sink.finished)
     assertTrue(sink.nextAsked.isEmpty())
-    assertEquals(7L, queue.snapshot().itemId)
+    assertNull(queue.snapshot().itemId)
     assertFalse(queue.snapshot().playing)
   }
 
   @Test fun aStopEndsTheChain() {
     sink.next = NextItem(8, rows8, 0)
     queue.load(7, rows, 5, 2.0f)
-    val g = gen(lastId())
+    val g = g()
+    queue.onSynthDone("$g:5")
     queue.stop()
-    queue.onDone("$g:5")
+    queue.onPlayerStart("$g:5")
+    queue.onPlayerDone("$g:5")
     assertTrue(sink.nextAsked.isEmpty())
     assertNull(queue.snapshot().itemId)
   }
@@ -543,7 +959,8 @@ class PlaybackQueueTest {
     assertEquals(setOf(8L), sink.nextAsked.single().second)
     assertNull(queue.snapshot().itemId)
     assertTrue(sink.snapshots.none { it.itemId == 8L })
-    assertTrue(speaker.spoken.all { gen(it) == g })
+    assertTrue(synth.requested.all { it.startsWith("$g:") })
+    assertTrue(leftover().none { it.startsWith("play-8-") })
   }
 
   // --- REA-46: a failure while building the next item ends the chain like no next item ---
@@ -554,12 +971,12 @@ class PlaybackQueueTest {
     override fun get(index: Int): SentenceRow = throw t
   }
 
-  /** Finishes 7 with nothing escaping onDone, then checks the queue ended as with no next item. */
+  /** Finishes 7 with nothing escaping the player's done, then checks it ended as with no next item. */
   private fun assertTheChainEndsLikeNoNextItem() {
-    try {
+    val g = try {
       finishSeven()
     } catch (t: Throwable) {
-      throw AssertionError("escaped onDone: ${t.javaClass.simpleName}", t)
+      throw AssertionError("escaped onPlayerDone: ${t.javaClass.simpleName}", t)
     }
     assertEquals(listOf(7L), sink.finished)
     assertEquals(listOf(7L), sink.nextAsked.map { it.first })
@@ -567,13 +984,22 @@ class PlaybackQueueTest {
     val s = queue.snapshot()
     assertNull(s.itemId)
     assertFalse(s.playing)
+    // The pipeline is released: the engine stopped, the player flushed and never asked to play
+    // again, nothing synthesized after 7, and no file of the queue's left (AGENTS.md 3).
+    assertEquals(1, synth.stops)
+    assertEquals(1, player.flushes)
+    val plays = player.plays
+    assertTrue(synth.requested.all { it.startsWith("$g:") })
+    assertTrue(leftover().all { it in player.files.map { f -> f.name } })
     // The handover is over: the queue is idle, not "playing" with nothing queued.
-    speaker.speaking = false
-    repeat(PlaybackQueue.STALL_TICKS + 1) { assertFalse(queue.checkStall()) }
+    synth.alive = false
+    repeat(PlaybackQueue.HUNG_TICKS + 1) { assertFalse(queue.checkStall()) }
     assertFalse(queue.pause())
     assertFalse(queue.resume())
     assertEquals(0, sink.lost)
+    assertEquals(plays, player.plays)
     // And a later play starts normally.
+    synth.alive = true
     assertTrue(queue.load(9, rows8, 0, 2.0f))
     assertEquals(9L, queue.snapshot().itemId)
   }
@@ -637,6 +1063,7 @@ class PlaybackQueueTest {
     assertFalse(queue.snapshot().playing)
     assertTrue(sink.snapshots.none { it.itemId == 8L })
     assertFalse(queue.resume())
+    assertTrue(leftover().none { it.startsWith("play-8-") })
   }
 
   @Test fun aStopDuringTheHandoverEndsTheChain() {
@@ -656,7 +1083,7 @@ class PlaybackQueueTest {
     val g = finishSeven()
     assertTrue(done())
     assertNull(queue.snapshot().itemId)
-    assertTrue(speaker.spoken.all { gen(it) == g })
+    assertTrue(synth.requested.all { it.startsWith("$g:") })
   }
 
   @Test fun aUserPlayDuringTheHandoverWins() {
@@ -670,6 +1097,7 @@ class PlaybackQueueTest {
     assertTrue(sink.snapshots.none { it.itemId == 8L })
     // The user's play saved nothing into the archived 7.
     assertTrue(sink.saves.drop(saves).none { it.first == 7L })
+    assertTrue(leftover().none { it.startsWith("play-8-") })
   }
 
   @Test fun aRateChangeDuringTheHandoverAppliesToTheNextItemOnce() {
@@ -677,26 +1105,158 @@ class PlaybackQueueTest {
     val done = duringHandover { queue.setRate(1.5f) }
     val g = finishSeven()
     assertTrue(done())
-    assertEquals(listOf(2.0f, 1.5f), speaker.rates)
+    assertEquals(listOf(2.0f, 1.5f), synth.rates)
     assertEquals(8L, queue.snapshot().itemId)
     assertEquals(1.5f, queue.snapshot().rate)
-    // 7's last sentence was not restarted.
-    assertEquals(listOf("4", "5"), speaker.spoken.filter { gen(it) == g }.map { it.substringAfter(':') })
+    // 7's last sentence was not synthesized again.
+    assertEquals(listOf("4", "5"), indices(synth.requested.filter { it.startsWith("$g:") }))
   }
 
   @Test fun transportAndStallChecksAreIgnoredDuringTheHandover() {
     sink.next = NextItem(8, rows8, 0)
-    speaker.speaking = false
+    synth.alive = false
     val done = duringHandover {
       assertFalse(queue.next())
       assertFalse(queue.previous())
       assertFalse(queue.backParagraph())
-      repeat(PlaybackQueue.STALL_TICKS + 1) { assertFalse(queue.checkStall()) }
+      repeat(PlaybackQueue.HUNG_TICKS + 1) { assertFalse(queue.checkStall()) }
     }
     finishSeven()
     assertTrue(done())
     assertEquals(0, sink.lost)
     assertEquals(8L, queue.snapshot().itemId)
     assertEquals(rows8[0], queue.snapshot().sentence)
+  }
+
+  // --- R-S05 through Read Me's real player (ADR 0012): WAV files on disk, an output whose play
+  // head the test moves, and the handover on the player's own thread ---
+
+  /** An AudioTrack stand-in that takes everything written; the test moves its play head. */
+  private class Out(override val format: PcmFormat) : AudioOut {
+    var written = 0L
+    var head = 0L
+    var playing = false
+    var released = false
+    override val startFrames = 0
+    override fun write(buf: ByteArray, off: Int, len: Int): Int {
+      written += len / format.frameBytes
+      return len
+    }
+    override fun play() { playing = true }
+    override fun pause() { playing = false }
+    override fun release() { released = true; playing = false }
+    override fun head() = head
+    override fun underruns() = 0
+  }
+
+  /** A PCM16 mono WAV of [ms] frames at 1000 Hz: one frame per millisecond. */
+  private fun writeWav(f: File, ms: Int) {
+    val data = ByteArray(ms * 2) { if (it % 2 == 0) 0x10 else 0 }
+    val h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+      .put("RIFF".toByteArray()).putInt(36 + data.size).put("WAVE".toByteArray())
+      .put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(1_000).putInt(2_000)
+      .putShort(2).putShort(16)
+      .put("data".toByteArray()).putInt(data.size).array()
+    f.writeBytes(h + data)
+  }
+
+  /** A queue on a real TrackPlayer, stepped by the test as its writer thread would be. */
+  private inner class Rig {
+    val outs = mutableListOf<Out>()
+    val engine = FakeSynth()
+    private val answered = HashSet<String>()
+    lateinit var q: PlaybackQueue
+    val player = TrackPlayer(
+      object : PlayerEvents {
+        override fun onPlayerStart(id: String) = q.onPlayerStart(id)
+        override fun onPlayerDone(id: String) = q.onPlayerDone(id)
+        override fun onPlayerError(id: String) = q.onPlayerError(id)
+      },
+      { f -> Out(f).also { outs += it } },
+      padMs = 40,
+    )
+
+    init {
+      q = PlaybackQueue(engine, player, PlaybackFiles(dir), sink, { now }, aheadMs = 0, chunkChars = 0)
+    }
+
+    /** The engine writes every sentence asked for and not yet answered, [ms] of audio each. */
+    fun synthesizeAll(ms: Int = 1_500) {
+      for (id in engine.requested.toList()) {
+        if (!answered.add(id)) continue
+        writeWav(engine.files.getValue(id), ms)
+        q.onSynthDone(id)
+      }
+    }
+
+    /** Lets the output play [ms], 10 ms per writer step. */
+    fun play(ms: Long) {
+      repeat(3) { player.step() }
+      var left = ms
+      while (left > 0) {
+        val n = minOf(left, 10L)
+        outs.lastOrNull()?.let { if (it.playing) it.head = minOf(it.head + n, it.written) }
+        left -= n
+        player.step()
+      }
+      repeat(3) { player.step() }
+    }
+  }
+
+  @Test fun aHandoverThroughTheRealPlayerDeletesTheFinishedItemsFilesAndPlaysTheNext() {
+    val r = Rig()
+    sink.next = NextItem(8, rows8, 0)
+    r.q.load(7, rows, 4, 2.0f)
+    r.synthesizeAll()
+    r.play(3_100)
+    // 7 was heard to the end and archived; 8 was built and its synthesis asked for.
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(8L, r.q.snapshot().itemId)
+    assertTrue(r.q.snapshot().playing)
+    assertTrue("7's output is released", r.outs.single().released)
+    assertTrue("no file of 7 is left", leftover().none { it.startsWith("play-7-") })
+    val g2 = r.engine.requested.last().substringBefore(':')
+    assertEquals(listOf("play-8-$g2-0-0.wav", "play-8-$g2-0-5.wav", "play-8-$g2-1-0.wav"), leftover())
+    // 8 plays on a new output once its audio is ready; its first frame reports the handover.
+    now = 400
+    r.synthesizeAll()
+    r.play(1)
+    assertEquals(2, r.outs.size)
+    assertEquals(listOf(Triple(7L, 8L, 400L)), sink.handovers)
+    assertEquals(rows8[0], r.q.snapshot().sentence)
+    r.play(4_600)
+    // 8 ends with nothing after it: the chain ends, and nothing is left on disk or playing.
+    assertEquals(listOf(7L, 8L), sink.finished)
+    assertNull(r.q.snapshot().itemId)
+    assertTrue(leftover().isEmpty())
+    assertTrue(r.outs.all { it.released })
+  }
+
+  @Test fun aFailedHandoverThroughTheRealPlayerLeavesNoFilesAndNoOutput() {
+    // REA-46: the player's writer catches Exception only; an Error escaping its done event would
+    // end the writer thread. The queue catches it, and the chain ends as with no next item.
+    val r = Rig()
+    sink.failNext = OutOfMemoryError()
+    r.q.load(7, rows, 4, 2.0f)
+    r.synthesizeAll()
+    try {
+      r.play(3_100)
+    } catch (t: Throwable) {
+      throw AssertionError("escaped the player's done: ${t.javaClass.simpleName}", t)
+    }
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(listOf(7L), sink.nextAsked.map { it.first })
+    assertNull(r.q.snapshot().itemId)
+    assertFalse(r.q.snapshot().playing)
+    assertTrue(leftover().isEmpty())
+    assertTrue(r.outs.single().released)
+    assertEquals(2, r.engine.requested.size) // nothing asked for after 7
+    // The player still works: a later play opens a new output and is heard.
+    assertTrue(r.q.load(9, rows8, 0, 2.0f))
+    r.synthesizeAll()
+    r.play(1)
+    assertEquals(2, r.outs.size)
+    assertTrue(r.outs.last().playing)
+    assertEquals(rows8[0], r.q.snapshot().sentence)
   }
 }

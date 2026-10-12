@@ -37,4 +37,29 @@ class UtterancesTest {
     assertEquals(99, f.rows[0].text.length)
     assertEquals(text, f.rows.joinToString("") { it.text })
   }
+
+  @Test fun aSynthesisChunkLimitSplitsAtAClauseAndKeepsTheWholeSentence() {
+    // REA-31: a whole sentence is synthesized before any of it plays, so a long one is cut
+    // into chunks whose synthesis is short; the highlight still shows the whole sentence.
+    val text = "First clause runs on for a while, " + "and the second clause also runs on and on; " +
+      "the third one ends here."
+    val rows = listOf(row(0, 0, "Short."), row(1, 5, text))
+    val f = Utterances.fit(rows, 1, 3_900, chunk = 50)
+    val pieces = f.rows.filter { it.paragraphIndex == 1 }
+    assertTrue(pieces.size > 1)
+    pieces.forEach { assertTrue(it.text.length <= 50) }
+    assertEquals(text, pieces.joinToString("") { it.text })
+    pieces.zipWithNext { a, b -> assertEquals(a.end, b.start) }
+    // At a clause mark where there is one in the back half of the window.
+    assertTrue(pieces.first().text.trimEnd().endsWith(","))
+    assertEquals(1, f.startIndex)
+    assertEquals(f.rows.size, f.sentences.size)
+    f.rows.indices.filter { f.rows[it].paragraphIndex == 1 }.forEach { assertEquals(rows[1], f.sentences[it]) }
+    assertEquals(rows[0], f.sentences[0])
+  }
+
+  @Test fun withoutAChunkLimitEachRowIsItsOwnSentence() {
+    val rows = listOf(row(0, 0, "One."), row(0, 5, "Two."))
+    assertEquals(rows, Utterances.fit(rows, 0, 100).sentences)
+  }
 }

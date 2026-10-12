@@ -16,6 +16,7 @@ intake    classify shared text, item      ShareReceiver  ACTION_SEND text/plain 
 extract   HTML -> title/paragraphs        Fetcher        the only network call
 segment   paragraphs -> sentences         PlaybackService foreground service, MediaSession,
 library   typed facade over the native DB                 sentence queue, own TextToSpeech
+                                                         (to files), own AudioTrack (ADR 0012)
 trim      cuts and position remapping
 reader    four screens; a VIEW of the     BridgeServer   127.0.0.1:8787 for the Obsidian
           playback service                               plugin, own TextToSpeech
@@ -43,8 +44,11 @@ Rules of the layering:
 share -> intake -> [link] Fetcher -> fetched (body app-private) -> extract -> library
                                                         (ready | extract-poor | fetch-failed)
                 -> [text] split on blank lines -> library (ready)
-open item -> Trim (first time) -> Reader -> segment -> PlaybackService queue -> TTS
-onDone(n) -> position saved (paragraph, offset) -> next utterance
+open item -> Trim (first time) -> Reader -> segment -> PlaybackService queue -> TTS to file
+  -> Read Me's player (AudioTrack, 1.0x; ADR 0012)
+player done(n) -> position saved (paragraph, offset) -> one more sentence synthesized
+player done(last) -> archive -> [continuous play on] Segmenter -> next item's queue -> TTS to file
+  (ADR 0011; its synthesis starts only then, ADR 0012)
 app start -> stale `fetching` items -> fetch-failed (interrupted)
 Obsidian plugin -> POST /synthesize?rate=1.0 -> WAV -> plugin Player applies rate
 ```
@@ -60,7 +64,7 @@ Obsidian plugin -> POST /synthesize?rate=1.0 -> WAV -> plugin Player applies rat
 | sentence | Derived by `segment`; never stored, never addressed by index |
 | position | (item, paragraph index, character offset) |
 | utterance | One sentence queued to `TextToSpeech` with a stable id |
-| inter-utterance gap | Wall time `onDone(n)` -> `onStart(n+1)`, measured in the service |
+| inter-utterance gap | Wall time from Read Me's player finishing sentence n to starting n+1, measured in the service (ADR 0012; before it, the engine's `onDone(n)` -> `onStart(n+1)`) |
 | bridge | `BridgeServer`; the Obsidian plugin's route to native TTS |
 | reference device | Pixel 9 Pro XL, GrapheneOS, Android 17 (see `srs.md`) |
 
@@ -97,9 +101,11 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions;
   lifecycle per ADR 0007; Settings: the rate, voice, engine below Android 14, and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
-  wake lock; PlaybackQueue: the sentence queue; TtsSpeaker; TtsOpen: which engine to bind, a refused bind as no-engine (ADR 0010); EngineProbe: engine and offline voices before any play;
+  wake lock; PlaybackQueue: the sentence queue, synthesizing ahead of the player (ADR 0012);
+  TtsSpeaker: playback's engine, synthesizeToFile only; TrackPlayer: Read Me's own AudioTrack;
+  WavPcm; PlaybackFiles: noBackupFilesDir/playback, names by id and offset; TtsOpen: which engine to bind, a refused bind as no-engine (ADR 0010); EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and
-  ADR 0004's speaking flag; Policies; Utterances; MediaButtonClaim; GapStats;
+  ADR 0004's speaking flag; Policies; Utterances; GapStats;
   ContinuousPlay: the next unread item for R-S05; Segmenter: the Kotlin port of `segment`),
   bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
   server, caps, token, CORS, drain; Http: request-head parsing; TtsSynth: the bridge's own

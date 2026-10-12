@@ -28,6 +28,10 @@ throughput, and the native-TTS bridge". They are cited, not re-measured here. Th
 device has two TTS engines installed (checked over adb 2026-10-02): the default
 `app.grapheneos.speechservices`, and `com.google.android.tts`, which also offers network
 voices and is therefore the engine R-M06's network-voice filter is tested against.
+Amended 2026-10-04 (REA-31): `com.google.android.tts` is installed for the phone's user 12,
+not for the owner's user 0 (`pm list packages --user 0` omits it; plain `pm list packages`
+lists every user's apps), so asking for it in user 0 bound `app.grapheneos.speechservices`.
+User 0 also has Supertonic and Marmalade; Supertonic was the default when checked that day.
 
 - Kokoro (neural TTS) inside Obsidian's Android WebView misses 2x playback by 8.2x. The
   WebView is not cross-origin isolated, so ONNX Runtime is capped at one WASM thread, and
@@ -172,14 +176,19 @@ Speech MUST use Android's `android.speech.tts.TextToSpeech` only.
 
 - Kept paragraphs are split into sentences (R-M08). The **native side owns the queue**:
   when playback starts, JS hands `PlaybackService` the item's full ordered sentence list
-  (paragraph index, start and end offsets, text) and a start position. The service queues
-  utterances with `QUEUE_ADD` far enough ahead that boundaries do not produce audible gaps,
-  and keeps doing so with the screen off whether or not the JS runtime is alive.
+  (paragraph index, start and end offsets, text) and a start position. The service has its
+  engine synthesize sentences to app-private files (`synthesizeToFile`) at least 3 sentences
+  ahead of the one playing, and plays them itself on its own `AudioTrack` (USAGE_MEDIA,
+  CONTENT_TYPE_SPEECH), far enough ahead that boundaries do not produce audible gaps, and keeps
+  doing so with the screen off whether or not the JS runtime is alive (ADR 0012, amended
+  2026-10-04, REA-31: the engine's own playback put the audio, and so the media keys, under
+  the engine's uid).
 - In-app playback MUST use its own `TextToSpeech` instance, separate from the bridge's
   (R-M12), so pausing or flushing one never discards the other's queued work.
 - Controls: play/pause, previous sentence, next sentence, back 1 paragraph, rate.
-- **Rate is applied exactly once**, by the TTS engine (`setSpeechRate`). Nothing else may
-  scale playback speed. Range 0.5x to 4.0x, default 2.0x, step 0.1x.
+- **Rate is applied exactly once**, by the TTS engine (`setSpeechRate`) when it synthesizes;
+  Read Me's player plays the result at 1.0x. Nothing else may scale playback speed. Range 0.5x
+  to 4.0x, default 2.0x, step 0.1x.
 - The current sentence MUST be highlighted and kept in view while the Reader is visible.
   The service emits sentence-start events to JS when JS is attached; when JS reattaches it
   reads the current position from the service. No word highlight in v1.
@@ -193,10 +202,14 @@ Speech MUST use Android's `android.speech.tts.TextToSpeech` only.
 
 **Performance target (to be measured, R-M14):** at 2.0x, sustained over 10 minutes of
 offline playback on the reference device, the **inter-utterance gap**, defined as the wall
-time from `onDone(n)` to `onStart(n+1)` measured in the service, MUST be at most 300 ms at
+time from Read Me's player finishing sentence n to starting sentence n+1 (the play head
+passing the sentence's last frame, then the next one's first) measured in the service, MUST
+be at most 300 ms at
 the 95th percentile and at most 1,000 ms at the maximum, with no stall. The 300 ms figure is
 a target, not a measurement; SPIKE-05 measures the baseline and may revise it with an
-amendment here.
+amendment here. Before ADR 0012 (REA-31, decided 2026-10-04) the gap was the engine's
+`onDone(n)` to `onStart(n+1)`, the same boundary as heard through the engine's own playback;
+the Phase 3 number below, and every release's R-M14 run up to 1.0.5, were measured that way.
 
 **Measured (Phase 3, 2026-10-02, reference device, build 59324f5):** n=92 gaps, p50 7 ms,
 p95 17 ms, max 31 ms, no stall, no engine error, over 10 minutes at 2.0x on battery
@@ -232,7 +245,9 @@ These are promises. Breaking one is a release blocker.
    messages MUST NOT be built from item text or URLs' paths and queries; a host name is
    the most a log line may carry.
 4. **Item content stays in app-private storage.** `android:allowBackup="false"`; no
-   external-storage writes in v1.
+   external-storage writes in v1. Synthesized playback audio is item content: it lives in
+   `noBackupFilesDir/playback`, named by item id and offsets, and is deleted as "Playback"
+   says (ADR 0012).
 5. The INTERNET permission is required for R-M03 and is the only network permission
    requested.
 
@@ -472,21 +487,28 @@ sentence contains it under the current segmentation.
 ## Playback
 
 JS segments the kept text and hands `PlaybackService` the item's full sentence list once per
-play (or again after a trim change). From then on the service is authoritative: it keeps at
-least 3 utterances queued, `onStart` emits a sentence-start event (to JS if attached) and
-`onDone` writes the position (R-M11) and tops up the queue. JS is a view of the service, not
-its driver, so screen-off playback does not depend on the JS runtime.
+play (or again after a trim change). From then on the service is authoritative (ADR 0012): the
+playback engine synthesizes the current sentence and at least 3 after it to files in
+`noBackupFilesDir/playback`, and Read Me's own player plays them in order at 1.0x. A sentence
+starts when the player plays its first frame: that emits a sentence-start event (to JS if
+attached); when the player plays its last frame the position is written (R-M11) and one more
+sentence is synthesized. JS is a view of the service, not its driver, so screen-off playback
+does not depend on the JS runtime.
 
-Continuous play (R-S05, ADR 0011): when the switch is on and the last kept sentence finishes,
-the service archives the item and, in the same queue step, loads the next unread item with
-sentences from its own Kotlin segmenter, without leaving the foreground or releasing focus,
-the wake lock or the media session in between. This is the one case where the service builds a
-sentence list itself.
+Continuous play (R-S05, ADR 0011): when the switch is on and the player finishes the last
+kept sentence, the service archives the item and, in the same queue step, loads the next unread
+item with sentences from its own Kotlin segmenter, without leaving the foreground or releasing
+focus, the wake lock or the media session in between. This is the one case where the service
+builds a sentence list itself. Loading it is a new generation (ADR 0012): the finished item's
+remaining files are deleted, and the next item's synthesis starts only then, so its first
+sentence is heard once it is synthesized (nothing is synthesized across the item boundary).
 
-Pause = `stop()` on the playback engine plus remembering the current sentence; resume
-re-queues from that sentence's start (Android TTS has no true pause). A rate change flushes
-the playback engine and refills from the current sentence. None of this touches the bridge's
-engine instance.
+Pause is a true pause: the player stops mid-sentence and resumes from the same frame, with the
+synthesized files kept. A rate change, a voice or engine change, a jump, new cuts, a lost
+engine, or the end of ADR 0009's paused window discards the files not yet played and restarts
+from the start of the current sentence (a rate change while paused stays paused). Each file is
+deleted once the player has it, and all of them on stop, item delete, service start and service
+destroy. None of this touches the bridge's engine instance.
 
 ## Bridge contract (v1)
 
@@ -667,7 +689,8 @@ Each spike answers one question on the reference device and records the answer h
   2.0x; targetSdk 37; playback with a MediaSession and audio focus; battery power and Doze (the
   phone was on USB power, `USB powered: true`, `stay_on_while_plugged_in=7`).
   Consequence: R-M07 unchanged. PlaybackService can queue with `QUEUE_ADD` three utterances
-  ahead under a `mediaPlayback` foreground service. Whether it needs a partial wake lock on
+  ahead under a `mediaPlayback` foreground service. (Superseded 2026-10-04 by ADR 0012:
+  playback synthesizes to files and plays them itself; the gap is redefined in R-M07.) Whether it needs a partial wake lock on
   battery and under Doze is open; Phase 3 measures it. Battery and Doze: measured in Phase 3
   with a wake lock held while speaking (R-M07, "Measured").
 - **SPIKE-06 - Two engine instances.** Do two `TextToSpeech` instances in one process,
@@ -718,6 +741,7 @@ named one.
 | 2026-10-02 | Reference device lists both TTS engines; the R-M06 network-voice test uses `com.google.android.tts` (roadmap F18). |
 | 2026-10-02 | REA-14 (delegated to Claude by the owner): F12 `fetched` state and F15 `openedAt`/`archivedAt` (ADR 0007); F13 Retry is the same request; F14 failure actions unified; F16 runtime JS guard and Kotlin outbound-only rule; F21 unauthenticated `/health` accepted; minSdk 24, targetSdk 36; ADR 0004's in-flight rule kept. |
 | 2026-10-02 | Readability runs on every real page; F17's 1.5 s becomes a target, 5 s the hard line; only a predicted stall skips Readability (ADR 0006). |
+| 2026-10-04 | REA-31 (owner delegated the choice): Read Me plays synthesized audio itself, so media keys reach it whatever the engine; pause is a true pause; R-M07's gap is measured at Read Me's player (ADR 0012). |
 
 # Critique resolutions (2026-10-01)
 
@@ -731,5 +755,5 @@ named one.
 | F6 JS-driven queue | Service owns the sentence queue (R-M07, Playback) |
 | F7 unenforceable limits | Streaming cap and manual redirect cap in `Fetcher` (R-M03) |
 | F8 CORS on responses | Allow-Origin and Expose-Headers on every response (R-M12) |
-| F9 gap target baseline | Gap defined as `onDone(n)` to `onStart(n+1)`, p95 and max (R-M07) |
+| F9 gap target baseline | Gap defined as `onDone(n)` to `onStart(n+1)`, p95 and max (R-M07); since ADR 0012, Read Me's player end(n) to start(n+1) |
 | F10 `voice=` parameter | Removed; voice is a Read Me setting reported by `/health` |

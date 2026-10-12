@@ -9,27 +9,43 @@ package io.loopstring.readme.playback
 object Utterances {
   const val MAX_CHARS = 3_900
 
-  data class Fitted(val rows: List<SentenceRow>, val startIndex: Int)
+  /** [sentences] holds, for each row, the whole sentence it came from: what the Reader highlights. */
+  data class Fitted(val rows: List<SentenceRow>, val startIndex: Int, val sentences: List<SentenceRow>)
 
-  fun fit(sentences: List<SentenceRow>, startIndex: Int, max: Int): Fitted {
+  /**
+   * [chunk] > 0 also cuts sentences longer than it (REA-31, ADR 0012): Read Me plays a sentence
+   * only once the engine has synthesized all of it, so one long sentence after short ones ran
+   * the player dry (device:gap, 2026-10-04: one 1161 ms stall).
+   */
+  fun fit(sentences: List<SentenceRow>, startIndex: Int, max: Int, chunk: Int = 0): Fitted {
+    val limit = if (chunk > 0) minOf(max, chunk) else max
     val out = ArrayList<SentenceRow>(sentences.size)
+    val whole = ArrayList<SentenceRow>(sentences.size)
     var start = 0
     sentences.forEachIndexed { i, s ->
       if (i == startIndex) start = out.size
       val t = s.text
       var a = 0
-      while (t.length - a > max) {
-        val b = cutPoint(t, a, max)
+      while (t.length - a > limit) {
+        val b = cutPoint(t, a, limit)
         out += SentenceRow(s.paragraphIndex, s.start + a, s.start + b, t.substring(a, b))
+        whole += s
         a = b
       }
       out += SentenceRow(s.paragraphIndex, s.start + a, s.end, t.substring(a))
+      whole += s
     }
-    return Fitted(out, start)
+    return Fitted(out, start, whole)
   }
 
-  /** After the last whitespace in the back half of the window, else at the limit. */
+  /**
+   * After a clause mark (`, ; :` then whitespace) in the back half of the window, else after
+   * the last whitespace there, else at the limit: a cut at a clause sounds like a pause.
+   */
   private fun cutPoint(t: String, from: Int, max: Int): Int {
+    for (i in from + max - 1 downTo from + max / 2) {
+      if (Character.isWhitespace(t[i]) && i > from && t[i - 1] in ",;:") return i + 1
+    }
     for (i in from + max - 1 downTo from + max / 2) {
       if (Character.isWhitespace(t[i])) return i + 1
     }
