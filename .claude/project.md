@@ -115,3 +115,18 @@ docs-only commits to the default branch: allowed (`/update-docs` and `/finish` d
   and `/finish` read), "Layers", "Known structural gaps"
 - `docs/adr/` - new decision records only. Don't diff these. Write one when a deviation needs it
 - `.claude/COMMANDS.md`
+
+## Autonomous runs
+
+`/run-tickets` facts. The Read-Me-only steps (the phone, F-Droid, spikes) are in
+`overrides/run-tickets.md`.
+
+| Field | Value |
+|---|---|
+| Gate-defining files | `package.json`, `package-lock.json`, `tsconfig.json`, `.eslintrc.js`, `.eslintignore`, `.prettierrc.js`, `jest.config.js`, `babel.config.js`, `scripts/tests/`, `scripts/lib/`, `scripts/check-licenses.mjs`, `scripts/license-expr.mjs`, `scripts/make-notices.mjs`, `scripts/make-devcheck-fixtures.mjs`, `android/build.gradle`, `android/settings.gradle`, `android/gradle.properties`, `android/gradle/`, `android/app/build.gradle`, `android/app/proguard-rules.pro`, `android/app/src/test/` |
+| Pipeline files | `scripts/lib/device.sh` (the lane's data-clear guard) |
+| Owner-only files | `release/signing-cert.sha256` (the signer every release is checked against) |
+| Verify-only gates | `release-build`, `fdroid-scan` |
+| Target from a lane | Lock `.claude/device.lock/` (the Exclusive resource). Opt-in file `.claude/device-data-disposable`: only the owner creates it, and only with it may a lane run the `device:*` scripts that clear app data |
+| Target guard files | `scripts/lib/device.sh` |
+| Forbidden unattended actions | `git tag`, `gh release`, `npm run release:keystore`, `npm run release:apk`, `npm run fdroid:build`, `npm run repro`, any edit to the fdroiddata merge request, `npm start`, `npm run android`, `npm run device:screenshots`, `AIRPLANE=1`, `adb uninstall`, a data-wiping install |

@@ -12,7 +12,9 @@ edit would land in every project. Instead:
 - To fork a command outright, replace its link with a real file. `install.sh` will leave it
   alone.
 
-`/run-tickets` is still local to this repo (with `scripts/run-tickets/ticket-ops.mjs`).
+`/run-tickets` is shared too: its script is `.claude/claude-workflow/core/scripts/ticket-ops.mjs`,
+its facts are `.claude/project.md` `## Autonomous runs`, and the phone and F-Droid steps are in
+`.claude/overrides/run-tickets.md`.
 
 **These files work in both Claude Code and opencode.** `.opencode/command/` holds per-file
 symlinks to `.claude/commands/`, which `install.sh link --opencode` maintains.
@@ -53,7 +55,7 @@ verdict.
 | Command | Purpose |
 |---|---|
 | `/worktrees` | Parallel sessions - list, inspect, create, remove; file overlap and device-slot ownership. Owns the `Read-Me-rea-*` pool only |
-| `/run-tickets` | Run a batch of tickets end to end, fully autonomously, in a disposable `Read-Me-run-*` lane: scripted start/ship/merge/finish (`scripts/run-tickets/ticket-ops.mjs`), Build, Critic and Verify agents and a Fix loop; anything needing a human blocks that ticket and is reported at the end |
+| `/run-tickets` | Run a batch of tickets end to end, fully autonomously, in a disposable `Read-Me-run-*` lane: scripted start/ship/merge/finish (the shared `ticket-ops.mjs`), Build, Critic and Verify agents and a Fix loop; anything needing a human blocks that ticket and is reported at the end |
 
 ---
 

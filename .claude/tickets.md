@@ -3,8 +3,7 @@
 backend: linear
 
 Operations are in `.claude/workflow/tickets-linear.md`. This file holds the values and the
-Read Me-specific conventions. (`.claude/linear.md` is a symlink here for `/run-tickets` and
-`opencode.json`.)
+Read Me-specific conventions. (`.claude/linear.md` is a symlink here for `opencode.json`.)
 
 Single source of truth for how the `/`-commands talk to Linear. Every command in
 `.claude/commands/` refers here instead of restating it, so a status rename is one edit.
