@@ -10,9 +10,9 @@ Any **BLOCK** stops `/ship`. There is no override flag and one should not be add
 Keep the output small. Around 1k tokens: a table, then only the rows that are BLOCK or UNKNOWN,
 with a `file:line` each. Do not narrate the greps.
 
-**There is no code yet.** Until the scaffold lands, most rows are N-A on a docs-only diff, and
-every check that needs a gate or a Gradle wrapper is UNKNOWN with the reason, never PASS. Paths
-are not fixed yet, so the greps below match by pattern across the diff rather than by file.
+A docs-only diff makes most rows N-A. A check that needs a gate or the Gradle wrapper and could
+not run is UNKNOWN with the reason, never PASS. The greps match by pattern across the diff, so a
+moved file is still caught.
 
 ## The diff range
 
@@ -179,8 +179,8 @@ set of paragraph indices.
 git diff "$BASE" -- '*.kt' | grep -nE '^[-+].*(TextToSpeech\(|object .*Tts|lateinit var tts|companion object)'
 ```
 
-BLOCK on a shared instance between `PlaybackService` and `BridgeServer` unless an ADR in
-`docs/adr/` records SPIKE-06's replacement policy.
+BLOCK on a shared instance between `PlaybackService` and `BridgeServer`. SPIKE-06 found the
+two can coexist; ADR 0004 is the contention policy.
 
 ### 14. F-Droid-clean
 
@@ -212,8 +212,7 @@ git log -1 --format=%ci
 ```
 
 If the install predates the last commit, or no device is attached, report **UNKNOWN** with "not
-exercised on the device since <commit>". If the diff is docs-only, N-A. The applicationId comes
-from the Android build file; if it does not exist yet, N-A on the grounds that there is no app.
+exercised on the device since <commit>". If the diff is docs-only, N-A.
 
 This proves only that a build was installed, never that anyone used it. Whether the change was
 actually exercised is not mechanically checkable; say so rather than upgrading it to PASS.
@@ -257,7 +256,7 @@ which adb
 ```
 
 BLOCK on a dependency on something absent here that the change presents as available. A gate
-named in `AGENTS.md` that does not exist yet is not a BLOCK; it is `GATES: NOT YET ESTABLISHED`.
+named in `AGENTS.md` that is missing from `package.json` is drift: report it by name.
 
 ## Output
 

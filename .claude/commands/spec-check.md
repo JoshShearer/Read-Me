@@ -38,9 +38,8 @@ the numbers.
 
 ## Baseline
 
-**No baseline has been recorded yet.** There is no code (`AGENTS.md` Known state), so every
-requirement starts `MISSING` and every spike `OPEN`, and that is the expected first-run result,
-not a finding to file tickets about.
+**No baseline has been recorded yet** (`AGENTS.md` Known state has no `### Spec-check baseline`
+subsection).
 
 The first run that produces a full (`all`) report **establishes** the baseline: offer to add a
 `### Spec-check baseline` subsection to `AGENTS.md` "Known state" holding the date, the commit,
@@ -60,52 +59,51 @@ Once a baseline exists, **flag every change against it**. A move is the headline
 
 ## Requirement map
 
-Line numbers are into `srs.md` at the time this command was written; re-derive with
-`grep -n '^### R-' srs.md` if they drift. Read the requirement before judging it; the summary is
-a pointer, not the contract. The "Where" column is the planned location from `CONTEXT.md`; update
-it once the scaffold sets the real tree.
+Find each requirement with `grep -n '^### R-' srs.md`. Read it before judging it; the summary is
+a pointer, not the contract. The "Where" column names the real files; `git ls-files src android`
+if one has moved.
 
 ### Must Have
 
-| ID | srs.md | Demands, in short | Check | Where |
-|---|---|---|---|---|
-| R-M01 | 56 | Opens to the list; exactly four screens; no account, onboarding, feed | DEVICE | `src/reader/` |
-| R-M02 | 68 | `ACTION_SEND` `text/plain`; one URL is a link item, else text item; native fetch; stale `fetching` recovered to `fetch-failed` on start | CODE + DEVICE | manifest, `ShareReceiver`, `src/intake/` |
-| R-M03 | 85 | Native `Fetcher` only; `NO_COOKIES`, no cache, 5 manual redirects, 20 s call timeout, 5 MB streaming cap; failed fetch kept with Retry | CODE + DEVICE | `Fetcher` and its local-server tests |
-| R-M04 | 111 | Readability on-device; raw HTML discarded; `extract-poor` under 3 paragraphs or 500 chars; text items split on blank lines | CODE + DEVICE | `src/extract/`, saved-page fixtures |
-| R-M05 | 126 | Cut/restore, cut after, start here; non-destructive; position kept or moved to next kept paragraph | CODE + DEVICE | Trim screen, trim math |
-| R-M06 | 140 | `TextToSpeech` only; `TTS_SERVICE` query; network voices hidden and never a fallback; blocking state when none | CODE + DEVICE | manifest, `PlaybackService` |
-| R-M07 | 150 | Service owns the queue; own TTS instance; controls; rate once, 0.5-4.0x default 2.0x; highlight; screen-off; audio focus; gap target | DEVICE | `PlaybackService`, `src/reader/` |
-| R-M08 | 178 | `Intl.Segmenter` or regex fallback; 400-char split; offsets carried; no persisted sentence index | CODE | `src/segment/` |
-| R-M09 | 187 | No cloud TTS; R-M03 the only network use, test-enforced; no item text in logs; `allowBackup=false`; INTERNET the only network permission | CODE + DEVICE | network-guard test, manifest, logcat during `/verify` |
-| R-M10 | 202 | Every failure a persistent state with the listed actions | DEVICE | `src/reader/`, `Store` |
-| R-M11 | 215 | Position (item, paragraph, offset) saved per sentence and on pause/stop; resume by offset; archive at end; delete removes text | CODE + DEVICE | `PlaybackService`, `Store` |
-| R-M12 | 224 | Bridge: `127.0.0.1`, token, caps, read timeout, own TTS instance, POST body, cache cleanup, CORS on every response | CODE + DEVICE | `BridgeServer`, Kotlin hostile-input tests; plugin side is NRL-130 in the plugin workspace |
-| R-M13 | 258 | F-Droid-clean, OSI deps, builds from clean checkout, licenses screen; SDK levels from SPIKE-01 | CODE (+ DEVICE for the licenses screen) | resolved Gradle tree, `android/` |
-| R-M14 | 268 | The listed unit, guard, Fetcher and CORS tests exist; the four scripted on-device checks run over adb | CODE + DEVICE | test dirs, `npm run device:smoke` |
+| ID | Demands, in short | Check | Where |
+|---|---|---|---|
+| R-M01 | Opens to the list; exactly four screens; no account, onboarding, feed | DEVICE | `src/ui/ListScreen.tsx`, `src/ui/ui.ts` |
+| R-M02 | `ACTION_SEND` `text/plain`; one URL is a link item, else text item; native fetch; stale `fetching` recovered to `fetch-failed` on start | CODE + DEVICE | manifest, `ShareActivity.kt`, `intake/`, `fetch/Recovery.kt`, `src/intake/` |
+| R-M03 | Native `Fetcher` only; `NO_COOKIES`, no cache, 5 manual redirects, 20 s call timeout, 5 MB streaming cap; failed fetch kept with Retry | CODE + DEVICE | `Fetcher` and its local-server tests |
+| R-M04 | Readability on-device; raw HTML discarded; `extract-poor` under 3 paragraphs or 500 chars; text items split on blank lines | CODE + DEVICE | `src/extract/`, saved-page fixtures |
+| R-M05 | Cut/restore, cut after, start here; non-destructive; position kept or moved to next kept paragraph | CODE + DEVICE | Trim screen, trim math |
+| R-M06 | `TextToSpeech` only; `TTS_SERVICE` query; network voices hidden and never a fallback; blocking state when none | CODE + DEVICE | manifest, `PlaybackService` |
+| R-M07 | Service owns the queue; own TTS instance; controls; rate once, 0.5-4.0x default 2.0x; highlight; screen-off; audio focus; gap target | DEVICE | `PlaybackService`, `PlaybackQueue`, `src/ui/ReaderScreen.tsx` |
+| R-M08 | `Intl.Segmenter` or regex fallback; 400-char split; offsets carried; no persisted sentence index | CODE | `src/segment/`, `playback/Segmenter.kt` |
+| R-M09 | No cloud TTS; R-M03 the only network use, test-enforced; no item text in logs; `allowBackup=false`; INTERNET the only network permission | CODE + DEVICE | network-guard test, manifest, logcat during `/verify` |
+| R-M10 | Every failure a persistent state with the listed actions | DEVICE | `src/ui/`, `Store` |
+| R-M11 | Position (item, paragraph, offset) saved per sentence and on pause/stop; resume by offset; archive at end; delete removes text | CODE + DEVICE | `PlaybackService`, `Store` |
+| R-M12 | Bridge: `127.0.0.1`, token, caps, read timeout, own TTS instance, POST body, cache cleanup, CORS on every response | CODE + DEVICE | `BridgeServer`, Kotlin hostile-input tests; plugin side is NRL-130 in the plugin workspace |
+| R-M13 | F-Droid-clean, OSI deps, builds from clean checkout, licenses screen; SDK levels from SPIKE-01 | CODE (+ DEVICE for the licenses screen) | resolved Gradle tree, `android/` |
+| R-M14 | The listed unit, guard, Fetcher and CORS tests exist; the four scripted on-device checks run over adb | CODE + DEVICE | test dirs, `npm run device:smoke` |
 
 ### Should Have
 
-| ID | srs.md | Demands, in short | Check |
-|---|---|---|---|
-| R-S01 | 297 | Offline voices and engines listed with preview; rebind via three-argument constructor | DEVICE |
-| R-S02 | 301 | Sleep timer | DEVICE |
-| R-S03 | 304 | Markdown export via share sheet | CODE + DEVICE |
-| R-S04 | 308 | Bridge launch from Obsidian | DEVICE |
-| R-S05 | 355 | Continuous play: archive, then start the next unread item, no Trim, screen off | CODE + DEVICE |
+| ID | Demands, in short | Check |
+|---|---|---|
+| R-S01 | Offline voices and engines listed with preview; rebind via three-argument constructor | DEVICE |
+| R-S02 | Sleep timer | DEVICE |
+| R-S03 | Markdown export via share sheet | CODE + DEVICE |
+| R-S04 | Bridge launch from Obsidian | DEVICE |
+| R-S05 | Continuous play: archive, then start the next unread item, no Trim, screen off | CODE + DEVICE |
 
 ### Could Have
 
-| ID | srs.md | Demands, in short | Check |
-|---|---|---|---|
-| R-C01 | 314 | Save to Obsidian | DEVICE |
-| R-C02 | 318 | Per-site trim rules | CODE |
-| R-C03 | 321 | iOS | BLOCKED (out of v1) |
-| R-C04 | 325 | Shared files | DEVICE |
+| ID | Demands, in short | Check |
+|---|---|---|
+| R-C01 | Save to Obsidian | DEVICE |
+| R-C02 | Per-site trim rules | CODE |
+| R-C03 | iOS | BLOCKED (out of v1) |
+| R-C04 | Shared files | DEVICE |
 
 ### Spikes
 
-Read `srs.md` "Spikes" (around line 439). A spike's branch code is throwaway; only the recorded
+Read `srs.md` "Spikes" (`grep -n '^# Spikes' srs.md`). A spike's branch code is throwaway; only the recorded
 answer counts.
 
 | ID | Question, in short | Requirements it gates |
@@ -123,14 +121,8 @@ for `/update-docs`), `OPEN`.
 
 ## Known gaps that pre-empt some verdicts
 
-From `CONTEXT.md` "Known structural gaps". Design-level, so do not report them as fresh
-discoveries:
-
-- The whole tree. Every requirement is MISSING until built, and DEVICE ones until observed.
-- An open spike caps every requirement it gates at PARTIAL at best, and BLOCKED where the
-  requirement's shape depends on the answer.
-- `srs.md` still says TS `library` owns SQLite where the owner decided Kotlin does (F11). Judge
-  R-M11 against the substance, not the module name, and note the pending amendment.
+Read `CONTEXT.md` "Known structural gaps" before judging. Gaps listed there are design-level;
+do not report them as fresh discoveries.
 
 ## Method
 
@@ -192,8 +184,7 @@ Keep the tables compact. One line per item, evidence in one clause.
 - First full run: offer the `### Spec-check baseline` subsection for `AGENTS.md` Known state, as
   above. Later runs: if any verdict moved, offer to update it. Do not edit without being asked.
 - For each MISSING or PARTIAL that is not already ticketed, offer `/create-issue` with the
-  requirement or spike ID prefilled. Run `list_issues` first to avoid duplicates. Pre-scaffold,
-  do not offer one ticket per MISSING requirement; the roadmap covers them. Resolve the real
+  requirement or spike ID prefilled. Run `list_issues` first to avoid duplicates. Resolve the real
   prefixed tool names for the `linear-rea` server from your tool list; never file via
   `linear-nrl`. If Linear is unavailable, list what you would have filed.
 - If the code deliberately diverges from `srs.md`, that is allowed but must not be silent: it

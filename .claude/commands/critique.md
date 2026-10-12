@@ -82,8 +82,8 @@ build, not by the probe code.
 ## Step 3: Risk assessment
 
 Score the diff. These are the areas where a mistake in this repo is silent rather than loud.
-Paths are not fixed until the scaffold lands, so the conditions name modules and grep patterns;
-match them against the diff, not against a guessed path.
+The conditions name modules and grep patterns; match them against the diff, not against a
+guessed path.
 
 | Factor | Points | Condition |
 |---|---|---|
@@ -119,8 +119,7 @@ Three questions, answered against the diff:
    input: a paywalled link, a page over 5 MB, a redirect loop, a shared text with no blank
    lines, a URL with a tracking query, a CJK article, an empty share.
 2. **The untested path.** Which branch has no coverage in the gates? `AGENTS.md`'s
-   quality-gates block is the one place that names them; if it still says
-   `NOT YET ESTABLISHED`, say every path is untested.
+   quality-gates block is the one place that names them.
 3. **The implicit assumption.** What does this assume without validating? Check it against the
    layering rules and known structural gaps in `CONTEXT.md` and the six spikes in `srs.md`: a
    change that quietly depends on an unanswered spike (two `TextToSpeech` instances coexisting,
@@ -292,7 +291,7 @@ change:
 Any hit is a **BLOCK**. Also check: every new dependency's license is OSI-approved (read it, do
 not infer from the name), no prebuilt `.so`, `.aar` or `.jar` without source, and React Native
 autolinking did not pull a native module that brings Play Services transitively. If the Gradle
-wrapper does not exist yet, say the check could not run; do not report it as clean.
+dependency tree could not be resolved, say the check could not run; do not report it as clean.
 
 `AndroidManifest.xml`, on any change: permissions minimal (`INTERNET` is the only network
 permission), the `TTS_SERVICE` intent `<queries>` entry present (the prototype proved it causal:
@@ -383,9 +382,8 @@ what you did not check and what you could not reproduce.
    `curl` against the bridge on the phone.
 3. **A green suite is not evidence.** Unit tests run against fakes and a local test server. If
    the change is user-visible and was not exercised on the phone via `npm run device:install`
-   and real use, say so in the verdict. If gates do not exist yet, say
-   `GATES: NOT YET ESTABLISHED` rather than implying a pass.
-4. **Do not nitpick style.** Linting is a gate's job once it exists. Matching house style is not
+   and real use, say so in the verdict.
+4. **Do not nitpick style.** Linting is a gate's job. Matching house style is not
    a finding either way.
 5. **Score honestly.** A 95 means you traced the paths and found almost nothing. If you did not
    trace them, you have not earned it. A non-negotiable violation caps the score below 50, no

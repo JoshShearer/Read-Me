@@ -70,11 +70,9 @@ running between sessions.
 
 **The marker is a declaration, not proof.** A session elsewhere may have installed without
 writing it. The check that needs no cooperation is a byte comparison of the APK on the phone
-against each worktree's build output. It needs the scaffold (an `android/` tree and an
-`applicationId`) and exactly one device:
+against each worktree's build output. It needs exactly one device:
 
 ```bash
-[ -d "$PRIMARY/android" ] || { echo "DEVICE SLOT: no app yet (pre-scaffold)"; exit 0; }
 N=$(adb devices | awk 'NR>1 && $2=="device"' | wc -l)
 [ "$N" -eq 1 ] || { echo "DEVICE SLOT: $N devices attached; need exactly one"; exit 0; }
 APP_ID=$(grep -oE 'applicationId[ =]+"[^"]+"' "$PRIMARY/android/app/build.gradle"* | head -1 | grep -oE '"[^"]+"' | tr -d '"')
@@ -92,9 +90,9 @@ rm -rf "$SCRATCH"
 ```
 
 The `-run-*` glob is in the loop because `/run-tickets` installs from its lane; leaving it out
-attributes the phone to nobody. The `applicationId` extraction is a best guess written before the
-scaffold exists: verify it against the real Gradle file once it lands (rule 18) and fix this
-block if it is wrong. No match at all means the phone runs a build no worktree has on disk; say
+attributes the phone to nobody. The `applicationId` extraction matches
+`android/app/build.gradle`'s `applicationId "io.loopstring.readme"`; if that line changes form,
+fix this block. No match at all means the phone runs a build no worktree has on disk; say
 so.
 
 Report the lock, the marker and the byte comparison separately. When the marker and the byte
@@ -137,7 +135,7 @@ for dir in "${PRIMARY}"-rea-*/; do
   BRANCH=$(git -C "$dir" branch --show-current 2>/dev/null || echo detached)
   DIRTY=$(git -C "$dir" status --short 2>/dev/null | wc -l | tr -d ' ')
   AHEAD=$(git -C "$dir" rev-list --count origin/main..HEAD 2>/dev/null || echo '?')
-  if [ -f "$dir/package.json" ]; then DEPS=$([ -d "$dir/node_modules" ] && echo installed || echo MISSING); else DEPS=pre-scaffold; fi
+  if [ -f "$dir/package.json" ]; then DEPS=$([ -d "$dir/node_modules" ] && echo installed || echo MISSING); else DEPS=no-package.json; fi
   echo "  branch=$BRANCH ahead=$AHEAD dirty=$DIRTY deps=$DEPS"
 done
 for dir in "${PRIMARY}"-run-*/; do
@@ -156,8 +154,8 @@ Then run the byte comparison above. Any `worktree list` path missing from disk -
 to run `git worktree prune`.
 
 Format as a table. `deps=MISSING` is worth flagging loudly: the gates in that worktree will fail
-for a reason that has nothing to do with the code. `deps=pre-scaffold` is expected until the
-scaffold ticket lands.
+for a reason that has nothing to do with the code. `deps=no-package.json` means a broken or
+partial checkout.
 
 ```
 | Issue | Branch | Ahead | Dirty | Deps | Device |
@@ -218,9 +216,8 @@ Build a file -> branches map and report any file appearing in two or more. The r
 committed, staged and unstaged work in one pass, which is the point.
 
 **High-collision files.** Flag these loudly when two or more branches touch them, because a
-conflict there is a correctness problem rather than a merge inconvenience. Paths below `src/` and
-`android/` are the planned layout from `CONTEXT.md`; match by the module name until the scaffold
-records the real tree, then correct this table.
+conflict there is a correctness problem rather than a merge inconvenience. If a path below has moved, match by
+the module name and correct this table.
 
 | File | Why it collides |
 |---|---|
@@ -285,10 +282,8 @@ fails, report it: the worktree exists but is unusable, and say that plainly rath
 the next command fail confusingly.
 
 7. Prove the worktree is usable before handing it over. Run the gates `AGENTS.md` lists, each
-   only if it exists on disk (`jq -r '.scripts | keys[]' package.json`, `ls android/gradlew`). With
-   no `package.json`, report `GATES: NOT YET ESTABLISHED` and do not invent a pass. Once the
-   scaffold has landed, a gate `AGENTS.md` names that does not exist is drift: report it as a
-   failure, not as "not established".
+   only if it exists on disk (`jq -r '.scripts | keys[]' package.json`, `ls android/gradlew`). A gate `AGENTS.md` names
+   that does not exist is drift: report it as a failure.
 
 8. Do **not** install on the phone. Creating a worktree never takes the device slot. Report who
    holds it and require `/worktrees device REA-<NUM>` as a separate, deliberate act.
@@ -300,7 +295,7 @@ the next command fail confusingly.
 ```
 Worktree created: ../Read-Me-rea-<NUM>/
 Branch: feature/rea-<NUM>-<slug>
-npm ci: ok | skipped (pre-scaffold)     gates: <results> | GATES: NOT YET ESTABLISHED
+npm ci: ok | failed     gates: <results>
 
 Device slot: held by ../Read-Me-rea-12 (REA-12) since <time> | free
   This worktree cannot claim an on-device result until it takes the slot:
@@ -407,8 +402,8 @@ is fine: all of it is gitignored and reproducible. It is used only after step 3'
 | Directory not found | Show the error, list what exists |
 | `git worktree add` fails, branch exists | Offer to check out the existing branch with `worktree add <dir> <branch>` |
 | `npm ci` fails | Report it; the worktree exists but is unusable. Do not proceed to the gates |
-| No `package.json` | Pre-scaffold. Skip install and gates, report `GATES: NOT YET ESTABLISHED` |
-| A gate `AGENTS.md` names is missing after the scaffold | Report it as a failure (drift), not as "not established" |
+| No `package.json` | Broken or partial checkout. Skip install and gates and say so |
+| A gate `AGENTS.md` names is missing | Report it as a failure (drift) |
 | `adb devices` shows 0 or 2+ devices | Say so and do not install; device checks are NOT RUN |
 | Install fails on a signature mismatch | Stop and report. Never uninstall or clear data |
 | Device lock held, holder gone | Report owner and age. Remove only on the user's explicit approval |

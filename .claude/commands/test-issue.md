@@ -5,9 +5,8 @@ argument-hint: "[REA-12 | 12 | empty to detect from the branch]"
 
 Conventions: `.claude/linear.md`. Rules and gates: `AGENTS.md`.
 
-**CI does not exist until the scaffold ticket lands.** Before then there is nothing for this
-command to triage: Step 2 finds no workflow, the verdict is `CI NOT ESTABLISHED`, and the
-command stops. It never substitutes a local run for a CI result.
+CI is `.github/workflows/ci.yml`. If Step 2 finds no workflow, the verdict is
+`CI NOT ESTABLISHED` and the command stops. It never substitutes a local run for a CI result.
 
 ## What this command owns, and what it does not
 
@@ -33,7 +32,7 @@ Two things this command deliberately does not have:
 | Absent | Why |
 |---|---|
 | A known-failures baseline file | **Deliberately not created.** Triage is measured per failure instead (Step 4). A baseline file would duplicate `AGENTS.md`'s Known state and rot against it. |
-| An `In Review` precondition | Statuses are unverified in `.claude/linear.md`, and `In Review` is optional there. The precondition is **an open PR**, not a status. Do not transition the issue; `/finish` sets Done. |
+| An `In Review` precondition | `In Review` is optional in `.claude/linear.md`, and this team has none. The precondition is **an open PR**, not a status. Do not transition the issue; `/finish` sets Done. |
 
 ## Input
 
@@ -79,8 +78,8 @@ too late; report the merge and stop.
 ls .github/workflows/ 2>&1
 ```
 
-No directory or no workflow file: verdict `CI NOT ESTABLISHED`, say the scaffold ticket has not
-landed or did not add CI, and stop.
+No directory or no workflow file: verdict `CI NOT ESTABLISHED`, say `ci.yml` is missing, and
+stop.
 
 Otherwise read each workflow file and record, before looking at any result: its trigger
 (`push`, `pull_request`, tags), its jobs, and the ordered step names of each job. A failure's

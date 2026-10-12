@@ -15,9 +15,9 @@ branch anyway and print the status change you would have made, per the degradati
 
 ## Input
 
-`$ARGUMENTS` is the issue identifier. Accepts `REA-12`, `rea-12`, or bare `12`. The key `REA`
-is owner-stated and unverified; if `get_issue` rejects it, run `list_issues`, read the key off
-an identifier, and say `.claude/linear.md` needs correcting.
+`$ARGUMENTS` is the issue identifier. Accepts `REA-12`, `rea-12`, or bare `12`. If `get_issue`
+rejects the key, run `list_issues`, read the key off an identifier, and say `.claude/linear.md`
+needs correcting.
 
 ## Step 1: Resolve the issue
 
@@ -125,8 +125,7 @@ Set `assignee: "me"` if unassigned. Never move an issue backwards.
 ## Step 7: Area hazards
 
 Decide the area from the title, description, ID, and modules it names. Print **only** the
-matching rows. `AGENTS.md` is authoritative. Paths do not exist until the scaffold lands, so
-areas are module names from `CONTEXT.md`.
+matching rows. `AGENTS.md` is authoritative; module names and paths are in `CONTEXT.md`.
 
 | Area | What you must know before writing code |
 |---|---|
@@ -146,8 +145,7 @@ areas are module names from `CONTEXT.md`.
 the failure happen:
 
 - Logic in a TS module or a Kotlin class: add a temporary case to the relevant suite and watch
-  it fail for the reason the ticket claims. Check the gate script exists first; before the
-  scaffold there is none, and the reproduction has to wait for it or happen on the device.
+  it fail for the reason the ticket claims. Check the gate script exists first.
 - Device behaviour: take `.claude/device.lock/` (`mkdir`), confirm `adb devices` shows exactly
   one device, `npm run device:install`, then do what a user does (`adb shell am start`,
   `adb shell input`, `adb shell uiautomator dump`) and watch `adb logcat` filtered by the app's
@@ -180,8 +178,7 @@ the failure happen:
 - ...
 
 ## Gates before you commit
-{GATES: NOT YET ESTABLISHED, until the scaffold replaces AGENTS.md "Quality gates".
- After that, the commands named there, each checked to exist before running.}
+{The commands named in AGENTS.md "Quality gates", each checked to exist before running.}
 
 A green suite is not a claim that this works. Install on the phone and drive it as a user
 before saying it does (AGENTS.md rule 15).

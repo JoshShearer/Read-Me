@@ -23,9 +23,8 @@ So the verdict has four levels, and you must pick the honest one:
 
 | Verdict | Means |
 |---|---|
-| `GATES: NOT YET ESTABLISHED` | No gate scripts exist yet. Nothing was run, so nothing passed. Combine with a device result if one was taken. |
 | `GATES GREEN, NOT VERIFIED` | Gates pass. The change was not exercised on the phone. |
-| `VERIFIED ON DEVICE` | Gates green (or not yet established, said so) **and** a user-observable check ran against the installed build on a named device, and the observation is recorded below with device and build. |
+| `VERIFIED ON DEVICE` | Gates green **and** a user-observable check ran against the installed build on a named device, and the observation is recorded below with device and build. |
 | `FAILED` | A gate is red, or the device check did not do what the issue said it would. |
 
 Never emit `VERIFIED ON DEVICE` on the strength of the test suite, and never without naming the
@@ -80,8 +79,8 @@ git diff --name-only $(git merge-base HEAD main)...HEAD
 
 ## Step 3: Run the gates that exist
 
-**Check each gate exists before running it** (rule 18). A missing script is
-`NOT YET ESTABLISHED`, not a failure and not a pass:
+**Check each gate exists before running it** (rule 18). A gate `AGENTS.md` names that is
+missing is drift: report it by name, never as a pass:
 
 ```bash
 npm run 2>/dev/null | grep -E '^\s+(test|typecheck|lint|device:install|device:smoke)$' || echo "no npm scripts"
@@ -131,7 +130,7 @@ show exactly one device in state `device`; zero, two, or `unauthorized` means st
 npm run device:install
 ```
 
-If that script does not exist yet, the device half is `NOT RUN: device:install not established`.
+If that script is missing, the device half is `NOT RUN: device:install missing`.
 Do not hand-roll an install of an unknown build and call it verified. Installing replaces
 whatever build another lane installed; say in the Linear comment which worktree and commit
 installed.
@@ -147,8 +146,8 @@ rm -rf "$HOME/Documents/Dev/Read-Me/.claude/device.lock"
 
 ## Step 6: Drive the app as a user would
 
-Use adb to do what a user does, then read what happened. `$PKG` is the app's applicationId as
-recorded in `CONTEXT.md` once the scaffold sets it.
+Use adb to do what a user does, then read what happened. `$PKG` is the app's applicationId
+(`io.loopstring.readme`, `AGENTS.md` Identifiers).
 
 ```bash
 adb shell am start -n "$PKG/.MainActivity"
@@ -190,8 +189,8 @@ Verification for REA-12
 =======================
 
 Gates
-  npm test            GATES: NOT YET ESTABLISHED (no script)
-  gradle unit tests   GATES: NOT YET ESTABLISHED (no android/)
+  npm test            <result line>
+  gradle unit tests   <result line>
 
 Installed
   npm run device:install from <worktree path> at <commit>
@@ -205,7 +204,7 @@ Observed on device
 Not verified
   - Offline: airplane mode not used this run
 
-Verdict: VERIFIED ON DEVICE (Pixel 9 Pro XL, <commit>; gates not yet established)
+Verdict: VERIFIED ON DEVICE (Pixel 9 Pro XL, <commit>)
 ```
 
 ## Step 8: Post to Linear
@@ -239,7 +238,7 @@ Next: <merge | fix and re-run /verify | run the untested check>
 | Scenario | Action |
 |---|---|
 | No issue id and no branch match | Verify locally, report, skip the Linear post |
-| Gate script absent | Report `GATES: NOT YET ESTABLISHED` for it; never a pass |
+| Gate script absent | Report it missing by name (drift); never a pass |
 | A gate red | Print failing output, stop before install |
 | `node_modules` / Gradle cache absent | `npm ci` first; a gate cannot pass or fail without it |
 | `.claude/device.lock/` held | Stop the device half; report `NOT RUN: phone held by another lane` |

@@ -18,10 +18,9 @@ tool list and call those. Never file through `linear-nrl`: that server is authen
 plugin's workspace and the ticket would land in the wrong team. If no `linear-rea` tool is
 present, skip to Degradation and print the issue instead of creating it.
 
-The team key `REA` is owner-stated and **unverified** in `.claude/linear.md`. If a lookup
-rejects it, run `list_issues`, read the key off an identifier, and say so in your output so
-`.claude/linear.md` can be corrected. The same applies to labels and statuses: they are
-placeholders until discovery runs.
+The team key, labels and statuses are recorded (and dated) in `.claude/linear.md`. If a lookup
+rejects one, run `list_issues` or `list_issue_labels`, use what the server returns, and say so
+in your output so `.claude/linear.md` can be corrected.
 
 **Cross-repo work** - anything that changes the plugin's side of the bridge - belongs in the
 plugin's workspace as or under NRL-130, filed from that repo. From here, file only the Read Me
@@ -35,14 +34,11 @@ half and link NRL-130 by URL in the body.
 | `feature` | Capability that does not exist | `Feature` | Normal (3) |
 | `tech-debt` | Works, but the structure is wrong | `Improvement` | Low (4) |
 | `spec-gap` | `srs.md` demands it and the code does not do it | `Improvement` | Normal (3) |
-| `spike` | One question to answer on the reference device | `Improvement`, title prefixed `SPIKE-0N:` | High (2) before the scaffold |
+| `spike` | One question to answer on the reference device | `Improvement`, title prefixed `SPIKE-0N:` | High (2) |
 | omitted | Infer, then state which you chose and why | varies | varies |
 
 Apply only a label that `list_issue_labels` actually returns, or none. Never create a label;
 that is a change to a shared workspace and is the owner's call.
-
-Before the scaffold lands almost everything is a `spec-gap` or a `spike`: there is no code, so
-nothing can regress yet.
 
 ## Step 2: Requirement or spike ID
 
@@ -139,8 +135,7 @@ Or: None. <why this is worth doing anyway>
 ## Acceptance criteria
 
 - [ ] Observable outcome, not an implementation step
-- [ ] Which gate proves it, by the names in AGENTS.md "Quality gates" (none exist yet;
-      say "gate to be established by the scaffold" if so)
+- [ ] Which gate proves it, by the names in AGENTS.md "Quality gates"
 - [ ] What must be observed on the phone after `npm run device:install`, if user-facing.
       A green unit suite is not proof (AGENTS.md rule 15). Name the device.
 - [ ] (Spike) the answer recorded in srs.md "Spikes", plus an ADR if a decision changes

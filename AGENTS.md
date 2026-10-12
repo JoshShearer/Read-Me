@@ -121,8 +121,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 11. **The native service owns the playback queue.** JS is a view of `PlaybackService`, never its
     driver, so screen-off playback never depends on the JS runtime.
 12. **Trimming is non-destructive.** Original paragraphs are kept; cuts are a separate set.
-13. **Playback and the bridge use separate `TextToSpeech` instances**, unless SPIKE-06 proves
-    that impossible and an ADR records the replacement policy.
+13. **Playback and the bridge use separate `TextToSpeech` instances.** They serialize on the
+    reference engine (SPIKE-06), so the bridge answers 503 while Read Me is playing (ADR 0004).
 
 ### Distribution
 
@@ -230,9 +230,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   and `device:bridge` passed; `device:ui` passed on a80352b but failed once on f4493c9 (paused
   before anything was read, right after the default engine was switched to Google TTS;
   unexplained). Twice the default rate read 1.7x after scripted runs that never press slower;
-  `device:ui` now fails on a repeat. Select keyboard navigation is untested. The reference
-  phone's default engine is now Supertonic: its own media session takes media keys from Read Me
-  (REA-31), so `device:playback` passes only with `com.google.android.tts` as the default.
+  `device:ui` now fails on a repeat. Select keyboard navigation is untested. Supertonic's own
+  media session can take media keys from Read Me (REA-31); `device:playback` has since passed
+  with Supertonic as the default (Release 1.0.1 below).
 - **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
   `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
@@ -265,7 +265,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   absent from logcat) and `npm run device:ui`; `npm run device:playback` on build 7c2c04a
   (playback code unchanged since). After a reboot or process death the
   bridge returns when Read Me is next opened (no boot receiver). Not established: Android
-  14-16, the real plugin (NRL-130), screen-off use from Obsidian on the reference device.
+  14-16, and on the reference device the real plugin (NRL-130) and screen-off use from Obsidian.
   Engine death (REA-29, PR #18): the bridge rebinds a dead engine and retries once, at most
   one rebind per 10 s, `ttsReady:false` meanwhile; a rebind must return the same voice, so
   Android's silent fallback to another engine is refused (owner decision: a stop, not a
@@ -354,8 +354,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
     above). It is CC BY-SA, so devcheck reads it from the gitignored
     `.claude/scratch/devcheck/local-pages/` (copy it from the spike branch).
   - SPIKE-03: no `Intl.Segmenter` on Hermes; R-M08's regex fallback is the device path.
-  - SPIKE-04: no proprietary dependencies, but the release build runs a prebuilt `hermesc` and
-    `node_modules` holds binaries the Phase 6 F-Droid recipe must remove or rebuild.
+  - SPIKE-04: no proprietary dependencies, but the release build ran a prebuilt `hermesc` and
+    `node_modules` holds binaries; the F-Droid recipe removes or rebuilds them (Release above).
   - SPIKE-05: gap p95 11 ms, max 22 ms at 2x with two instances alive, on USB power without a
     wake lock (battery and Doze: measured in Phase 3, see Playback above); R-M07 stands.
   - SPIKE-06: two instances serialize (playback stalls up to 3.5 s while the other synthesizes);
