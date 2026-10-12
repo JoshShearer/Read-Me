@@ -1,12 +1,23 @@
 # Commands - Read Me
 
-Ported 2026-10-01 from the sibling `note-reader-local` repo (the Obsidian plugin), which adapted
-them from job-radar with `/run-tickets` from ShroomSpy. Linear conventions live in `linear.md`;
-every command reads from there rather than restating the team key, statuses, or branch patterns.
+**13 of these 14 commands are shared.** They come from `~/Dev/claude-workflow/core/commands/` and
+are linked into `.claude/commands/` by `claude-workflow/install.sh`. Don't edit a linked file: the
+edit would land in every project. Instead:
 
-**These files work in both Claude Code and opencode.** The canonical copies are in
-`.claude/commands/`. `.opencode/command/` holds per-file symlinks to them, so there is one
-source of truth and an edit lands in both runtimes at once.
+- Project **facts** (gates, verification target, risk areas, push policy...) go in
+  `.claude/project.md`.
+- Linear values and conventions go in `.claude/tickets.md`. (`linear.md` is a symlink to it.)
+- Project-specific **steps** go in `.claude/overrides/<command>.md`. Each shared command reads its
+  override in Step 0, and the override wins where the two conflict.
+- To fork a command outright, replace its link with a real file. `install.sh` will leave it
+  alone.
+
+`/run-tickets` is shared too: its script is `.claude/claude-workflow/core/scripts/ticket-ops.mjs`,
+its facts are `.claude/project.md` `## Autonomous runs`, and the phone and F-Droid steps are in
+`.claude/overrides/run-tickets.md`.
+
+**These files work in both Claude Code and opencode.** `.opencode/command/` holds per-file
+symlinks to `.claude/commands/`, which `install.sh link --opencode` maintains.
 
 This index lives at `.claude/COMMANDS.md`, not inside `commands/`, so it is not exposed as a
 `/COMMANDS` command.
@@ -44,7 +55,7 @@ verdict.
 | Command | Purpose |
 |---|---|
 | `/worktrees` | Parallel sessions - list, inspect, create, remove; file overlap and device-slot ownership. Owns the `Read-Me-rea-*` pool only |
-| `/run-tickets` | Run a batch of tickets end to end, fully autonomously, in a disposable `Read-Me-run-*` lane: scripted start/ship/merge/finish (`scripts/run-tickets/ticket-ops.mjs`), Build, Critic and Verify agents and a Fix loop; anything needing a human blocks that ticket and is reported at the end |
+| `/run-tickets` | Run a batch of tickets end to end, fully autonomously, in a disposable `Read-Me-run-*` lane: scripted start/ship/merge/finish (the shared `ticket-ops.mjs`), Build, Critic and Verify agents and a Fix loop; anything needing a human blocks that ticket and is reported at the end |
 
 ---
 
