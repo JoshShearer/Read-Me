@@ -76,7 +76,7 @@ Fix agent that critiqued, fixed and critiqued again in a context that grew to 39
    writes the state file. The orchestrator saves the object to a file with the Write tool and runs
    `$OPS record <KEY> --phase <p> --file <path>`. Never `echo '...' |` (a `'` in a PR body breaks
    it) and never an unquoted heredoc (it expands `$(...)` from agent text in your shell).
-7. **Model: every agent on the session's default model (Opus); do not downshift.** Triage takes
+7. **Model: every agent on the session's own model; do not downshift.** Triage takes
    decisions on the owner's behalf, and with no human gate the critic and Verify are the only
    review a change to a public, F-Droid-built app gets. The phases a cheaper model would have suited
    (Start, Ship, Merge, Finish) are now the script.

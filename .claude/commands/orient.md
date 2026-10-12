@@ -35,7 +35,7 @@ if [[ "$CURRENT_DIR" =~ ^Read-Me-rea-([0-9]+)$ ]]; then
 else
   echo "SESSION_TYPE=primary"
 fi
-[ -f package.json ] || echo "PACKAGE_JSON=absent (pre-scaffold)"
+[ -f package.json ] || echo "PACKAGE_JSON=absent"
 [ -f package.json ] && { ls node_modules/.package-lock.json >/dev/null 2>&1 || echo "NODE_MODULES=missing"; }
 ```
 
@@ -44,8 +44,8 @@ If `NODE_MODULES=missing`, say so loudly and run `npm ci` before claiming any ga
 
 **primary**: full report.
 
-`PACKAGE_JSON=absent` is the expected state until the scaffold ticket lands. Report
-`GATES: NOT YET ESTABLISHED` and skip every npm and Gradle step; do not invent a pass.
+`PACKAGE_JSON=absent` means a broken or partial checkout: say so, skip every npm and Gradle
+step, and do not invent a pass.
 
 ## Step 1: Git state
 
@@ -62,8 +62,7 @@ echo "=== STALE ===" && \
 ```
 
 Baseline for sanity: the repo began with `08888dc docs: initial SRS for Read Me`; remote
-`origin` is `git@github.com:JoshShearer/Read-Me.git` (public; `gh repo view`, 2026-10-04). A short history with no
-`android/` or `src/` is the expected pre-scaffold state, not a broken clone.
+`origin` is `git@github.com:JoshShearer/Read-Me.git` (public; `gh repo view`, 2026-10-04).
 
 Open PRs, if `gh` is available:
 
@@ -111,8 +110,8 @@ query it directly and say so, so the conventions file can be corrected.
 Carry any requirement or spike ID (`R-M07`, `R-S01`, `R-C02`, `SPIKE-05`) from a title or
 description into the report. That ID is the acceptance criteria and it lives in `srs.md`.
 
-If `.claude/linear.md` still says "unverified" for the team key or statuses and a call
-succeeds, note what the server actually returned so that file can be filled in.
+If a call returns a team key, status or label that differs from `.claude/linear.md`, note what
+the server returned so that file can be corrected.
 
 ## Step 4: What is on the phone, and who holds it
 
@@ -132,7 +131,7 @@ adb devices 2>/dev/null | awk 'NR>1 && $2=="device"' | wc -l | xargs echo "DEVIC
 ```
 
 If exactly one device is attached and an app id is known (`applicationId` in
-`android/app/build.gradle` once the scaffold exists), read the installed build without changing
+`android/app/build.gradle`), read the installed build without changing
 anything:
 
 ```bash
@@ -178,8 +177,7 @@ report that the resolved dependency tree must be re-checked for F-Droid cleanlin
 
 Work out the likely target area from the branch name, the In Progress issue, and any
 uncommitted files. Surface **only** the matching rows. `AGENTS.md` holds the authoritative
-text; these are pointers. Module names are from `CONTEXT.md`; paths do not exist until the
-scaffold lands, so match by name.
+text; these are pointers. Module names and paths are in `CONTEXT.md`.
 
 | If the area is | Surface |
 |---|---|
@@ -197,12 +195,12 @@ scaffold lands, so match by name.
 ## Session Orientation
 
 Context: {primary | worktree REA-N}
-Gates: {NOT YET ESTABLISHED | named in AGENTS.md}
+Gates: {named in AGENTS.md; any missing, by name}
 
 ### Repo State
 | Branch | Clean | Sync vs origin/main | Unpushed | Deps |
 |--------|-------|---------------------|----------|------|
-| main | Yes | up to date | 0 | n/a (pre-scaffold) |
+| main | Yes | up to date | 0 | installed |
 
 {if uncommitted changes, list them here, before anything else:}
 ### Uncommitted changes
@@ -245,10 +243,9 @@ The next action is one line and one command. Candidates, in priority order:
 1. Merge conflicts or a dirty tree blocking work: resolve that first, nothing else.
 2. On a `feature/rea-N-*`, `fix/rea-N-*` or `spike/rea-N-*` branch: `/start-issue REA-N`.
 3. An open PR: review it, merge, then `/finish`.
-4. Clean `main` with Todo issues: `/start-issue REA-N` for the top one. Before the scaffold,
-   spikes come first (`srs.md`, "Spikes"); none has run.
-5. Clean `main`, nothing assigned: say so and point at `srs.md`. No requirement is met; every
-   one needs an on-device observation (R-M14).
+4. Clean `main` with Todo issues: `/start-issue REA-N` for the top one.
+5. Clean `main`, nothing assigned: say so and point at `srs.md`. A requirement is met only when
+   observed on the device (R-M14); `/spec-check` shows which are not.
 
 ## Error handling
 

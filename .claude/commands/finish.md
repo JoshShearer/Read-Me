@@ -73,9 +73,6 @@ recorded answer in `srs.md` "Spikes". Before deleting an unmerged `spike/*` bran
 answer is on `origin/main` (`git show origin/main:srs.md | grep -n SPIKE-0N`). If it is not, stop:
 deleting the branch may delete the only record of the measurement.
 
-There may be no PRs on this repo yet. The first run of this command finding nothing is the
-correct answer rather than a bug.
-
 ## Step 3: Leave the branch before pulling
 
 Order matters and getting it wrong is silent.
@@ -219,8 +216,7 @@ git show --stat HEAD
 
 | If the merge | Check whether this entry is now false |
 |---|---|
-| was the scaffold | "No code", and the Quality gates "no gates yet" paragraph. Both must be replaced with the real gate commands and CI workflow, verified to exist |
-| answered a spike | "Six spikes precede implementation ... None has run" |
+| added, renamed or removed a gate | The Quality gates block, every command verified to exist |
 | fixed a reproduced defect listed there | That defect's entry |
 
 A fixed entry is **removed**. Do not soften it to "partially fixed". If the fix is partial,
@@ -242,7 +238,7 @@ on a code reading or a green suite.
 
 ### 10c: `CONTEXT.md`
 
-Edit it only if the merge changed the architecture: the real source tree once the scaffold lands,
+Edit it only if the merge changed the architecture: a change to the source tree,
 a new term in the vocabulary table, or a structural gap that has closed. Do not log bug fixes
 there.
 

@@ -84,7 +84,7 @@ session may quote it and cite where it was measured.
 
 | Capture | How it was obtained |
 |---|---|
-| Gates | `GATES: NOT YET ESTABLISHED` if pre-scaffold; otherwise the exact output of each gate named in `AGENTS.md`, verbatim summary lines |
+| Gates | The exact output of each gate named in `AGENTS.md`, verbatim summary lines |
 | Release build | real APK size (`ls -l` on the built APK) and the resolved-dependency check for F-Droid cleanliness, verbatim |
 | Manifest | permissions and `<queries>` from the merged manifest (`aapt2 dump xmltree` or the merged-manifest file), verbatim |
 | Synthesis | RTF = compute seconds / audio seconds, with input length, rate, engine and whether offline (airplane mode, ping unreachable) |
@@ -167,7 +167,7 @@ Issue: REA-{N} (<status>) | Branch: <branch> | Worktree: <path>
 ## Measurements taken
 | What | Value | How |
 |---|---|---|
-| Gates | GATES: NOT YET ESTABLISHED | pre-scaffold |
+| Gates | <summary line per gate run> | <command> |
 | (none) | | say so rather than omitting |
 
 ## Unverified

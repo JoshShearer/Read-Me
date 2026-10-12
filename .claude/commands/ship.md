@@ -33,8 +33,7 @@ a BLOCK.
    or the network guard exist because the failure is silent.
 4. **Never assert a measurement you did not take** in the PR body. No RTF, gap, latency or size
    unless you measured it this session or you cite where it was measured.
-5. **Never report a gate that does not exist as passing.** `GATES: NOT YET ESTABLISHED` is a
-   true statement; a green tick is not.
+5. **Never report a gate that does not exist as passing.** Report it missing, by name.
 
 ## Step 1: Branch and base
 
@@ -102,8 +101,7 @@ npm run lint
 (cd android && ./gradlew assembleRelease)
 ```
 
-A gate that does not exist is reported as missing, by name. If none exist, the result for this
-step is `GATES: NOT YET ESTABLISHED`, and that string goes into the PR verbatim. Do not repeat
+A gate that does not exist is reported as missing, by name. Do not repeat
 the gate list or counts in your report beyond what you ran; `AGENTS.md` is the one place they
 live.
 
@@ -114,8 +112,7 @@ Any gate red → stop and fix. Do not commit around it.
 
 ### Step 4b: Exercise it on the phone
 
-`AGENTS.md` verification rule 15. Skip only for a docs-only diff, or before the scaffold when
-there is no app to install (then say so).
+`AGENTS.md` verification rule 15. Skip only for a docs-only diff (then say so).
 
 Take the one-phone slot, and check there is exactly one device:
 
@@ -320,8 +317,6 @@ Body template. Every section is filled or explicitly marked `none`:
 
 ### Gates
 - <each gate run and its result line, verbatim>
-<or:>
-- GATES: NOT YET ESTABLISHED
 
 ### Exercised on device
 - <device>, build <versionName / commit>, installed with `npm run device:install`, then: <exactly
@@ -361,8 +356,8 @@ plan.
 
 ## Step 10: Update Linear
 
-`In Review` optionality, per `.claude/linear.md`. Statuses are unverified there until discovery
-runs, so check rather than assume.
+`In Review` optionality, per `.claude/linear.md` (which records none on this team); check rather
+than assume, since statuses can be added.
 
 1. `list_issue_statuses` for the team, and look for `In Review`.
 2. Exists → `save_issue` with `state: "In Review"`.
@@ -383,7 +378,7 @@ Shipped.
 Commit: abc1234 fix(fetcher): enforce the 5 MB cap while streaming
 PR: <url from gh>
 
-Gates: <each gate's result line> {or: GATES: NOT YET ESTABLISHED}
+Gates: <each gate's result line>
 
 Device: VERIFIED ON DEVICE on <device>, build <x>. <what you did, what happened>
         This lane installed over whatever build was on the phone.

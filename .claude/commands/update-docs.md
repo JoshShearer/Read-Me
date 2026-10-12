@@ -12,10 +12,10 @@ the map a session uses to decide where a change belongs. Each drifts in its own 
 
 | Doc | How it goes wrong |
 |---|---|
-| `AGENTS.md` "Known state" | Says "no code", "no gates", "no spike has run", or lists a defect. A merge makes one false and the next session works around something that is no longer true |
-| `AGENTS.md` "Quality gates" | Lists the intended gate set. The scaffold makes it real; a later change renames or adds a gate and the block lags |
+| `AGENTS.md` "Known state" | Lists a defect, a measurement or a release fact that a merge has changed. A merge makes one false and the next session works around something that is no longer true |
+| `AGENTS.md` "Quality gates" | A change renames or adds a gate and the block lags |
 | `srs.md` | A spike ran and its answer lives only in a PR or a Linear comment; or code deviates and nothing records it |
-| `CONTEXT.md` | Describes the intended shape ("Nothing below is built yet"). Once code lands, the planned source layout, the layers and "Known structural gaps" must match the real tree |
+| `CONTEXT.md` | The source layout, the layers and "Known structural gaps" must match the real tree |
 
 **Diff the docs against reality. Do not trust either one.** A doc that says something is true is
 a claim to verify, not a fact to preserve, and the same is true in reverse.
@@ -75,10 +75,8 @@ Each claim is checked by a command, not by memory:
 
 | Claim | How to test it now |
 |---|---|
-| "No code" | `git ls-files src android \| head` - anything listed makes it false |
-| "There is no code yet, so there are no gates yet" | `npm run` and `ls android/gradlew .github/workflows/` - every gate that now exists must appear in the block, with the real command, and the CI workflow named |
-| The intended gate list | Every command in the block must exist (`npm run`, `ls`). A listed gate that does not exist after the scaffold is drift (rule 18) |
-| "Six spikes ... None has run" | Read `srs.md` "Spikes" for recorded answers; `git log --oneline --grep=SPIKE` |
+| The gate list | Every command in the block must exist (`npm run`, `ls`), and every gate that exists must be in the block. A listed gate that does not exist is drift (rule 18) |
+| The spike lines | Read `srs.md` "Spikes" for recorded answers; `git log --oneline --grep=SPIKE` |
 | Build toolchain lines | `ls ~/Android/Sdk/build-tools`, `cat ~/Android/tools/jdk-path.txt`; re-verify before keeping a version number |
 | "The GitHub repo is public" and the release state | `gh repo view --json visibility`; `gh release view v<ver> --json isDraft,targetCommitish` |
 | Any reproduced defect listed | Reproduce it, on the phone if it is a device behaviour (rule 16) |
@@ -125,7 +123,7 @@ It needs its ADR and amendment as its own change; report it as still open if it 
 
 ### 2c. `CONTEXT.md` against the real architecture
 
-**The source layout.** Until the scaffold lands, "Planned source layout" is intent. After it:
+**The source layout.**
 
 ```bash
 git ls-files src android/app/src/main | sed 's#/[^/]*$##' | sort -u
@@ -172,7 +170,7 @@ rg -o -N '`((src|android|docs|\.claude)/[^`]+)`' -r '$1' AGENTS.md CONTEXT.md | 
 
 Then run the gates **that exist** (check first, rule 18). A docs-only change cannot break them, so
 a red result means the branch was not clean when you started; say so rather than committing on top
-of it. No gates yet: report `GATES: NOT YET ESTABLISHED`.
+of it.
 
 ## Step 5: Commit
 
@@ -216,7 +214,7 @@ Documentation Updated
 ## Doc diffs found
 - srs.md: SPIKE-03 answer recorded under Spikes (measurement cited from REA-5's comment).
 - AGENTS.md Known state: spike line narrowed to five unrun.
-- CONTEXT.md: no drift; still pre-scaffold.
+- CONTEXT.md: no drift.
 
 ## Not verified
 - <claim kept because it could not be checked here, and why>
