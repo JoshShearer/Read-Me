@@ -62,7 +62,7 @@ verdict.
 |---|---|
 | Verification is on a phone, not in Obsidian | The product is an Android app. `/verify` installs the release build and drives it over adb; bridge checks drive the plugin in Obsidian on the same phone over CDP. |
 | One device slot, `.claude/device.lock/` | There is one attached phone, and installing replaces the app for every lane. Replaces the plugin's `deploy.lock`. |
-| Gates may not exist yet | There is no code until the scaffold ticket. Commands report `GATES: NOT YET ESTABLISHED` instead of inventing a pass. |
+| Gates are checked before they run | Commands check each gate in `AGENTS.md` exists and report a missing one by name (drift) instead of inventing a pass. |
 | Spikes are a ticket type | `srs.md` gates implementation on six spikes. A spike ships its recorded answer (and an ADR if it changes a decision), not its probe code. |
 | Risk factors are rewritten | Scored on item text in logs, network call sites outside `Fetcher`, bridge hardening, rate applied once, offset positions, queue ownership and F-Droid cleanliness. |
 

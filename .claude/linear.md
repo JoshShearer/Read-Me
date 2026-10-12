@@ -186,8 +186,8 @@ one attached device. Take `.claude/device.lock/` (in the primary) with `mkdir` b
 
 ## Quality gates
 
-Defined in `AGENTS.md`, "Quality gates". **They do not exist until the scaffold ticket lands**;
-until then a command that runs gates reports `GATES: NOT YET ESTABLISHED`. A green suite is not
+Defined in `AGENTS.md`, "Quality gates". A command checks each gate exists before running it
+and reports a missing one by name, never as a pass. A green suite is not
 a claim that something works: the change must also be exercised on the phone. `/verify` enforces
 that.
 

@@ -46,7 +46,7 @@ GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): 
 AIRPLANE=1 GAP_MINUTES=10 npm run device:gap   # R-M14 run 2 (the release run): the 10-min measurement in airplane mode, restored on exit
 npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, trims, plays at 2.0x, locks 60 s, waits for the owner's unlock, checks the position held and resumes after a kill (needs network; clears app data)
 npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
-npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins com.google.android.tts as the default engine and restores the previous one on exit; the cold-start section uses the previous default instead (Google TTS restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
+npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins com.google.android.tts as the default engine (fails if it is not installed) and restores the previous one on exit; the cold-start section uses the previous default instead (Google TTS restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:continuous # R-S05 WITHOUT clearing data: shares three synthetic texts, checks they are the top three unread rows, plays the newest with the screen off, checks by logcat ids and sentence counts that each hands over to the next in List order and archives; the owner unlocks within SWITCH_DEADLINE (45 s) so it can turn Continuous play off while the last (long) one plays, else Read Me is force-stopped (never a media key); fails loudly if any non-test id played; then Trim on the first open of a continuous-played item from Archive. Its EXIT trap stops Read Me, deletes its items and restores the switch (needs an unlock; CLEANUP_ONLY=1 redoes that; SCREEN_OFF=0 for a run nobody unlocks)
 npm run device:settings   # REA-27 guard: bridge on, then LOOPS (default 20) x List to Settings, alternating with Reader, Home and /health; fails on a missing bridge control, stuck "Checking...", viewState error, crash, or token/item text in logcat (clears app data)
@@ -109,7 +109,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 8. **Loopback only, hostile-input safe.** Bind `127.0.0.1` explicitly (never
    `getLoopbackAddress()`, which returned `::1` on Android 17); token checked before the body
    is read; header and body caps; per-socket read timeout; every connection caught at
-   `Throwable`. Text in the POST body, never the URL.
+   `Throwable`. Text in the POST body, never the URL. CORS headers on every response, errors
+   included, or Obsidian's WebView cannot read the status (R-M12).
 9. **Rate is applied exactly once.** The engine applies rate at synthesis. Read Me's player never
    scales speed a second time, and the plugin calls `/synthesize` with `rate=1.0` and lets its
    own Player apply rate. Both at 2x is 4x.
@@ -312,7 +313,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   SAME on 8e4af79, and on the reference device `device:ui`, `intake`, `screens`, `bridge`,
   `playback`, `accept-share` (resumed at sentence 17, list "2% read") and `AIRPLANE=1
   GAP_MINUTES=10 device:gap` (n=99 p50=4 p95=12 max=19 ms, stalls 0, errors 0) passed, read by
-  Supertonic (the phone's default; Google TTS is not installed for user 0). F-Droid's `check apk`
+  Supertonic (the phone's default engine for those runs). F-Droid's `check apk`
   then refused it, as it would have 1.0.0: AGP put its "Dependency metadata" block (0x504b4453,
   encrypted for Google Play) in the APK Signing Block. apksigcopier copies that block, so
   `fdroid:build` and `release:apk` compared equal, and fdroidserver 2.4.5's scanner check matches
