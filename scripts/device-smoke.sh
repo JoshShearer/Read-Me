@@ -9,7 +9,14 @@ device_require_unlocked
 device_install_release
 adb shell am force-stop "$PKG"
 adb logcat -c
-adb shell am start -W -n "$PKG/.MainActivity" | grep -E "Status|LaunchState|TotalTime"
+fail=0
+# am start -W prints CRLF lines over adb, and prints no Status line at all on some errors. The
+# output is read whole and the filter tolerates no match (grep exiting 1 would end the script
+# silently under set -e); the launch counts only if the output says exactly "Status: ok".
+start_out=$(adb shell am start -W -n "$PKG/.MainActivity" 2>&1 | tr -d '\r' || true)
+printf '%s\n' "$start_out" | grep -E "Status|LaunchState|TotalTime" || true
+printf '%s\n' "$start_out" | grep -qE '^Status: ok$' \
+  || { echo "FAIL: am start did not report Status: ok"; fail=1; }
 # The pid is taken before any crash, for the native match. pidof exits 1 while the process is
 # not up yet, which would end the script silently under set -e, so poll and tolerate misses.
 PID=""
@@ -20,7 +27,6 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 sleep 3
-fail=0
 [ -n "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)" ] || { echo "FAIL: process not running"; fail=1; }
 # Each answer is read whole before it is searched (device_has in scripts/lib/device.sh).
 activities=$(adb shell dumpsys activity activities)
