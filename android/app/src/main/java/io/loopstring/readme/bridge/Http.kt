@@ -24,30 +24,42 @@ object Http {
   const val ABSENT = -2L
   const val INVALID = -1L
   private val DIGITS = Regex("[0-9]{1,10}")
+  // REA-23: plain decimal only; toFloat also takes hex (0x1p1), exponents and f/d suffixes.
+  private val DECIMAL = Regex("[0-9]{1,2}(\\.[0-9]{1,6})?")
 
   /**
    * Reads up to and including the blank line, never past it, so the body stays in [input].
    * [rejected] receives the bytes read when the head is too large or malformed, so the caller
    * can still find the Origin for its error reply.
+   *
+   * A line ends at LF with an optional CR before it, so a head with bare LF line endings ends
+   * at its blank line too and is answered at once (REA-23), not after the read timeout. It is
+   * still Malformed: accepting bare LF is a request-smuggling surface, and [parse] splits on
+   * CRLF only. The whole head is read first so the Origin line reaches [rejected] for CORS.
    */
   fun readHead(input: InputStream, max: Int = MAX_HEAD, rejected: (ByteArray) -> Unit = {}): HeadRead {
     val buf = ByteArrayOutputStream()
-    var matched = 0 // bytes of "\r\n\r\n" seen in a row
+    var lineStart = 0 // index in buf where the current line began
+    var bareLf = false
+    var prev = -1
     while (true) {
       val c = input.read()
       if (c == -1) return if (buf.size() == 0) HeadRead.Closed else HeadRead.Malformed.also { rejected(buf.toByteArray()) }
       buf.write(c)
       if (buf.size() > max) return HeadRead.TooLarge.also { rejected(buf.toByteArray()) }
-      matched = when {
-        c == '\r'.code && (matched == 0 || matched == 2) -> matched + 1
-        c == '\n'.code && (matched == 1 || matched == 3) -> matched + 1
-        c == '\r'.code -> 1
-        else -> 0
+      if (c == '\n'.code) {
+        val crlf = prev == '\r'.code
+        if (!crlf) bareLf = true
+        val lineLen = buf.size() - 1 - lineStart - (if (crlf) 1 else 0)
+        if (lineLen == 0) {
+          val bytes = buf.toByteArray()
+          // An empty request line is malformed too, and has no CRLF before it to strip.
+          if (bareLf || lineStart == 0) return HeadRead.Malformed.also { rejected(bytes) }
+          return parse(String(bytes, 0, bytes.size - 4, Charsets.ISO_8859_1)).also { if (it == HeadRead.Malformed) rejected(bytes) }
+        }
+        lineStart = buf.size()
       }
-      if (matched == 4) {
-        val bytes = buf.toByteArray()
-        return parse(String(bytes, 0, bytes.size - 4, Charsets.ISO_8859_1)).also { if (it == HeadRead.Malformed) rejected(bytes) }
-      }
+      prev = c
     }
   }
 
@@ -80,9 +92,10 @@ object Http {
     return if (DIGITS.matches(v)) v.toLong() else INVALID
   }
 
-  /** AGENTS.md 9: 1.0 unless asked; null when the requested rate is not a number in [Rate.MIN, Rate.MAX]. */
+  /** AGENTS.md 9: 1.0 unless asked; null when the requested rate is not a plain decimal in [Rate.MIN, Rate.MAX]. */
   fun rate(query: String): Float? {
     val raw = query.split('&').firstOrNull { it.startsWith("rate=") }?.removePrefix("rate=") ?: return 1.0f
+    if (!DECIMAL.matches(raw)) return null
     val r = raw.toFloatOrNull() ?: return null
     return if (r.isFinite() && r >= Rate.MIN && r <= Rate.MAX) r else null
   }

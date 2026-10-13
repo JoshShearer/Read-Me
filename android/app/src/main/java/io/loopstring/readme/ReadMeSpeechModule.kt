@@ -289,10 +289,12 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     val on = settings.bridgeEnabled
     val hub = PlaybackHub.bridge
     putBoolean("enabled", on)
-    putString("state", BridgeView.state(on, hub.state))
+    val state = BridgeView.state(on, hub.state, hub.port, settings.bridgePort)
+    putString("state", state)
     putInt("port", settings.bridgePort)
     putString("token", if (on) settings.bridgeToken() else null)
-    putString("error", if (on && hub.state == "failed") hub.error else null)
+    // Only a failure on the port Settings holds.
+    putString("error", if (state == "failed") hub.error else null)
   }
 
   // NativeEventEmitter's contract; the events go out through emitDeviceEvent.

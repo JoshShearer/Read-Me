@@ -309,6 +309,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
         Log.i(TAG, "bridge off")
       }
     }
+    // Plan review F5 (REA-23): turned off after a failed bind; without this the hub kept
+    // "failed", and turning it back on showed the old failure instead of Starting.
+    if (!want && bridge == null && PlaybackHub.bridge.state == "failed") PlaybackHub.publishBridge(BridgeStatus.OFF)
     // REA-33: a voice or engine chosen in Settings reaches the running bridge.
     if (want && bridge != null && choice() != synthFor) {
       synthFor = choice()

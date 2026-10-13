@@ -48,6 +48,10 @@ Playback has priority. While Read Me's playback is speaking, the bridge does not
   retry later"; that is the plugin's side (NRL-130 in the plugin's workspace).
 - Contract v1 gains a status code and a `/health` field. Both are additive; existing callers that
   ignore them see a 503 as a failed request.
+- A synthesis cancelled because the bridge is shutting down (turned off, port changed), or
+  one still waiting for the synthesis lock then, is answered with the same 503 and `busy` code
+  and `"reason":"stopping"` (REA-23). Shutdown is not playback contention, so only the reason
+  differs and the plugin needs no change.
 - Not covered by the measurement: another engine (`com.google.android.tts`) might run the two
   instances concurrently. The policy applies to every engine; revisit it only with a SPIKE-06
   run on that engine.

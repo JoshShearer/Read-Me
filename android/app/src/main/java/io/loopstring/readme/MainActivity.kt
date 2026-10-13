@@ -5,6 +5,7 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import io.loopstring.readme.bridge.BridgeView
 import io.loopstring.readme.playback.PlaybackHub
 import io.loopstring.readme.playback.PlaybackService
 import io.loopstring.readme.store.Settings
@@ -28,7 +29,7 @@ class MainActivity : ReactActivity() {
   override fun onResume() {
     super.onResume()
     try {
-      if (Settings(this).bridgeEnabled && PlaybackHub.bridge.state != "on") PlaybackService.syncBridge(this)
+      if (BridgeView.syncOnResume(Settings(this).bridgeEnabled, PlaybackHub.bridge.state)) PlaybackService.syncBridge(this)
     } catch (e: IllegalStateException) {
       Log.i("ReadMe", "bridge start refused: ${e.javaClass.simpleName}")
     }

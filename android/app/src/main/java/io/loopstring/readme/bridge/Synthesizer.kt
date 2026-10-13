@@ -8,6 +8,8 @@ enum class SynthResult {
   OK, FAILED, TIMEOUT, CANCELLED,
   /** The engine went away (REA-29). TtsSynth's own signal; synthesize never returns it. */
   LOST,
+  /** A first binding that failed (no engine or voice) and whose retry failed too: 503 tts-not-ready. */
+  NOT_READY,
 }
 
 /** The bridge's speech engine (AGENTS.md 13: never playback's instance). */

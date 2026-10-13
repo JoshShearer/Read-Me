@@ -166,6 +166,31 @@ class TtsSynthTest {
     s.shutdown()
   }
 
+  @Test fun aFailedFirstBindingIsRetriedByTheNextRequestOncePerGap() {
+    // REA-23: a first binding with no usable voice stayed tts-not-ready until the bridge was toggled.
+    val s = TtsSynth(ctx, null, log = { logs += it }, readyWaitMs = 5_000L, now = { clock })
+    initNewEngines()
+    val first = ShadowTextToSpeech.getLastTextToSpeechInstance()
+    assertEquals(null, s.voice)
+    assertTrue("a failed first binding may be retried", s.ready)
+    assertEquals(SynthResult.NOT_READY, run(s) { true })
+    val second = ShadowTextToSpeech.getLastTextToSpeechInstance()
+    assertNotSame("the request rebinds", first, second)
+    assertEquals("bridge engine not ready; rebinding", logs.first())
+
+    clock += TtsSynth.REBIND_GAP_MS - 1
+    assertFalse("not again inside the gap", s.ready)
+    assertEquals(SynthResult.FAILED, run(s) { true })
+    assertSame(second, ShadowTextToSpeech.getLastTextToSpeechInstance())
+
+    clock += 1
+    ShadowTextToSpeech.addVoice(voice("en-us-x-test-local"))
+    assertTrue(s.ready)
+    assertEquals(SynthResult.OK, run(s) { true })
+    assertEquals("en-us-x-test-local", s.voice)
+    s.shutdown()
+  }
+
   // --- harness ---
 
   private val instances = mutableListOf<TextToSpeech>()

@@ -95,6 +95,22 @@ class PlaybackServiceTest {
     }
   }
 
+  @Test fun turningTheBridgeOffAfterAFailedBindReportsOff() {
+    // Plan review F5: a live service kept "failed", so turning it back on never showed Starting.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    java.net.ServerSocket(0, 1, java.net.InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).use { taken ->
+      Settings(ctx).apply { bridgePort = taken.localPort; bridgeEnabled = true }
+      val c = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create().startCommand(0, 1)
+      shadowOf(Looper.getMainLooper()).idle()
+      assertEquals("failed", PlaybackHub.bridge.state)
+      Settings(ctx).bridgeEnabled = false
+      c.withIntent(bridgeIntent(ctx)).startCommand(0, 2)
+      shadowOf(Looper.getMainLooper()).idle()
+      assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+      c.destroy()
+    }
+  }
+
   @Test fun theBridgeKeepsTheServiceAfterPlaybackEnds() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val port = freePort()

@@ -455,6 +455,110 @@ class BridgeServerTest {
     }
   }
 
+  @Test fun aBareLfHeadIs400WithCors() {
+    // REA-23: a bare-LF head never matched CRLFCRLF and waited out the read timeout.
+    val s = start(readTimeoutMs = 5_000)
+    Socket("127.0.0.1", s.port).use { c ->
+      c.soTimeout = 2_000
+      c.getOutputStream().apply { write("GET /health HTTP/1.1\nHost: x\nOrigin: http://localhost\n\n".toByteArray()); flush() }
+      val r = parse(c.getInputStream())
+      assertEquals(400, r.status)
+      assertEquals("""{"error":"bad-request"}""", r.text())
+      assertEquals("http://localhost", r.headers["access-control-allow-origin"])
+    }
+  }
+
+  @Test fun closeFreesAWorkerHeldByAClientThatNeverReads() {
+    // REA-23: close() dropped the watchdog's cutoffs, so this worker stayed until the client left.
+    val s = start(workers = 1)
+    synth.behaviour = { it.writeBytes(ByteArray(16 * 1024 * 1024)); SynthResult.OK }
+    Socket("127.0.0.1", s.port).use { c ->
+      c.getOutputStream().write("${synthHead(5)}\r\n\r\nhello".toByteArray())
+      // Never read: the server's write fills the buffers and blocks.
+      val t0 = System.nanoTime()
+      while (cache.listFiles()!!.isEmpty() && System.nanoTime() - t0 < 3_000_000_000L) Thread.sleep(10)
+      Thread.sleep(300)
+      s.close()
+      val t1 = System.nanoTime()
+      while (cache.listFiles()!!.isNotEmpty() && System.nanoTime() - t1 < 3_000_000_000L) Thread.sleep(20)
+      assertEquals(0, cache.listFiles()!!.size)
+      Thread.sleep(100)
+      assertTrue(logs.toString(), logs.any { it.startsWith("bridge connection ended: ") })
+    }
+  }
+
+  @Test fun closeDuringASynthesisAnswers503Stopping() {
+    // REA-23: a synthesis cancelled by close() was answered busy/playback, or not at all.
+    val s = start()
+    val started = CountDownLatch(1)
+    synth.behaviour = { f ->
+      f.writeBytes(wav(10))
+      started.countDown()
+      if (synth.cancelled.await(5, TimeUnit.SECONDS)) SynthResult.CANCELLED else SynthResult.OK
+    }
+    var r: Response? = null
+    var queued: Response? = null
+    val t = Thread { r = call(s.port, synthHead(5, origin = "http://localhost"), "hello".toByteArray()) }.apply { start() }
+    assertTrue(started.await(5, TimeUnit.SECONDS))
+    // A second request waits on the synthesis lock.
+    val q = Thread { queued = call(s.port, synthHead(5, origin = "http://localhost"), "hello".toByteArray()) }.apply { start() }
+    Thread.sleep(300)
+    s.close()
+    t.join(5_000)
+    q.join(5_000)
+    for (resp in listOf(r!!, queued!!)) {
+      assertEquals(503, resp.status)
+      assertEquals("""{"error":"busy","reason":"stopping"}""", resp.text())
+      assertEquals("http://localhost", resp.headers["access-control-allow-origin"])
+    }
+    assertEquals(0, cache.listFiles()!!.size)
+  }
+
+  @Test fun aSynthesisThatFinishedBeforeCloseStillGetsItsAudio() {
+    // Plan review F1: the grace lets replies out; a finished synthesis is not thrown away.
+    val s = start()
+    val inSynth = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    synth.behaviour = { f -> inSynth.countDown(); release.await(5, TimeUnit.SECONDS); f.writeBytes(wav(10)); SynthResult.OK }
+    var r: Response? = null
+    val t = Thread { r = call(s.port, synthHead(5), "hello".toByteArray()) }.apply { start() }
+    assertTrue(inSynth.await(5, TimeUnit.SECONDS))
+    s.close()
+    release.countDown()
+    t.join(5_000)
+    assertEquals(200, r!!.status)
+  }
+
+  @Test fun aRequestDuringTheCloseGraceIsAnswered503Stopping() {
+    // Plan review F1: one arriving after close() but before the sweep gets the same reason.
+    val s = start()
+    val started = CountDownLatch(1)
+    synth.behaviour = { f -> started.countDown(); Thread.sleep(800); f.writeBytes(wav(10)); SynthResult.OK }
+    val t = Thread { runCatching { call(s.port, synthHead(5), "hello".toByteArray()) } }.apply { start() }
+    assertTrue(started.await(5, TimeUnit.SECONDS))
+    Socket("127.0.0.1", s.port).use { c ->
+      c.soTimeout = 3_000
+      Thread.sleep(200) // accepted before the server socket closes
+      s.close()
+      c.getOutputStream().apply { write("${synthHead(5)}\r\n\r\nhello".toByteArray()); flush() }
+      val resp = parse(c.getInputStream())
+      assertEquals(503, resp.status)
+      assertEquals("""{"error":"busy","reason":"stopping"}""", resp.text())
+    }
+    t.join(5_000)
+  }
+
+  @Test fun aFailedRetryOfAFirstBindingIs503NotReady() {
+    // Owner default (REA-23): the plugin keeps its "engine not ready yet" message.
+    val s = start()
+    synth.behaviour = { SynthResult.NOT_READY }
+    val r = call(s.port, synthHead(5, origin = "http://localhost"), "hello".toByteArray())
+    assertEquals(503, r.status)
+    assertEquals("""{"error":"tts-not-ready"}""", r.text())
+    assertEquals("http://localhost", r.headers["access-control-allow-origin"])
+    assertEquals(0, cache.listFiles()!!.size)
+  }
+
   companion object {
     /** A minimal 16-bit mono WAV with [samples] silent samples. */
     fun wav(samples: Int): ByteArray {
