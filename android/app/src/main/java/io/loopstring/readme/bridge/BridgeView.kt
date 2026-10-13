@@ -8,11 +8,22 @@ import android.os.PersistableBundle
 
 /** What Settings shows for the bridge: Settings says whether it should run, the service whether it does. */
 object BridgeView {
-  fun state(enabled: Boolean, hub: String): String = when {
+  /**
+   * REA-23: the hub's on or failed counts only for the port Settings holds; until the service
+   * reports that port (a port change restarts the server), Settings shows starting.
+   */
+  fun state(enabled: Boolean, hub: String, hubPort: Int, port: Int): String = when {
     !enabled -> "off"
-    hub == "on" || hub == "failed" -> hub
+    (hub == "on" || hub == "failed") && hubPort == port -> hub
     else -> "starting"
   }
+
+  /**
+   * MainActivity.onResume restarts the bridge only when the service or process is gone (hub
+   * off). A failed bind (port taken) is retried by a port change or a toggle: retrying it on
+   * every resume flashed the Starting notification (REA-23).
+   */
+  fun syncOnResume(enabled: Boolean, hub: String): Boolean = enabled && hub == "off"
 }
 
 /** R-M12 "shown in Settings with a Copy button". Marked sensitive so Android 13+ hides it from the clipboard preview. */

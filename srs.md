@@ -493,14 +493,17 @@ engine instance.
 | Route | Method | Auth | Response |
 |---|---|---|---|
 | `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy, maxChars}` |
-| `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate`. `503` `{"error":"busy","reason":"playback"}` while Read Me is playing (ADR 0004) |
+| `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate`. `503` `{"error":"busy","reason":"playback"}` while Read Me is playing (ADR 0004); `reason` is `queue` when the synthesis queue is full and `stopping` when the bridge is shutting down (REA-23) |
 
 - Body: UTF-8 text, at most 64 KiB, and at most `maxChars` characters (ADR 0008; 413
   `{"error":"too-long","maxChars":N}` otherwise).
 - Errors are JSON `{"error":"<code>"}`: 400 (bad request, length, rate, UTF-8, empty), 401, 404,
   405, 413, 431, 500, 503 (`busy` or `tts-not-ready`), 504 (synthesis over 120 s) (ADR 0008).
-- `rate` defaults to 1.0. Whatever rate is requested is applied by the engine, so the
-  returned audio is already at that rate.
+  A request head whose lines end in a bare LF instead of CRLF is a 400 `bad-request`, answered
+  as soon as its blank line arrives (REA-23).
+- `rate` defaults to 1.0. It is a plain decimal (`2`, `2.0`, `0.5`): hex, exponents, signs and
+  suffixes such as `0x1p1`, `1e0`, `+2` or `2f` are a 400 `bad-rate` (REA-23). Whatever rate is
+  requested is applied by the engine, so the returned audio is already at that rate.
 - **The `local-tts-reader` plugin MUST call with `rate=1.0`** and let its Player apply the
   user's rate. Its Player passes a rate only to engines with `ownsPlayback: true`
   (`src/audio/player.ts:344`) and sets `playbackRate` on every buffer it plays

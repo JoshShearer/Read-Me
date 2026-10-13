@@ -13,12 +13,15 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 
@@ -40,6 +43,7 @@ class BridgeServer(
   workers: Int = WORKERS,
   private val headDeadlineMs: Long = HEAD_DEADLINE_MS,
   private val maxQueued: Int = MAX_QUEUED,
+  private val closeGraceMs: Long = CLOSE_GRACE_MS,
 ) : Closeable {
   // AGENTS.md 8: explicit IPv4 loopback; getLoopbackAddress() returned ::1 on Android 17.
   private val server = ServerSocket(requestedPort, BACKLOG, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
@@ -56,6 +60,10 @@ class BridgeServer(
   private val synthSlots = Semaphore(1 + maxQueued)
   private val epoch = AtomicInteger()
   @Volatile private var closed = false
+  private val closing = AtomicBoolean()
+  // Every connection a worker is serving, so close() can free a worker blocked in a write.
+  private val live: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
+  @Volatile private var swept = false
 
   init {
     Thread(::acceptLoop, "bridge-accept").apply { isDaemon = true }.start()
@@ -67,12 +75,34 @@ class BridgeServer(
     synth.cancel()
   }
 
+  /**
+   * Stops accepting, cancels a synthesis in flight (answered 503 busy/stopping) and, after
+   * [closeGraceMs] for replies to get out, closes every connection still open. REA-23: the
+   * watchdog keeps running until then, so a client that never reads is cut off by the sweep
+   * instead of holding its worker until it leaves. No interrupt before the sweep: it made
+   * the latches a worker waits on throw, and a cancelled request got no reply at all.
+   */
   override fun close() {
+    if (!closing.compareAndSet(false, true)) return
     closed = true
     runCatching { server.close() }
-    pool.shutdownNow()
-    watchdog.shutdownNow()
     synth.cancel()
+    pool.shutdown()
+    try {
+      watchdog.schedule(::sweep, closeGraceMs, TimeUnit.MILLISECONDS)
+    } catch (_: RejectedExecutionException) {
+      sweep()
+    }
+  }
+
+  private fun sweep() {
+    // Set before the walk; serve() checks it after adding, so no connection slips between.
+    swept = true
+    for (s in live) runCatching { s.close() }
+    // Interrupts a worker still waiting (for example on a rebinding engine); its socket is closed.
+    pool.shutdownNow()
+    // Pending cutoffs are moot now, and would keep the watchdog thread alive until they fire.
+    watchdog.shutdownNow()
   }
 
   private fun acceptLoop() {
@@ -100,8 +130,12 @@ class BridgeServer(
   private fun serve(s: Socket) {
     val t0 = System.nanoTime()
     val ex = Exchange().apply { socket = s }
-    val cutoff = watchdog.schedule({ runCatching { s.close() } }, deadlineMs, TimeUnit.MILLISECONDS)
+    var cutoff: ScheduledFuture<*>? = null
     try {
+      // Inside the try: after the sweep, schedule throws RejectedExecutionException (AGENTS.md 8).
+      live.add(s)
+      if (swept) throw IOException("bridge closed")
+      cutoff = watchdog.schedule({ runCatching { s.close() } }, deadlineMs, TimeUnit.MILLISECONDS)
       s.use {
         it.soTimeout = readTimeoutMs
         val input = BufferedInputStream(it.getInputStream())
@@ -114,7 +148,9 @@ class BridgeServer(
       // AGENTS.md 8: Throwable, so no request can take the service down. Class name only.
       log("bridge connection ended: ${t.javaClass.simpleName}")
     } finally {
-      cutoff.cancel(false)
+      cutoff?.cancel(false)
+      live.remove(s)
+      runCatching { s.close() }
     }
     if (ex.status != 0) {
       log("bridge ${ex.method} ${ex.route} ${ex.status} ms=${(System.nanoTime() - t0) / 1_000_000} in=${ex.bodyBytes} out=${ex.outBytes}")
@@ -151,6 +187,8 @@ class BridgeServer(
   private fun synthesize(head: Head, input: InputStream, out: OutputStream, ex: Exchange) {
     // AGENTS.md 8: the token is checked before a byte of the body is read.
     if (!authorized(head.headers["authorization"])) return error(out, ex, 401, "unauthorized")
+    // REA-23: shutting down; one reason for every request in the close grace.
+    if (closed) return stoppingReply(out, ex)
     // ADR 0004: playback has priority; answered before the body is read.
     if (busy()) return busyReply(out, ex)
     if (!synth.ready) return error(out, ex, 503, "tts-not-ready")
@@ -182,12 +220,13 @@ class BridgeServer(
       try {
         // Read before the busy check: a preempt after this point changes the epoch (ADR 0004).
         val e = epoch.get()
+        if (closed) return stoppingReply(out, ex)
         if (busy()) return busyReply(out, ex)
         // Waiting for the lock can outlast the client; nobody would read this audio.
         if (waited && ex.socket?.let { clientGone(it, input) } == true) return
         val t0 = System.nanoTime()
         // AGENTS.md 9: the rate is applied here, by the engine, once.
-        result = synth.synthesize(text, rate, f) { epoch.get() == e }
+        result = synth.synthesize(text, rate, f) { epoch.get() == e && !closed }
         ms = (System.nanoTime() - t0) / 1_000_000
         preempted = epoch.get() != e
       } finally {
@@ -196,7 +235,11 @@ class BridgeServer(
       }
       // Sent outside the lock: a slow reader must not hold up the next synthesis.
       when {
+        // A synthesis that finished before close() still gets its audio in the grace.
+        closed && result != SynthResult.OK -> stoppingReply(out, ex)
         result == SynthResult.CANCELLED || preempted -> busyReply(out, ex)
+        // The retry of a failed first binding failed too (REA-23): the plugin's not-ready message.
+        result == SynthResult.NOT_READY -> error(out, ex, 503, "tts-not-ready")
         result == SynthResult.TIMEOUT -> error(out, ex, 504, "timeout")
         result != SynthResult.OK || f.length() == 0L -> error(out, ex, 500, "synthesis-failed")
         else -> sendFile(out, ex, f, "X-Synth-Ms: $ms\r\nX-Rate: $rate\r\n")
@@ -265,6 +308,9 @@ class BridgeServer(
   private fun busyReply(out: OutputStream, ex: Exchange) =
     send(out, ex, 503, JSON, """{"error":"busy","reason":"playback"}""".toByteArray())
 
+  /** ADR 0004's status and error code, so the plugin needs no change; only the reason differs. */
+  private fun stoppingReply(out: OutputStream, ex: Exchange) = send(out, ex, 503, JSON, STOPPING)
+
   private fun error(out: OutputStream, ex: Exchange, code: Int, error: String, extra: String = "") =
     send(out, ex, code, JSON, ("{\"error\":${json(error)}" + (if (extra.isEmpty()) "" else ",$extra") + "}").toByteArray())
 
@@ -305,12 +351,15 @@ class BridgeServer(
     const val WORKERS = 8
     const val HEAD_DEADLINE_MS = 5_000L
     const val MAX_QUEUED = 2
+    /** How long close() leaves open connections to finish their replies. */
+    const val CLOSE_GRACE_MS = 1_000L
     private const val BACKLOG = 16
     private const val JSON = "application/json"
     private const val ALLOWED_ORIGIN = "http://localhost"
     private val METHODS = setOf("GET", "POST", "OPTIONS")
     private val ROUTES = setOf("/health", "/synthesize")
     private val ORIGIN_LINE = Regex("(?im)^origin:[ \\t]*http://localhost[ \\t]*\r?$")
+    private val STOPPING = """{"error":"busy","reason":"stopping"}""".toByteArray()
     private val QUEUE_FULL = """{"error":"busy","reason":"queue"}""".toByteArray()
     private val REASONS = mapOf(
       200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",

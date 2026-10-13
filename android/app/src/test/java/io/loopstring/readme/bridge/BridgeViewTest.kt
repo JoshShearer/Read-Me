@@ -13,10 +13,27 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class BridgeViewTest {
   @Test fun stateIsOffUnlessEnabledAndStartingUntilTheServiceAnswers() {
-    assertEquals("off", BridgeView.state(false, "on"))
-    assertEquals("starting", BridgeView.state(true, "off"))
-    assertEquals("on", BridgeView.state(true, "on"))
-    assertEquals("failed", BridgeView.state(true, "failed"))
+    assertEquals("off", BridgeView.state(false, "on", 8787, 8787))
+    assertEquals("starting", BridgeView.state(true, "off", 8787, 8787))
+    assertEquals("on", BridgeView.state(true, "on", 8787, 8787))
+    assertEquals("failed", BridgeView.state(true, "failed", 8787, 8787))
+  }
+
+  @Test fun aNewPortIsStartingUntilTheHubReportsIt() {
+    // REA-23: Settings showed a new port as On while the old server still ran.
+    assertEquals("starting", BridgeView.state(true, "on", 8787, 8788))
+    assertEquals("starting", BridgeView.state(true, "failed", 8787, 8788))
+    assertEquals("on", BridgeView.state(true, "on", 8788, 8788))
+    assertEquals("failed", BridgeView.state(true, "failed", 8788, 8788))
+    assertEquals("off", BridgeView.state(false, "on", 8787, 8788))
+  }
+
+  @Test fun aFailedBindIsNotRetriedOnResume() {
+    // REA-23: a taken port was retried on every resume and the Starting notification flashed.
+    assertEquals(false, BridgeView.syncOnResume(true, "failed"))
+    assertEquals(true, BridgeView.syncOnResume(true, "off"))
+    assertEquals(false, BridgeView.syncOnResume(true, "on"))
+    assertEquals(false, BridgeView.syncOnResume(false, "off"))
   }
 
   @Test fun theCopiedTokenIsMarkedSensitive() {

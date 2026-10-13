@@ -83,6 +83,9 @@ class TtsSynth(
 
     private fun onInit(result: Int) {
       status = choose(result)
+      // REA-23: a binding that came up with no engine or voice is treated as lost, so the next
+      // request retries it (at most once per REBIND_GAP_MS) instead of waiting for a toggle.
+      if (status != TtsSpeaker.EngineStatus.READY) lost = true
       settled.countDown()
     }
 
@@ -137,7 +140,8 @@ class TtsSynth(
         if (r == SynthResult.OK) e.lost = false
         return r
       }
-      val fresh = rebind(e) ?: return SynthResult.FAILED
+      // A chain that never had a usable binding is still not ready, not a failed synthesis.
+      val fresh = rebind(e) ?: return if (e.pin == null && e.voice == null && e.status != TtsSpeaker.EngineStatus.READY) SynthResult.NOT_READY else SynthResult.FAILED
       val again = attempt(fresh, text, rate, out, proceed)
       if (again == SynthResult.LOST) fresh.lost = true
       return if (again == SynthResult.LOST) SynthResult.FAILED else again
@@ -187,7 +191,8 @@ class TtsSynth(
       lastRebindAt = t
     }
     dead.lost = true
-    log("bridge engine lost; rebinding")
+    // A binding that never had a voice was not lost; say so, with no item data.
+    log(if (dead.pin == null && dead.voice == null) "bridge engine not ready; rebinding" else "bridge engine lost; rebinding")
     val pin = dead.pin ?: dead.voice?.let { Pin(dead.name, it) }
     val made = CountDownLatch(1)
     main.post {

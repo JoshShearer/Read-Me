@@ -40,6 +40,8 @@ class HttpTest {
       assertEquals(line, HeadRead.Malformed, read("$line\r\n\r\n"))
     }
     assertEquals(HeadRead.Malformed, read("GET /health HTTP/1.1\r\nno colon here\r\n\r\n"))
+    assertEquals(HeadRead.Malformed, read("\r\nGET /health HTTP/1.1\r\n\r\n"))
+    assertEquals(HeadRead.Malformed, read("\nGET /health HTTP/1.1\r\n\r\n"))
   }
 
   @Test fun conflictingContentLengthsAreMalformed() {
@@ -65,6 +67,31 @@ class HttpTest {
     for (bad in listOf("rate=", "rate=0.4", "rate=4.1", "rate=NaN", "rate=Infinity", "rate=abc", "rate=-1")) {
       assertNull(bad, Http.rate(bad))
     }
+  }
+
+  @Test fun rateIsDecimalOnly() {
+    // REA-23: toFloat read rate=0x1p1 as 2.0; Java float syntax is not the contract.
+    for (ok in listOf("rate=2" to 2.0f, "rate=2.0" to 2.0f, "rate=0.5" to 0.5f, "rate=4" to 4.0f, "rate=1.25" to 1.25f)) {
+      assertEquals(ok.first, ok.second, Http.rate(ok.first))
+    }
+    for (bad in listOf("0x1p1", "2f", "2d", "2.0f", "1e0", "+2", " 2", "2.", ".5", "2,0", "02.0000001x")) {
+      assertNull(bad, Http.rate("rate=$bad"))
+    }
+  }
+
+  @Test fun aBareLfHeadIsMalformedAndLeavesTheBodyUnread() {
+    val input = ByteArrayInputStream("GET /health HTTP/1.1\nHost: x\nOrigin: http://localhost\n\nBODY".toByteArray(Charsets.ISO_8859_1))
+    var rejected = ""
+    assertEquals(HeadRead.Malformed, Http.readHead(input) { rejected = String(it, Charsets.ISO_8859_1) })
+    assertTrue(rejected, rejected.contains("Origin: http://localhost"))
+    assertEquals(4, input.available())
+    // A mix: CRLF lines, then a blank line ended by a bare LF.
+    val mixed = ByteArrayInputStream("GET /health HTTP/1.1\r\nHost: x\r\n\nBODY".toByteArray(Charsets.ISO_8859_1))
+    assertEquals(HeadRead.Malformed, Http.readHead(mixed))
+    assertEquals(4, mixed.available())
+    val mixed2 = ByteArrayInputStream("GET /health HTTP/1.1\nHost: x\r\n\r\nBODY".toByteArray(Charsets.ISO_8859_1))
+    assertEquals(HeadRead.Malformed, Http.readHead(mixed2))
+    assertEquals(4, mixed2.available())
   }
 
   @Test fun utf8IsStrict() {
