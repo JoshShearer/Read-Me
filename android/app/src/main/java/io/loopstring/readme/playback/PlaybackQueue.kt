@@ -86,6 +86,11 @@ class PlaybackQueue(
   // Reset only by a sentence that synthesized: a failing engine must not read silence to the end.
   private var consecutiveErrors = 0
   private var firstErrorIndex = -1
+  // REA-52: output failures (the player could not play a synthesized file). Counted apart from
+  // synthesis errors, which every synthesized sentence resets while synthesis runs ahead of the
+  // player; only a sentence that really started playing ends this run (onPlayerStart).
+  private var playerErrors = 0
+  private var firstPlayerErrorIndex = -1
   private var stallTicks = 0
   private var events = 0L
   private var lastProgress = 0L
@@ -295,6 +300,7 @@ class PlaybackQueue(
     val i = indexOf(id) ?: return
     events++
     stallTicks = 0
+    playerErrors = 0
     if (lastDoneAt >= 0) {
       val gap = clock() - lastDoneAt
       gaps += gap
@@ -336,7 +342,13 @@ class PlaybackQueue(
       events++
       inPlayer--
       lastDoneAt = -1
-      failedLocked(i)
+      if (!playing) {
+        // Paused: like a late engine answer (REA-51) this moves and counts nothing; the next
+        // Play restarts the heard sentence on a fresh pipeline.
+        pausedAnswerLocked(false)
+        return
+      }
+      playerFailedLocked(i)
       if (pipelined) advanceLocked(i) else null
     }
     if (pending != null) handOver(pending)
@@ -435,6 +447,18 @@ class PlaybackQueue(
     if (lost) engineLostWhilePaused = true
   }
 
+  /**
+   * An output failure (REA-52): not the engine's fault, so no rebind. [MAX_CONSECUTIVE_ERRORS]
+   * in a row pause at the first of them, the first sentence not heard: a writer failure reports
+   * every buffered sentence at once, in order, so the first reported is the lowest.
+   */
+  private fun playerFailedLocked(i: Int) {
+    errors++
+    if (playerErrors == 0) firstPlayerErrorIndex = i
+    playerErrors++
+    if (playerErrors >= MAX_CONSECUTIVE_ERRORS) pauseAtLocked(firstPlayerErrorIndex)
+  }
+
   private fun failedLocked(i: Int) {
     errors++
     if (consecutiveErrors == 0) firstErrorIndex = i
@@ -498,9 +522,13 @@ class PlaybackQueue(
   private fun endLocked(): Pending? {
     val id = itemId ?: return null
     if (!pipelined || fed < rows.size || inPlayer > 0) return null
-    if (consecutiveErrors > 0) {
+    if (consecutiveErrors > 0 || playerErrors > 0) {
       // The last sentences failed: that is not reading to the end (R-M11 archives only then).
-      pauseAtLocked(firstErrorIndex)
+      val firstFailed = minOf(
+        if (consecutiveErrors > 0) firstErrorIndex else Int.MAX_VALUE,
+        if (playerErrors > 0) firstPlayerErrorIndex else Int.MAX_VALUE,
+      )
+      pauseAtLocked(firstFailed)
       return null
     }
     // The finished item's pipeline goes now: anything of it not yet deleted (AGENTS.md 3).
@@ -578,6 +606,7 @@ class PlaybackQueue(
     playing = false
     current = index
     consecutiveErrors = 0
+    playerErrors = 0
     saveLocked()
     publishLocked()
   }
@@ -607,6 +636,7 @@ class PlaybackQueue(
     stallTicks = 0
     // A new generation: errors before a jump or another item are not this run's.
     consecutiveErrors = 0
+    playerErrors = 0
     current = index
     requested = index
     fed = index
@@ -743,6 +773,7 @@ class PlaybackQueue(
     lastDoneAt = -1
     loadedAt = -1
     consecutiveErrors = 0
+    playerErrors = 0
     publishLocked()
   }
 

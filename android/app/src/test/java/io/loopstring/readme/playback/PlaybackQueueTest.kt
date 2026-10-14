@@ -479,6 +479,88 @@ class PlaybackQueueTest {
     assertEquals(listOf("1", "3"), indices(player.enqueued))
   }
 
+  // REA-52: the output fails, the engine does not.
+  private fun longRows(n: Int) = (0 until n).map { SentenceRow(it, 0, 4, "S$it.") }
+
+  @Test fun aPlayerThatAlwaysFailsPausesAtTheFirstSentenceNotHeard() {
+    queue.load(7, longRows(20), 0, 2.0f)
+    val g = g()
+    var tried = 0
+    for (i in 0 until 20) {
+      if (!queue.snapshot().playing) break
+      queue.onSynthDone("$g:$i") // synthesis keeps succeeding, 3 or more ahead of the player
+      queue.onPlayerError("$g:$i")
+      tried++
+    }
+    assertEquals(3, tried)
+    assertFalse(queue.snapshot().playing)
+    assertTrue("not archived", sink.finished.isEmpty())
+    assertEquals(0, sink.lost)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last()) // sentence 0, never the last
+    assertTrue(sink.saves.none { it.second > 3 })
+    assertEquals(3, queue.takeStats().errors)
+  }
+
+  @Test fun aWriterFailureReportingEveryBufferedSentencePausesAtTheFirst() {
+    queue.load(7, longRows(20), 0, 2.0f)
+    val g = g()
+    synthDone(0, 1, 2)
+    queue.onPlayerError("$g:0")
+    synthDone(3, 4) // the engine's later sentences still succeed in between
+    queue.onPlayerError("$g:1")
+    synthDone(5)
+    queue.onPlayerError("$g:2")
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    // Reports of the discarded pipeline that arrive later move nothing.
+    val saves = sink.saves.size
+    queue.onPlayerError("$g:3")
+    queue.onPlayerError("$g:4")
+    assertEquals(saves, sink.saves.size)
+    assertFalse(queue.snapshot().playing)
+  }
+
+  @Test fun aSentenceThatStartsPlayingEndsThePlayerErrorRun() {
+    queue.load(7, longRows(20), 0, 2.0f)
+    val g = g()
+    synthDone(0, 1, 2)
+    queue.onPlayerError("$g:0")
+    queue.onPlayerError("$g:1")
+    start(2)
+    synthDone(3)
+    queue.onPlayerError("$g:2")
+    queue.onPlayerError("$g:3")
+    assertTrue(queue.snapshot().playing)
+  }
+
+  @Test fun playerErrorsAtTheEndPauseInsteadOfArchiving() {
+    queue.load(7, longRows(2), 0, 2.0f)
+    val g = g()
+    synthDone(0, 1)
+    queue.onPlayerError("$g:0")
+    queue.onPlayerError("$g:1")
+    assertTrue(sink.finished.isEmpty())
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+  }
+
+  @Test fun aPlayerErrorWhilePausedMovesNothing() {
+    queue.load(7, longRows(20), 0, 2.0f)
+    val g = g()
+    synthDone(0, 1, 2)
+    start(0)
+    queue.pause()
+    val saves = sink.saves.size
+    queue.onPlayerError("$g:0")
+    queue.onPlayerError("$g:1")
+    queue.onPlayerError("$g:2")
+    assertEquals(saves, sink.saves.size)
+    assertEquals(0, queue.snapshot().sentence?.paragraphIndex)
+    assertEquals(0, queue.takeStats().errors)
+    assertTrue(queue.resume())
+    assertTrue(queue.snapshot().playing)
+  }
+
   @Test fun errorsAtTheEndPauseInsteadOfArchiving() {
     queue.load(7, rows, 4, 2.0f)
     synthDone(4)
