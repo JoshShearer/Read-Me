@@ -116,6 +116,20 @@ docs-only commits to the default branch: allowed (`/update-docs` and `/finish` d
 - `docs/adr/` - new decision records only. Don't diff these. Write one when a deviation needs it
 - `.claude/COMMANDS.md`
 
+## Dependencies
+
+Read by `/update-packages`. Per-package risks and the device checks are in
+`.claude/overrides/update-packages.md`.
+
+| Field | Value |
+|---|---|
+| Manifests | `package.json` (npm, `package-lock.json`) |
+| Update tool | `npx npm-check-updates` |
+| Hold | React Native and what its version pins: `^react-native$`, `^@react-native/`, `^@react-native-community/`, `^react$`, `^react-test-renderer$`, `^@types/react$`, `^@types/react-test-renderer$`. An RN upgrade is its own ticket: `scripts/patch-rn-jdk21.mjs`, the Hermes submodule, the F-Droid recipe, the RN #58265 workarounds and `device:screens` all depend on the exact version |
+| Move together | none |
+| After an update | `typecheck`, `lint`, `test`, `test-scripts`, `licenses`; `npm run notices` then `node scripts/make-notices.mjs --check` (commit `android/app/src/main/assets/notices.json`); `READ_ME_ABIS=arm64-v8a npm run build:release`; `scripts/fdroid-scan.sh` (non-negotiable 14: the resolved Gradle tree too) |
+| Not covered | Gradle and Maven dependencies (`android/build.gradle`, `android/app/build.gradle`; no version catalog), the Hermes submodule, the Android SDK, NDK and build tools (AGENTS.md "Build toolchain") |
+
 ## Autonomous runs
 
 `/run-tickets` facts. The Read-Me-only steps (the phone, F-Droid, spikes) are in
