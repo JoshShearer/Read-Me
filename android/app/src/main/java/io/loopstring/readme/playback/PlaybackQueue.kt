@@ -86,11 +86,11 @@ class PlaybackQueue(
   // Reset only by a sentence that synthesized: a failing engine must not read silence to the end.
   private var consecutiveErrors = 0
   private var firstErrorIndex = -1
-  // REA-52: output failures (the player could not play a synthesized file). Counted apart from
-  // synthesis errors, which every synthesized sentence resets while synthesis runs ahead of the
-  // player; only a sentence that really started playing ends this run (onPlayerStart).
+  // REA-52: output failures (the player lost audio), each of which restarts the generation.
+  // Counted apart from synthesis errors, which every synthesized sentence resets while synthesis
+  // runs ahead of the player; only a sentence heard to its end (onPlayerDone) ends the run, so
+  // an output that starts a sentence and then fails never reads on.
   private var playerErrors = 0
-  private var firstPlayerErrorIndex = -1
   private var stallTicks = 0
   private var events = 0L
   private var lastProgress = 0L
@@ -300,7 +300,6 @@ class PlaybackQueue(
     val i = indexOf(id) ?: return
     events++
     stallTicks = 0
-    playerErrors = 0
     if (lastDoneAt >= 0) {
       val gap = clock() - lastDoneAt
       gaps += gap
@@ -331,6 +330,7 @@ class PlaybackQueue(
       stallTicks = 0
       inPlayer--
       lastDoneAt = clock()
+      playerErrors = 0
       advanceLocked(i)
     }
     if (pending != null) handOver(pending)
@@ -349,7 +349,7 @@ class PlaybackQueue(
         return
       }
       playerFailedLocked(i)
-      if (pipelined) advanceLocked(i) else null
+      null
     }
     if (pending != null) handOver(pending)
   }
@@ -448,15 +448,24 @@ class PlaybackQueue(
   }
 
   /**
-   * An output failure (REA-52): not the engine's fault, so no rebind. [MAX_CONSECUTIVE_ERRORS]
-   * in a row pause at the first of them, the first sentence not heard: a writer failure reports
-   * every buffered sentence at once, in order, so the first reported is the lowest.
+   * An output failure (REA-52): the player lost audio of sentence [i] (a file it cannot play, a
+   * failed write that reports every sentence it buffered). The engine is healthy, so nothing
+   * rebinds, and nothing is skipped or saved past: the generation restarts on a fresh output at
+   * the first sentence not finished ([current], or [i] if lower), so the listener hears the
+   * rest of it again. A writer failure reports its sentences one after another; the restart
+   * discards the generation, so the later reports are ignored and count once. A run of
+   * [MAX_CONSECUTIVE_ERRORS] restarts without any sentence finishing pauses there instead.
    */
   private fun playerFailedLocked(i: Int) {
     errors++
-    if (playerErrors == 0) firstPlayerErrorIndex = i
-    playerErrors++
-    if (playerErrors >= MAX_CONSECUTIVE_ERRORS) pauseAtLocked(firstPlayerErrorIndex)
+    val n = playerErrors + 1
+    val at = minOf(current, i)
+    if (n >= MAX_CONSECUTIVE_ERRORS) {
+      pauseAtLocked(at)
+      return
+    }
+    restartLocked(at)
+    playerErrors = n // restartLocked starts a user's run; this one continues
   }
 
   private fun failedLocked(i: Int) {
@@ -522,13 +531,9 @@ class PlaybackQueue(
   private fun endLocked(): Pending? {
     val id = itemId ?: return null
     if (!pipelined || fed < rows.size || inPlayer > 0) return null
-    if (consecutiveErrors > 0 || playerErrors > 0) {
+    if (consecutiveErrors > 0) {
       // The last sentences failed: that is not reading to the end (R-M11 archives only then).
-      val firstFailed = minOf(
-        if (consecutiveErrors > 0) firstErrorIndex else Int.MAX_VALUE,
-        if (playerErrors > 0) firstPlayerErrorIndex else Int.MAX_VALUE,
-      )
-      pauseAtLocked(firstFailed)
+      pauseAtLocked(firstErrorIndex)
       return null
     }
     // The finished item's pipeline goes now: anything of it not yet deleted (AGENTS.md 3).
