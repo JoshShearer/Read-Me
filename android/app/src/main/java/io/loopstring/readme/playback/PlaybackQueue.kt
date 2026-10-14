@@ -32,6 +32,10 @@ data class QueueStats(
  *
  * Ids are "<generation>:<index>". Every discard starts a new generation, so an answer that
  * arrives late for discarded work is ignored.
+ *
+ * REA-51: while paused, nothing the engine answers moves or saves the position, rebinds or
+ * starts audio. A failed or lost request discards the prefetch instead, and the next Play
+ * restarts at the start of the sentence the user heard (a lost engine is reported then).
  */
 class PlaybackQueue(
   private var synth: SentenceSynth,
@@ -94,6 +98,9 @@ class PlaybackQueue(
   // pause, stop, play or deletion meanwhile clears it, and the built item is then dropped.
   private var handover = 0L
   private var handoverSeq = 0L
+  // REA-51: the engine died (ERROR_SERVICE) while paused. Reported to the sink at the next start,
+  // so the rebind follows a user action and Read Me never starts speaking by itself.
+  private var engineLostWhilePaused = false
 
   private class Pending(val token: Long, val finishedId: Long, val skip: Set<Long>)
 
@@ -257,12 +264,19 @@ class PlaybackQueue(
     if (pending != null) handOver(pending)
   }
 
-  /** [lost]: the engine's process died (ERROR_SERVICE); else the sentence is skipped and counted. */
+  /**
+   * [lost]: the engine's process died (ERROR_SERVICE); else the sentence is skipped and counted.
+   * While paused neither applies (REA-51): see [pausedAnswerLocked].
+   */
   fun onSynthError(id: String, lost: Boolean) {
     val pending = synchronized(lock) {
       val i = indexOf(id) ?: return
       if (i !in fed until requested || outcome.containsKey(i)) return
       events++
+      if (!playing) {
+        pausedAnswerLocked(lost)
+        return
+      }
       if (lost) {
         lostLocked()
         return
@@ -376,15 +390,49 @@ class PlaybackQueue(
   }
 
   /**
-   * A rebound engine or a new voice (PlaybackService, called while paused). Paused stays
-   * paused; the rate is applied once more. Files the old engine made are discarded (ADR 0012),
-   * and so are its requests still in flight, which it may never answer: the next Play restarts
-   * at the current sentence's start on the new engine.
+   * A rebound engine or a new voice (PlaybackService). The rate is applied once more. Files the
+   * old engine made are discarded (ADR 0012), and so are its requests still in flight, which it
+   * may never answer: the next Play restarts at the current sentence's start on the new engine.
+   *
+   * REA-51: [retire] shuts the old speaker down, and runs only after the flush has left its
+   * generation, so the errors its stop() turns in-flight requests into are ignored. It runs
+   * outside the lock (binder calls) and in a finally, so the old speaker is never leaked.
+   * While playing, the new speaker is not ready yet (its synthesis would fail and read as a
+   * lost engine), so the queue pauses at the heard sentence and the service resumes on onReady;
+   * during a handover the chain ends instead, as a pause does there (ADR 0011).
    */
-  fun swapSynth(s: SentenceSynth) = synchronized(lock) {
-    if (pipelined && !playing) flushLocked()
-    synth = s
-    s.setRate(rate)
+  fun swapSynth(s: SentenceSynth, retire: () -> Unit = {}) {
+    try {
+      synchronized(lock) {
+        if (pipelined) flushLocked()
+        synth = s
+        engineLostWhilePaused = false
+        if (playing) {
+          if (handover != 0L) {
+            clearLocked()
+          } else {
+            playing = false
+            lastDoneAt = -1
+            saveLocked()
+            publishLocked()
+          }
+        }
+        s.setRate(rate)
+      }
+    } finally {
+      retire()
+    }
+  }
+
+  /**
+   * REA-51: an engine answer while paused (a request asked for before the pause failed, or the
+   * engine died). It must not move or save the position, count against the engine, or rebind,
+   * so the pipeline is discarded (every other answer of it is then ignored) and the next start
+   * restarts the current sentence; a lost engine is reported to the sink at that start.
+   */
+  private fun pausedAnswerLocked(lost: Boolean) {
+    flushLocked()
+    if (lost) engineLostWhilePaused = true
   }
 
   private fun failedLocked(i: Int) {
@@ -548,6 +596,13 @@ class PlaybackQueue(
   private fun restartLocked(index: Int) {
     // A user play during a handover wins over it (ADR 0011).
     handover = 0L
+    if (engineLostWhilePaused) {
+      // REA-51: the engine died while paused; report it now that the user asked for audio.
+      engineLostWhilePaused = false
+      current = index
+      lostLocked()
+      return
+    }
     flushLocked()
     stallTicks = 0
     // A new generation: errors before a jump or another item are not this run's.
@@ -677,6 +732,7 @@ class PlaybackQueue(
 
   private fun clearLocked() {
     handover = 0L
+    engineLostWhilePaused = false
     itemId = null
     rows = emptyList()
     sentences = emptyList()

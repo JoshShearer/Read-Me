@@ -68,7 +68,15 @@ them on its own output.
   end of ADR 0009's 30-minute window discards the unplayed files and restarts at the start of
   the current sentence, or of its current piece when it was split. A voice or engine change
   made while paused discards them at the swap, with any requests the old engine has not
-  answered.
+  answered. REA-51: the swap discards them before the old speaker is shut down, so the errors
+  its stop turns unanswered requests into belong to a generation the queue has left and are
+  ignored. A swap while playing (a voice or engine changed in Settings, then Play for another
+  item) cannot restart at once, since the new speaker is not ready: the queue pauses at the
+  heard sentence and the service starts again when the new engine is ready (`onReady`); during
+  a continuous-play handover it ends the chain instead (ADR 0011). While paused, an engine
+  answer for a request asked before the pause never moves or saves the position: a synthesis
+  error discards the files kept for the resume (Play then restarts the heard sentence from its
+  start) and is not counted against the engine.
 - **D3, the gap.** R-M07's gap is the player's end of sentence n to its start of n+1, on the
   service's clock. When the next file is not ready the output is fed silence rather than left
   to run dry: a dry `AudioTrack` holds the end of the last sentence back, and the gap would
@@ -77,7 +85,10 @@ them on its own output.
   logged once per item a user plays, not on a resume or at a continuous-play handover (which
   logs `playback handover ms=` instead).
 - **D5, engine loss** keeps its behaviour (REA-18, REA-25): a refused request or an
-  `ERROR_SERVICE` pauses at the current sentence and rebinds once per user Play. The stall
+  `ERROR_SERVICE` pauses at the current sentence and rebinds once per user Play. An
+  `ERROR_SERVICE` that arrives while paused rebinds nothing then (REA-51): it discards the
+  files, and the next Play reports the engine lost, which rebinds and resumes at the current
+  sentence. Read Me never starts speaking without a user action. The stall
   check no longer asks `isSpeaking`: no sentence audio and no engine answer for 15 s with a
   dead binding (`getVoice` asked outside the queue's lock), or for 2 minutes whatever the
   binding says, is a lost engine. A slow sentence on a live engine is not.

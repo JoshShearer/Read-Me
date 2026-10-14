@@ -261,6 +261,82 @@ class PlaybackServiceTest {
     c.destroy()
   }
 
+  // --- REA-51: a new speaker is swapped in before the old one is shut down; while paused, late
+  // engine answers neither move the position nor rebind ---
+
+  private fun lastTts() = org.robolectric.shadows.ShadowTextToSpeech.getLastTextToSpeechInstance()
+
+  /** The newest speaker's engine comes up through the real TtsSpeaker.onInit path. */
+  private fun engineUp() {
+    shadowOf(lastTts()).onInitListener.onInit(android.speech.tts.TextToSpeech.SUCCESS)
+    shadowOf(Looper.getMainLooper()).idle()
+  }
+
+  private fun offlineVoice(name: String) = android.speech.tts.Voice(
+    name, java.util.Locale.US, android.speech.tts.Voice.QUALITY_HIGH,
+    android.speech.tts.Voice.LATENCY_NORMAL, false, emptySet(),
+  )
+
+  @Test fun aPlayForAnotherItemAfterAVoiceChangePausesTheFirstUntilTheNewEngineIsReady() {
+    // begin() while another item plays: the old speaker was shut down while the queue still
+    // played its generation, so its stopped requests counted as errors against what was heard.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-a"))
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-b"))
+    Settings(ctx).voice = "v-a"
+    val a = Store.get(ctx).insertText("a", listOf("Hello World"), 1L)
+    PlaybackHub.offer(request(a))
+    val c = Robolectric.buildService(PlaybackService::class.java, intent(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    idle()
+    engineUp()
+    assertEquals(a, PlaybackHub.queue!!.snapshot().itemId)
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    val first = lastTts()
+
+    Settings(ctx).voice = "v-b"
+    val b = Store.get(ctx).insertText("b", listOf("Hello World"), 2L)
+    PlaybackHub.offer(request(b))
+    c.withIntent(intent(PlaybackCommands.ACTION_START)).startCommand(0, 2)
+    idle()
+    assertFalse(first === lastTts())
+    val s = PlaybackHub.queue!!.snapshot()
+    assertEquals(a, s.itemId)
+    assertFalse(s.playing)
+    assertEquals(b, PlaybackHub.last.waitingItemId)
+    // The sentence that was playing is where the first item resumes.
+    assertEquals(io.loopstring.readme.store.PositionRow(0, 0), Store.get(ctx).position(a))
+
+    engineUp()
+    assertEquals(b, PlaybackHub.queue!!.snapshot().itemId)
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    Settings(ctx).voice = null
+    c.destroy()
+  }
+
+  @Test fun anEngineDeathWhilePausedNeitherRebindsNorResumesUntilPlay() {
+    val c = playing()
+    c.withIntent(intent(PlaybackCommands.ACTION_PAUSE)).startCommand(0, 2)
+    idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    val before = lastTts()
+    // ERROR_SERVICE for the request still in flight (sentence 1), whatever its generation.
+    for (g in 0..10) c.get().onSynthError("$g:1", lost = true)
+    idle()
+    assertTrue("rebound while paused", before === lastTts())
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    // Play rebinds, and the new engine resumes the item.
+    c.withIntent(intent(PlaybackCommands.ACTION_PLAY)).startCommand(0, 3)
+    idle()
+    assertFalse(before === lastTts())
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
   // --- REA-35: a play request waiting for a cold engine (the engine is PENDING) ---
 
   private fun intent(action: String) =

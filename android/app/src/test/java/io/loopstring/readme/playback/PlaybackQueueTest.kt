@@ -25,6 +25,9 @@ class PlaybackQueueTest {
     var aliveCheck: () -> Unit = {}
     /** Answer inside synthesize, as an engine on the same thread could. */
     var answerAtOnce = false
+    /** REA-51: TtsSpeaker forwards onStop as an error for each request still in flight. */
+    var onStop: () -> Unit = {}
+    var failRate = false
     override fun synthesize(id: String, text: String, file: File): Boolean {
       if (refuse) return false
       requested += id
@@ -34,8 +37,11 @@ class PlaybackQueueTest {
       if (answerAtOnce) queue.onSynthDone(id)
       return true
     }
-    override fun stop() { stops++ }
-    override fun setRate(rate: Float) { rates += rate }
+    override fun stop() { stops++; onStop() }
+    override fun setRate(rate: Float) {
+      if (failRate) throw IllegalStateException("engine gone")
+      rates += rate
+    }
     override fun alive(): Boolean { aliveCheck(); return alive }
   }
 
@@ -599,6 +605,145 @@ class PlaybackQueueTest {
     assertEquals(enqueued, player.enqueued.size)
   }
 
+  // --- REA-51: while paused, late engine answers move nothing, and a swap retires the old
+  // speaker only after the queue has left its generation ---
+
+  /** Item 7 playing sentence 0, with 1-3 asked of the engine and unanswered; their generation. */
+  private fun inFlight(): String {
+    queue.load(7, rows, 0, 2.0f)
+    synthDone(0)
+    start(0)
+    assertEquals(listOf("0", "1", "2", "3"), indices(synth.requested))
+    return g()
+  }
+
+  @Test fun oldEngineStopsBeforeAPausedSwapDoNotSkipText() {
+    // The ticket's probe: pause in sentence 0, the old engine's stop answers 1-3 as errors, the
+    // swap, Play. The new engine was asked for [1..4] and sentence 0's rest was never heard.
+    val g = inFlight()
+    queue.pause()
+    synth.onStop = { (1..3).forEach { queue.onSynthError("$g:$it", lost = false) } }
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh) { synth.stop() }
+    assertTrue(queue.resume())
+    assertEquals(listOf("0", "1", "2", "3"), indices(fresh.requested))
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    assertEquals(0, queue.takeStats().errors)
+  }
+
+  @Test fun aSwapWhilePlayingFlushesBeforeTheOldSpeakerIsRetired() {
+    // begin(): a voice changed in Settings, then Play for another item while this one plays.
+    val g = inFlight()
+    synth.onStop = { (1..3).forEach { queue.onSynthError("$g:$it", lost = false) } }
+    val flushes = player.flushes
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh) { synth.stop() }
+    assertTrue(player.flushes > flushes)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(rows[0], queue.snapshot().sentence)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    assertEquals(0, sink.lost)
+    assertEquals(0, queue.takeStats().errors)
+    // The restart is the new engine's, once it is ready (the service's onReady).
+    assertTrue(queue.resume())
+    assertEquals(listOf("0", "1", "2", "3"), indices(fresh.requested))
+  }
+
+  @Test fun theOldSpeakerIsRetiredAfterTheFlushEvenIfTheSwapThrows() {
+    val g = inFlight()
+    val flushes = player.flushes
+    var retiredAfterFlush = false
+    val fresh = FakeSynth().apply { failRate = true }
+    val swapped = runCatching { queue.swapSynth(fresh) { retiredAfterFlush = player.flushes > flushes } }
+    assertTrue(swapped.isFailure)
+    assertTrue(retiredAfterFlush)
+    // The old generation is left: its answers no longer count.
+    queue.onSynthError("$g:1", lost = true)
+    assertEquals(0, sink.lost)
+  }
+
+  @Test fun lateSynthesisErrorsWhilePausedLeaveThePositionAlone() {
+    val g = inFlight()
+    queue.pause()
+    val saves = sink.saves.size
+    (1..3).forEach { queue.onSynthError("$g:$it", lost = false) }
+    assertEquals(saves, sink.saves.size)
+    assertEquals(rows[0], queue.snapshot().sentence)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(0, sink.lost)
+    assertEquals(0, queue.takeStats().errors)
+    val before = synth.requested.size
+    assertTrue(queue.resume())
+    val after = synth.requested.drop(before)
+    assertTrue(after.none { it.startsWith("$g:") })
+    assertEquals(listOf("0", "1", "2", "3"), indices(after))
+  }
+
+  @Test fun oneLateErrorWhilePausedRestartsTheHeardSentenceOnPlay() {
+    val g = inFlight()
+    queue.pause()
+    queue.onSynthError("$g:1", lost = false)
+    val before = synth.requested.size
+    assertTrue(queue.resume())
+    val after = synth.requested.drop(before)
+    assertTrue(after.none { it.startsWith("$g:") })
+    assertEquals(listOf("0", "1", "2", "3"), indices(after))
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    assertEquals(0, queue.takeStats().errors)
+  }
+
+  @Test fun anEngineDeathWhilePausedWaitsForPlayToRebind() {
+    val g = inFlight()
+    queue.pause()
+    val saves = sink.saves.size
+    val asked = synth.requested.size
+    queue.onSynthError("$g:1", lost = true)
+    assertEquals(0, sink.lost)
+    assertEquals(saves, sink.saves.size)
+    assertEquals(asked, synth.requested.size)
+    assertFalse(queue.snapshot().playing)
+    // Play: the engine is reported lost now, at the heard sentence; nothing is asked of it.
+    assertTrue(queue.resume())
+    assertEquals(1, sink.lost)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(Triple(7L, 0, 0), sink.saves.last())
+    assertEquals(asked, synth.requested.size)
+    // The service rebinds (recoverEngine's swap) and onReady resumes on the new engine.
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh)
+    assertTrue(queue.resume())
+    assertEquals(listOf("0", "1", "2", "3"), indices(fresh.requested))
+    assertEquals(1, sink.lost)
+  }
+
+  @Test fun answersFromALeftGenerationAreIgnoredAfterASwap() {
+    val g = inFlight()
+    queue.pause()
+    queue.swapSynth(FakeSynth())
+    val saves = sink.saves.size
+    val enqueued = player.enqueued.size
+    queue.onSynthError("$g:1", lost = false)
+    queue.onSynthError("$g:2", lost = true)
+    queue.onSynthDone("$g:3")
+    assertEquals(saves, sink.saves.size)
+    assertEquals(0, sink.lost)
+    assertEquals(enqueued, player.enqueued.size)
+    assertEquals(0, queue.takeStats().errors)
+  }
+
+  @Test fun aSwapClearsAnEngineLostWhilePaused() {
+    // follow(): the engine died while paused, then a voice change and Play bind a new speaker.
+    val g = inFlight()
+    queue.pause()
+    queue.onSynthError("$g:1", lost = true)
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh)
+    assertTrue(queue.resume())
+    assertEquals(0, sink.lost)
+    assertTrue(queue.snapshot().playing)
+    assertEquals(listOf("0", "1", "2", "3"), indices(fresh.requested))
+  }
+
   @Test fun aJumpEndsTheErrorRun() {
     // Critique: two errors, Next, Next, then one error paused back at sentence 0.
     queue.load(7, rows, 0, 2.0f)
@@ -1106,6 +1251,21 @@ class PlaybackQueueTest {
     assertTrue(sink.snapshots.none { it.itemId == 8L })
     assertFalse(queue.resume())
     assertTrue(leftover().none { it.startsWith("play-8-") })
+  }
+
+  @Test fun aSwapDuringAHandoverEndsTheChain() {
+    // REA-51, ADR 0011: a new speaker while the next item is built ends the chain as a pause does.
+    sink.next = NextItem(8, rows8, 0)
+    val fresh = FakeSynth()
+    val done = duringHandover { queue.swapSynth(fresh) }
+    finishSeven()
+    assertTrue(done())
+    assertEquals(listOf(7L), sink.finished)
+    assertNull(queue.snapshot().itemId)
+    assertFalse(queue.snapshot().playing)
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+    assertTrue(sink.saves.none { it.first == 8L })
+    assertTrue(fresh.requested.isEmpty())
   }
 
   @Test fun aStopDuringTheHandoverEndsTheChain() {

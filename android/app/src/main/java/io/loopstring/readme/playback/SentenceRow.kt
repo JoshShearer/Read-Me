@@ -57,7 +57,10 @@ interface PlaybackSink {
   /** R-S05: the next item's first sentence started [ms] after the last one ended (a log line). */
   fun handedOver(fromId: Long, toId: Long, ms: Long) {}
   fun changed(snapshot: PlaybackSnapshot)
-  /** The engine refused work or died while the queue played; the queue has paused. */
+  /**
+   * The engine refused work or died while the queue played; the queue has paused. An engine that
+   * died while paused is reported at the next start instead (REA-51), never by itself.
+   */
   fun engineLost()
   /** Milliseconds from a play request to the first frame heard (REA-31, logged). */
   fun firstAudio(itemId: Long, ms: Long) {}
