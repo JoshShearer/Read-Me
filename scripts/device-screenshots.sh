@@ -87,8 +87,8 @@ wait_for 'The quiet hour before work'
 shot 1
 tap_node text 'The quiet hour before work[^"]*'
 wait_for 'content-desc="trim done"'
-tap_node content-desc 'paragraph 2'
-wait_for 'content-desc="paragraph 2 cut"'
+tap_node resource-id 'paragraph 2'
+wait_for 'resource-id="paragraph 2 cut"'
 shot 2
 tap_node content-desc 'trim done'
 wait_for 'content-desc="play"'

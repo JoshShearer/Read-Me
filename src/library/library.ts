@@ -103,7 +103,9 @@ async function drainItem(item: Item, extract: Extract): Promise<boolean> {
 
 async function drainOnce(extract: Extract): Promise<number> {
   let n = 0;
-  for (const item of await listItems()) {
+  // The fetched items only (REA-50): listing the library would compute every item's stats on
+  // each change event, a Trim tap included.
+  for (const item of (await Native.listFetched()).map(toItem)) {
     if (item.state !== 'fetched') continue;
     // One item's native failure (deleted mid-drain, a storage error) must not hold up the rest;
     // the item stays fetched and the next drain tries it again.
@@ -137,6 +139,17 @@ export function drainFetched(extract: Extract = extractArticle): Promise<number>
     running = null;
   });
   return running;
+}
+
+/**
+ * Drains now and on every store change, whichever screen is open (REA-50: items fetched while
+ * Settings, the Reader or Trim was open waited for the List). Returns the unsubscribe.
+ */
+export function watchFetched(extract: Extract = extractArticle): () => void {
+  drainFetched(extract).catch(() => undefined);
+  return onItemsChanged(() => {
+    drainFetched(extract).catch(() => undefined);
+  });
 }
 
 export const retryFetch = (id: number) => Native.retryFetch(id);

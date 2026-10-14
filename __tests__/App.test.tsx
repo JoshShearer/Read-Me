@@ -37,6 +37,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
       paragraphs: [{ kind: 'p', text: 'Alpha here. Beta here.' }],
       cuts: [],
     })),
+    listFetched: jest.fn(async () => []),
     getBody: jest.fn(async () => null),
     completeExtraction: jest.fn(async () => true),
     markOpened: jest.fn(async () => true),

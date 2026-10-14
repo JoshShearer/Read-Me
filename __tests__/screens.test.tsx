@@ -1,4 +1,5 @@
 import React from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { NativeItem } from '../src/native/NativeReadMeSpeech';
 
@@ -151,7 +152,7 @@ test('quick Trim taps keep every cut (final review Important 2)', async () => {
     r = ReactTestRenderer.create(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
   });
   mounted.push(r);
-  const tap = (label: string) => r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function').props.onPress();
+  const tap = (id: string) => r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function').props.onPress();
   // Two taps before the store's change event brings back a fresh item.
   await ReactTestRenderer.act(async () => {
     tap('paragraph 1');
@@ -164,6 +165,100 @@ test('quick Trim taps keep every cut (final review Important 2)', async () => {
 test('Trim of a deleted item says so', async () => {
   const out = await render(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
   expect(out).toContain('This item was deleted.');
+});
+
+// R-M10, REA-50: only a missing item is "deleted"; any other failure has its own state.
+const failure = () => new Error('library operation failed: SQLiteException');
+
+async function mount(el: React.ReactElement) {
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(el);
+  });
+  mounted.push(r);
+  return r;
+}
+const shown = (r: ReactTestRenderer.ReactTestRenderer) => strings(r.toJSON()).join('\n');
+const press = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+  ReactTestRenderer.act(async () => {
+    r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function').props.onPress();
+  });
+
+for (const [name, el] of [
+  ['Reader', () => <ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />],
+  ['Trim', () => <TrimScreen id={1} onDone={() => {}} onGone={() => {}} />],
+] as const) {
+  test(`${name}: a getItem failure is not "deleted" and offers Retry and Back`, async () => {
+    (Native.getItem as jest.Mock).mockRejectedValueOnce(failure());
+    const r = await mount(el());
+    expect(shown(r)).toContain('Could not open this item.');
+    expect(shown(r)).not.toContain('This item was deleted.');
+    expect(shown(r)).toContain('Back to the list');
+    mockState.detail = {
+      item: { ...base, kind: 'text', openedAt: 1 },
+      paragraphs: [{ kind: 'p', text: 'Recovered.' }],
+      cuts: [],
+    };
+    await press(r, 'Retry');
+    expect(shown(r)).toContain('Recovered.');
+    expect(shown(r)).not.toContain('Could not open this item.');
+  });
+
+  test(`${name}: keeps its text when a reload fails`, async () => {
+    mockState.detail = {
+      item: { ...base, kind: 'text', openedAt: 1 },
+      paragraphs: [{ kind: 'p', text: 'Loaded.' }],
+      cuts: [],
+    };
+    const r = await mount(el());
+    (Native.getItem as jest.Mock).mockRejectedValueOnce(failure());
+    await ReactTestRenderer.act(async () => {
+      DeviceEventEmitter.emit('ReadMeItemsChanged');
+    });
+    expect(shown(r)).toContain('Loaded.');
+    expect(shown(r)).not.toContain('Could not open this item.');
+  });
+
+  test(`${name}: deleted stays deleted when a later reload fails`, async () => {
+    const r = await mount(el());
+    expect(shown(r)).toContain('This item was deleted.');
+    (Native.getItem as jest.Mock).mockRejectedValueOnce(failure());
+    await ReactTestRenderer.act(async () => {
+      DeviceEventEmitter.emit('ReadMeItemsChanged');
+    });
+    expect(shown(r)).toContain('This item was deleted.');
+    expect(shown(r)).not.toContain('Could not open this item.');
+  });
+}
+
+test('Trim paragraphs are read by their own text, with a hint (REA-50 TalkBack)', async () => {
+  mockState.detail = {
+    item: { ...base, kind: 'text' },
+    paragraphs: [{ kind: 'p', text: 'First.' }, { kind: 'p', text: 'Second.' }],
+    cuts: [1],
+  };
+  const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+  const node = r.root.find(n => n.props.testID === 'paragraph 2 cut' && typeof n.props.onPress === 'function');
+  expect(node.props.accessibilityLabel).toBeUndefined();
+  const inside = node.findAll(n => typeof n.props.children === 'string').map(n => n.props.children);
+  expect(inside).toEqual(expect.arrayContaining(['Second.', 'cut']));
+  expect(node.props.accessibilityHint).toMatch(/restore/);
+  const kept = r.root.find(n => n.props.testID === 'paragraph 1' && typeof n.props.onPress === 'function');
+  expect(kept.props.accessibilityHint).toMatch(/cut/);
+  expect(r.root.findAll(n => typeof n.props.accessibilityLabel === 'string' && /^paragraph /.test(n.props.accessibilityLabel)).length).toBe(0);
+});
+
+test("Reader's current paragraph is read by its text and marked selected (REA-50 TalkBack)", async () => {
+  mockState.detail = text(['One two. Three four.']);
+  (Native.getPlayback as jest.Mock).mockResolvedValueOnce({
+    itemId: 1, playing: true, paragraphIndex: 0, start: 0, end: 8, rate: 2, engine: 'ready',
+  });
+  const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  expect(r.root.findAll(n => n.props.accessibilityLabel === 'current paragraph').length).toBe(0);
+  const current = r.root.findAll(n => n.props.testID === 'current paragraph');
+  expect(current.length).toBeGreaterThan(0);
+  const selected = current[0].findAll(n => n.props.accessibilityState?.selected === true);
+  expect(selected.length).toBeGreaterThan(0);
 });
 
 const text = (paragraphs: string[], cuts: number[] = []) => ({
@@ -405,7 +500,7 @@ describe('theme on the screens (REA-24)', () => {
   test('a cut Trim paragraph is onSurface at FAINT and struck through', async () => {
     mockState.detail = text(['Kept.', 'Gone.'], [1]);
     const r = await create(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
-    const cut = flat(r.root.find(n => n.props.accessibilityLabel === 'paragraph 2 cut' && typeof n.props.onPress === 'function')
+    const cut = flat(r.root.find(n => n.props.testID === 'paragraph 2 cut' && typeof n.props.onPress === 'function')
       .findAll(n => n.type === RN.Text)[0].props.style);
     expect(cut).toMatchObject({ color: blend(p.onSurface, p.surface, FAINT), textDecorationLine: 'line-through' });
     expect(cut.opacity).toBeUndefined();

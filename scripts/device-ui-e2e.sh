@@ -82,10 +82,12 @@ tap_node() {
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
-# centre_of <ERE on content-desc>: prints "x y" of the first matching node, or nothing.
+# centre_of <attr> <ERE>: prints "x y" of the first node whose <attr> matches, or nothing.
+# Paragraphs are found by resource-id (their testID): since REA-50 they carry no content-desc,
+# so TalkBack reads their text.
 centre_of() {
   local b
-  b=$(ui | grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+  b=$(ui | grep -oE "$1=\"$2\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
     | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
   [ -n "$b" ] || return 0
   set -- $b
@@ -124,15 +126,15 @@ on_screen 'share the text to Read Me' || fail=1
 # First open goes to Trim (R-M05); cut paragraph 2 by tapping it, then Done
 tap_node text 'Shared text · 92 words'
 on_screen 'content-desc="trim done"' || fail=1
-tap_node content-desc 'paragraph 2'
-on_screen 'content-desc="paragraph 2 cut"' || fail=1
-device_has "$(ui)" 'content-desc="paragraph (1|3) cut"' && { echo "FAIL: the wrong paragraph was cut"; fail=1; }
+tap_node resource-id 'paragraph 2'
+on_screen 'resource-id="paragraph 2 cut"' || fail=1
+device_has "$(ui)" 'resource-id="paragraph (1|3) cut"' && { echo "FAIL: the wrong paragraph was cut"; fail=1; }
 on_screen '2 of 3 paragraphs kept' || fail=1
 tap_node content-desc 'trim done'
 
 # Reader plays only the kept sentences and highlights the current one (R-M07)
 on_screen 'content-desc="play"' || fail=1
-play_at=$(centre_of play)
+play_at=$(centre_of content-desc play)
 [ -n "$play_at" ] || { echo "FAIL: no play button"; exit 1; }
 adb shell input tap $play_at
 for _ in $(seq 20); do device_has "$(logs)" 'playback start item=1 ' && break; sleep 1; done
@@ -241,14 +243,14 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 tap_node text 'Delta sentence 1 keeps going[^"]*'
 tap_node content-desc 'trim done'
 on_screen 'content-desc="play"' || fail=1
-long_play=$(centre_of play)
+long_play=$(centre_of content-desc play)
 adb shell input tap $long_play
 # Counted, not matched by id: the deleted dead link's id may be reused.
 for _ in $(seq 20); do [ "$(logs | grep -c 'playback start item=' || true)" -ge 2 ] && break; sleep 1; done
 sleep 2
 adb shell input tap $long_play
 for _ in $(seq 10); do [ "$(logs | grep -c 'playback paused item=' || true)" -ge 2 ] && break; sleep 1; done
-next_at=$(centre_of 'next sentence')
+next_at=$(centre_of content-desc 'next sentence')
 [ -n "$next_at" ] || { echo "FAIL: no next sentence button for the loaded item"; fail=1; }
 if [ -n "$next_at" ]; then
   for _ in $(seq 50); do adb shell input tap $next_at; sleep 0.2; done
@@ -325,10 +327,11 @@ else
   tap_node content-desc 'trim done'
   on_screen 'content-desc="play"' || fail=1
   sleep 3 # the Reader settles (it cannot be dumped while it updates)
-  play_at=$(centre_of play); faster_at=$(centre_of faster); trim_at=$(centre_of trim)
+  play_at=$(centre_of content-desc play); faster_at=$(centre_of content-desc faster); trim_at=$(centre_of content-desc trim)
   tap_node content-desc trim
   on_screen 'content-desc="trim done"' || fail=1
-  p1_at=$(centre_of 'paragraph 1'); p2_at=$(centre_of 'paragraph 2'); done_at=$(centre_of 'trim done')
+  p1_at=$(centre_of resource-id 'paragraph 1'); p2_at=$(centre_of resource-id 'paragraph 2')
+  done_at=$(centre_of content-desc 'trim done')
   tap_node content-desc 'trim done'
   if [ -z "$play_at" ] || [ -z "$faster_at" ] || [ -z "$trim_at" ] || [ -z "$p1_at" ] || [ -z "$p2_at" ] || [ -z "$done_at" ]; then
     echo "FAIL: cold start (REA-35): a control was not found on screen"; fail=1
@@ -397,8 +400,8 @@ else
       # The cut still landed: put paragraph 1 back so the next attempt cuts it again.
       pause_now
       tap_node content-desc trim
-      tap_node content-desc 'paragraph 1 cut'
-      on_screen 'content-desc="paragraph 1"' || fail=1
+      tap_node resource-id 'paragraph 1 cut'
+      on_screen 'resource-id="paragraph 1"' || fail=1
       tap_node content-desc 'trim done'
       on_screen 'content-desc="play"' || fail=1
     done

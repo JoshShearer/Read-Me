@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, BackHandler, StatusBar, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { markOpened, type Item } from './src/library/library';
+import { markOpened, watchFetched, type Item } from './src/library/library';
 import { getPlayback, handedOver, onPlayback, type Playback } from './src/library/playback';
 import { LicensesScreen } from './src/ui/LicensesScreen';
 import { ListScreen } from './src/ui/ListScreen';
@@ -19,6 +19,9 @@ function Main() {
   const scheme = useColorScheme();
   const [stack, setStack] = useState<Route[]>([{ name: 'list' }]);
   const top = stack[stack.length - 1];
+
+  // ADR 0007's drain runs whatever screen is open (REA-50).
+  useEffect(() => watchFetched(), []);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {

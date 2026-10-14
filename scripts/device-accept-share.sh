@@ -57,8 +57,8 @@ adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 
 echo "== share, trim, play at 2.0x"
 tap text 'ready'
-tap content-desc 'paragraph 2'
-device_has "$(ui)" 'content-desc="paragraph 2 cut"' || { echo "FAIL: paragraph 2 not cut"; fail=1; }
+tap resource-id 'paragraph 2'
+device_has "$(ui)" 'resource-id="paragraph 2 cut"' || { echo "FAIL: paragraph 2 not cut"; fail=1; }
 tap content-desc 'trim done'
 play_at=$(centre_of content-desc play)
 adb shell input tap $play_at

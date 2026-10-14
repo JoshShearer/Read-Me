@@ -106,8 +106,8 @@ for mode in light dark; do
     tap_node content-desc 'trim'
     wait_for 'content-desc="trim done"'
   fi
-  device_has "$(ui)" 'content-desc="paragraph 2 cut"' || tap_node content-desc 'paragraph 2'
-  wait_for 'content-desc="paragraph 2 cut"'
+  device_has "$(ui)" 'resource-id="paragraph 2 cut"' || tap_node resource-id 'paragraph 2'
+  wait_for 'resource-id="paragraph 2 cut"'
   shot "$mode-2-trim"
   tap_node content-desc 'trim done'
   wait_for 'content-desc="play"'
