@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # npm run device:continuous - R-S05 on the phone, WITHOUT clearing Read Me's data (it runs on the
 # owner's own library). Installs over the current build (adb install -r, data kept), notes
-# Settings' Continuous play switch and turns it on, shares three synthetic texts (T3 newest and
-# short, T2 short, T1 oldest and long), checks they are the top three unread rows, opens T3 (Trim,
+# Settings' Continuous play switch and turns it on, shares four synthetic texts (a long buffer
+# first, then T1 long, T2 short, T3 newest and short), checks they are the top four unread rows
+# (T3, T2, T1, buffer) and all ready, opens T3 (Trim,
 # then the Reader), plays it and turns the screen off. From the service's log lines (ids and
 # counts only) it checks that T3 hands over to T2 and T2 to T1 with the screen off, each archived
 # at its end and the next two started by the service (no JS start), then that the user's first
 # open of T2 from Archive still shows Trim (R-M05, ADR 0011).
 #
-# Safety on the owner's library. The owner's unread items sort below T1, so the chain must never
-# go past it:
+# Safety on the owner's library. The owner's unread items sort below the test items, so the chain
+# must never go past them (REA-47):
 #  - each test item is identified by its distinct sentence count in the service's own log line,
-#    and only after the three were seen as the top three unread rows (List order is the chain's
-#    order); an item that does not match stops Read Me at once;
+#    and only after the four were seen as the top four unread rows, each ready (List order is the
+#    chain's order; a non-ready item is skipped); an item that does not match stops Read Me at once;
+#  - the buffer (the oldest test item, directly below T1) is never meant to play: it is what the
+#    chain reaches if T1 ends before the switch is off, instead of the owner's newest item. A
+#    background watcher force-stops Read Me within about a second of T1's continue line, and the
+#    script checks the watcher is alive and stops Read Me itself when it is not;
 #  - while T1 (long) plays, the script wakes the screen and turns the switch OFF through Settings
 #    (the service reads it at each handover, so the chain ends after T1). That needs the owner to
 #    unlock within SWITCH_DEADLINE seconds (default 45; T1 lasts well over a minute even at 4.0x).
@@ -20,8 +25,11 @@
 #  - Read Me is stopped with `am force-stop` of its own package, never a media key (another
 #    app's session can hold those, REA-31). The EXIT trap does this on every exit once playback
 #    has started and has not ended by itself, restores the switch and deletes the test items;
-#  - every id in a playback log line is checked against the three test ids, while T1 plays and
-#    again at exit; a non-test id stops Read Me and fails the run loudly.
+#  - every id in a playback log line is checked against the test ids, while T1 plays and again
+#    at exit; a non-test id stops Read Me and fails the run loudly. A buffer that played is a test
+#    item (recognised from the log line itself), but the run fails as NOT COMPLETED;
+#  - a full run refuses to start while an earlier run's state file (the owner's original switch
+#    setting) is still there: CLEANUP_ONLY=1 restores it first.
 # Cleanup needs an unlocked screen: the trap waits UNLOCK_WAIT seconds (default 180) for it, or
 # says what is left; CLEANUP_ONLY=1 npm run device:continuous does only the cleanup. SCREEN_OFF=0
 # keeps the screen on (Read Me in the background only), for a run nobody has to unlock.
@@ -33,12 +41,13 @@ SCREEN_OFF=${SCREEN_OFF:-1}
 UNLOCK_WAIT=${UNLOCK_WAIT:-180}
 SWITCH_DEADLINE=${SWITCH_DEADLINE:-45}
 # Titles are the first paragraph (Intake.textTitle), read as a sentence of their own; the marker
-# word finds them on screen. Oldest first: TITLES[0] is T1, read last.
+# word finds them on screen. TITLES[0] is T1, read last; TITLES[3] is the buffer, shared first.
 MARK=Kestrel
-TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three.")
+TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "$MARK test item buffer.")
 # Body sentences per item. Distinct counts identify each item in the service's log line; T1 is
-# long (about 7500 characters) so the switch can be turned off while it plays.
-BODY=(150 5 3)
+# long (about 7500 characters) so the switch can be turned off while it plays. The buffer is at
+# least as long: it only has to outlast the watcher's reaction (an estimated few seconds).
+BODY=(150 5 3 160)
 STATE_FILE="$PRIMARY/.claude/scratch/device-continuous.before"
 
 FAIL=0       # any check failed
@@ -47,6 +56,9 @@ ENDED=0      # the chain ended by itself with the switch off; nothing is playing
 CLEARED=0    # logcat was cleared before the shares: every playback line is this run's
 SHARED=0     # test items may exist on the phone
 TEST_IDS=""  # verified test item ids
+ID1=""       # T1's id, once known: the buffer is what follows it
+BUFFER_PLAYED=0 BUFFER_ID=""
+WATCH_PID="" WATCH_MARK=""  # the chain watcher (REA-47) and its informational marker file
 
 # --- pure helpers (tested off the phone by scripts/tests/device-continuous.test.sh) ---
 
@@ -59,7 +71,7 @@ body_text() {
   echo "${out# }"
 }
 # count_ok <index into BODY> <sentences logged>: the title sentence plus the body, with one of
-# slack either way for a segmentation difference; the three windows never overlap.
+# slack either way for a segmentation difference; the four windows never overlap.
 count_ok() {
   local b=${BODY[$1]}
   [ "$2" -ge "$b" ] && [ "$2" -le $((b + 2)) ]
@@ -86,6 +98,37 @@ row_titles() {
 }
 # field <line> <name>: the number after name= in a log line.
 field() { grep -oE "(^| )$2=[0-9]+" <<<"$1" | head -1 | cut -d= -f2; }
+# rows_ok <ui dump>: the top four unread rows are T3, T2, T1 and the buffer, in that order.
+rows_ok() {
+  [ "$(row_titles "$1" | head -4 | tr '\n' '|')" = "${TITLES[2]}|${TITLES[1]}|${TITLES[0]}|${TITLES[3]}|" ]
+}
+# rows_ready <ui dump>: each of the top four rows shows the badge "ready". Continuous play skips
+# an item that is not ready, so a fetching buffer would let the chain reach the owner's item. A
+# badge is a Text with nothing naming its row, so the dump is split at each row's delete button
+# (the last node of a row): segment i holds row i's badge.
+rows_ready() {
+  local segs i
+  segs=$(tr -d '\n' <<<"$1" | sed 's/content-desc="delete /\n/g')
+  for i in 1 2 3 4; do
+    device_has "$(sed -n "${i}p" <<<"$segs")" 'text="ready"' || return 1
+  done
+}
+# buffer_seen <log>: when T1's continue line names an item with the buffer's sentence count, read
+# from its start and older than T1, that item is the buffer: its id joins TEST_IDS and
+# BUFFER_PLAYED is set. Read from the log itself, so it never depends on the watcher's timing.
+buffer_seen() {
+  local line id
+  [ -n "$ID1" ] || return 0
+  line=$(grep -oE "playback continue from=$ID1 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" <<<"$1" | head -1 || true)
+  [ -n "$line" ] || return 0
+  id=$(field "$line" item)
+  if count_ok 3 "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -lt "$ID1" ]; then
+    case " $TEST_IDS " in *" $id "*) ;; *) TEST_IDS+=" $id" ;; esac
+    BUFFER_PLAYED=1
+    BUFFER_ID=$id
+  fi
+  return 0
+}
 
 # --- phone ---
 
@@ -166,9 +209,11 @@ stop_readme() {
 }
 # guard: Read Me must never have read a non-test item. Stops it and fails loudly if it did.
 guard() {
-  local bad
+  local bad log
   [ "$CLEARED" = 1 ] || return 0
-  bad=$(foreign_ids "$(logs)" "$TEST_IDS")
+  log=$(logs)
+  buffer_seen "$log"
+  bad=$(foreign_ids "$log" "$TEST_IDS")
   [ -z "$bad" ] && return 0
   stop_readme
   echo "FAIL: NON-TEST ITEM PLAYED: id(s) $(tr '\n' ' ' <<<"$bad")- check them in the owner's List and Archive"
@@ -176,6 +221,56 @@ guard() {
   return 1
 }
 die() { echo "FAIL: $*"; FAIL=1; exit 1; }
+
+# watch_chain <T1 id> <marker file> [max polls]: runs in the background from T1's start. Each
+# second it reads the log; on T1's continue line (the chain went past T1, into the buffer) it
+# force-stops Read Me at once, then writes "<item> <sentences> <start> <ms>" to the marker (ids and
+# counts only; ms: from the last read that did not show the line to the stop, an upper bound on
+# its reaction). Errexit is off in it: a failed read must not end the only stopper while the
+# switch is being turned off. 1800 polls of at least a second each outlast the run (T1's
+# finish is waited 900 s at most).
+watch_chain() {
+  set +e
+  local i line prev now
+  prev=$(date +%s%3N)
+  for ((i = 0; i < ${3:-1800}; i++)); do
+    now=$(date +%s%3N)
+    line=$(logs | grep -oE "playback continue from=$1 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" | head -1)
+    if [ -n "$line" ]; then
+      stop_readme
+      echo "$(field "$line" item) $(field "$line" sentences) $(field "$line" start) $(($(date +%s%3N) - prev))" > "$2"
+      echo "watcher: the chain went past item $1 (to item $(field "$line" item)); Read Me stopped"
+      return 0
+    fi
+    prev=$now
+    sleep 1
+  done
+  return 0
+}
+watcher_alive() { [ -n "$WATCH_PID" ] && kill -0 "$WATCH_PID" 2>/dev/null; }
+# check_watch: while T1 plays and the switch is still on. Stops Read Me and fails the run if the
+# chain already went past T1 (the buffer started) or the watcher is gone.
+check_watch() {
+  buffer_seen "$(logs)"
+  if [ "$BUFFER_PLAYED" = 1 ]; then
+    stop_readme
+    die "NOT COMPLETED: item $ID1 ended before Continuous play was off; the buffer ($BUFFER_ID) started and Read Me was stopped"
+  fi
+  watcher_alive || { stop_readme; die "the chain watcher is not running; stopped Read Me"; }
+}
+# share_all: the four texts, oldest first, so List order (newest first) is T3, T2, T1, buffer.
+# Text on stdin, never in the adb argv, which adbd logs (AGENTS.md, SPIKE-01).
+share_all() {
+  local k text
+  for k in 3 0 1 2; do
+    text="${TITLES[$k]}
+
+$(body_text "${BODY[$k]}")"
+    printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$text")" \
+      | adb shell >/dev/null
+    sleep 1
+  done
+}
 
 cleanup() {
   local fail=0 t view
@@ -203,6 +298,10 @@ on_exit() {
   local bad=0 i
   if [ "$PLAYED" = 1 ] && [ "$ENDED" = 0 ]; then stop_readme; fi
   guard || bad=1
+  if [ "$BUFFER_PLAYED" = 1 ] && [ "$FAIL" = 0 ]; then
+    echo "FAIL: NOT COMPLETED: the chain went past the last test item into the buffer ($BUFFER_ID); Read Me was stopped"
+    bad=1
+  fi
   if [ "$SHARED" = 1 ] || [ -f "$STATE_FILE" ]; then
     adb shell input keyevent KEYCODE_WAKEUP || true
     for ((i = 0; i < UNLOCK_WAIT; i++)); do
@@ -227,16 +326,36 @@ finish() {
   # errexit off: a failing step here must not skip the slot's release below.
   set +e
   on_exit || rc=1
+  # After on_exit, which stops Read Me if it may still be reading: the watcher guards until then.
+  if [ -n "$WATCH_PID" ]; then kill "$WATCH_PID" 2>/dev/null; fi
+  if [ -s "$WATCH_MARK" ]; then
+    echo "  information: the watcher stopped Read Me $(cut -d' ' -f4 "$WATCH_MARK") ms after its last read that did not show the chain going on"
+  fi
+  [ -n "$WATCH_MARK" ] && rm -f "$WATCH_MARK"
   [ "$FAIL" = 0 ] || [ "$rc" != 0 ] || rc=1
   echo "device:continuous $([ "$rc" = 0 ] && echo PASS || echo FAIL)"
   (exit "$rc")
   _device_exit
 }
+# on_signal: bash runs the EXIT trap on INT, TERM and HUP anyway, but with $? 0, which would
+# print PASS for an interrupted run.
+on_signal() { echo "FAIL: INTERRUPTED"; FAIL=1; exit 1; }
 
 [ "${DEVICE_CONTINUOUS_SOURCE_ONLY:-0}" = 1 ] && return 0
 
+# REA-47: the state file holds the owner's original switch setting until a cleanup restores it.
+# A full run would overwrite it with whatever the switch is now (on, after a failed cleanup), so
+# it refuses before taking the slot or touching the phone.
+if [ "${CLEANUP_ONLY:-0}" != 1 ] && [ -f "$STATE_FILE" ]; then
+  echo "REFUSED: $STATE_FILE is left from an earlier run whose cleanup did not finish (it holds"
+  echo "the owner's original Continuous play setting). Unlock the phone and run first:"
+  echo "  CLEANUP_ONLY=1 npm run device:continuous"
+  exit 1
+fi
+
 device_take continuous
 trap finish EXIT
+trap on_signal INT TERM HUP
 device_require_unlocked
 
 if [ "${CLEANUP_ONLY:-0}" = 1 ]; then
@@ -256,23 +375,18 @@ set_switch true
 adb logcat -c
 CLEARED=1
 SHARED=1
-# Oldest first, so List order (newest first) is T3, T2, T1. Text on stdin, never in the adb argv,
-# which adbd logs (AGENTS.md, SPIKE-01).
-for k in 0 1 2; do
-  text="${TITLES[$k]}
-
-$(body_text "${BODY[$k]}")"
-  printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$text")" \
-    | adb shell >/dev/null
-  sleep 1
-done
+share_all
 to_list
 
-# The chain's order is List order: with the three as the top three rows, T3's next is T2 and
-# T2's is T1. Anything else and nothing is played.
-rows=$(row_titles "$(ui)" | head -3 | tr '\n' '|')
-[ "$rows" = "${TITLES[2]}|${TITLES[1]}|${TITLES[0]}|" ] \
-  || die "the three test items are not the top three unread rows; nothing played"
+# The chain's order is List order: with the four as the top four rows, all ready, T3's next is
+# T2, T2's is T1 and T1's the buffer. Anything else and nothing is played.
+rows=""
+for _ in $(seq 10); do
+  d=$(ui)
+  if rows_ok "$d" && rows_ready "$d"; then rows=ok; break; fi
+  sleep 1
+done
+[ "$rows" = ok ] || die "the four test items are not the top four unread rows, each ready; nothing played"
 
 tap_node text "$(escape "${TITLES[2]}")"
 tap_node content-desc 'trim done'
@@ -304,29 +418,42 @@ TEST_IDS+=" $id2"
 next_test "$id2" 0
 id1=$NEXT_ID
 TEST_IDS+=" $id1"
+ID1=$id1
 t1_at=$(date +%s)
-echo "test items (List order): $id3 $id2 $id1; T1 is playing"
+WATCH_MARK=$(mktemp)
+rm -f "$WATCH_MARK" # created by the watcher only when it stops Read Me
+watch_chain "$id1" "$WATCH_MARK" &
+WATCH_PID=$!
+echo "test items (List order): $id3 $id2 $id1; T1 is playing; the chain watcher runs"
 
 # T1 plays: turn the switch off before it ends, so the chain stops after it.
 adb shell input keyevent KEYCODE_WAKEUP
 echo "unlock the phone within ${SWITCH_DEADLINE}s: the script turns Continuous play off before the last test item ends"
 until unlocked; do
   guard || exit 1
+  check_watch
   if [ $(($(date +%s) - t1_at)) -ge "$SWITCH_DEADLINE" ]; then
     stop_readme
     die "NOT COMPLETED: no unlock within ${SWITCH_DEADLINE}s; Read Me stopped while the last test item played"
   fi
   sleep 1
 done
+check_watch
 to_list
 set_switch false || { stop_readme; die "could not turn Continuous play off; stopped Read Me"; }
 guard || exit 1
+check_watch
 echo "Continuous play is off; T1 reads to its end"
 
 wait_log "playback finished item=$id1\b" 900 >/dev/null || die "item $id1 did not finish"
+echo "  information: T1 played about $(($(date +%s) - t1_at)) s (host clock, from its continue line seen to its finished line seen)"
 sleep 3
 log=$(logs)
-device_has "$log" "playback continue from=$id1 " && { stop_readme; die "the chain went on after item $id1 with the switch off"; }
+if device_has "$log" "playback continue from=$id1 "; then
+  stop_readme
+  buffer_seen "$log"
+  die "the chain went on after item $id1 with the switch off; stopped Read Me"
+fi
 ENDED=1
 guard || exit 1
 
