@@ -181,10 +181,13 @@ decision on REA-31 was files; it would also tie playback to an optional callback
   ms=` (the next item's load to its first `onStart`) read 35 and 20 ms (`device:continuous`,
   2026-10-09, build 77a8d15, AGENTS.md). Now the listener hears silence from the last frame of
   one item to the first of the next: the next item's build (`playback continue ... ms=`) plus
-  `playback handover ms=`, which now holds the synthesis of at least 2 s of its audio. No handover has been measured with this pipeline. The
-  closest measured figure is a warm first audio (593 ms GrapheneOS Speech Services, 622 ms
-  Supertonic; above, 2026-10-04, c77cd94 plus this change), which is from a user play, not a
-  handover. Synthesizing the next item's start before the end would hide it, at the cost of
-  deciding the next item before the handover (ADR 0011 decides at it); not done.
-- Everything measured above was on 2026-10-04 builds (c77cd94 or 8e4af79, plus this change,
-  uncommitted). None of it was re-run after the rebase onto continuous play.
+  `playback handover ms=`, which now holds the synthesis of at least 2 s of its audio.
+  Measured on 69b3db1 (`device:continuous`, 2026-10-13, GrapheneOS Speech Services): handovers
+  731 and 818 ms, next-item builds 9 and 12 ms. Accepted by the owner for this change.
+  Synthesizing the next item's start before the end would hide it, at the cost of deciding the
+  next item before the handover (ADR 0011 decides at it); that is REA-49.
+- The figures above without a build named were measured on 2026-10-04 builds (c77cd94 or
+  8e4af79, plus this change, uncommitted). After the rebase onto continuous play,
+  `device:playback` (Supertonic, f40e264, 2026-10-11) and `device:playback`,
+  `device:lifecycle`, `device:gap` (2 min) and `device:continuous` (GrapheneOS Speech Services,
+  69b3db1, 2026-10-13) passed; AGENTS.md "Known state" has the numbers.

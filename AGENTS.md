@@ -255,9 +255,14 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   short title played while the cold engine wrote the next sentence). With a 2 s start buffer
   added, `device:gap` (2 min, GrapheneOS, 09:28, same base) passed: n=27 p50=14 p95=19 max=20
   ms, stalls 0, underruns 0, first audio 6662 ms (cold). `device:playback` and the Supertonic
-  run not yet rerun on the start-buffer build. Every REA-31 number above is from those
-  2026-10-04 builds (c77cd94 or 8e4af79, uncommitted); none was taken after REA-31 was rebased
-  onto continuous play (2026-10-11), so none is established for that build.
+  run not yet rerun on the start-buffer build. Those numbers are from the 2026-10-04 builds
+  (c77cd94 or 8e4af79, uncommitted). On the rebased build: `device:playback` with Supertonic
+  passed on f40e264 (2026-10-11; the media-button session was Read Me's after the start, the
+  Reader's resume and the media-key resume; gaps n=19 p95=19 max=19 ms, underruns 0, first
+  audio 805 ms). On 69b3db1 (the same code rebased onto 2ea3150, 2026-10-13, GrapheneOS
+  Speech Services as the default engine) `device:playback` (gaps n=20 p50=12 p95=17 max=17 ms),
+  `device:lifecycle`, `device:gap` (2 min: n=27 p50=8 p95=15 max=19 ms, stalls 0, underruns 0)
+  and `device:continuous` passed. The 10-min R-M07 run is still due before the next release.
 - **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
   `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
@@ -372,8 +377,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   from Archive). Open: REA-47. Since REA-31 (ADR 0012) the handover loads the next item as a
   new generation: the finished item's files are deleted and the next item's synthesis starts
   only then (nothing is synthesized across the boundary), so its first sentence waits for the
-  engine; the 35 and 20 ms above were `speak()`'s, and no handover has been measured on the
-  REA-31 build.
+  engine; the 35 and 20 ms above were `speak()`'s. On 69b3db1 (2026-10-13, GrapheneOS Speech
+  Services) `device:continuous` passed with handovers 731 and 818 ms; the owner accepted that
+  for REA-31, and REA-49 prepares the next item's first audio before the end.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
