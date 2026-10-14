@@ -56,8 +56,9 @@ Two smaller facts shaped the handover itself:
   session title when a snapshot of that item reaches the main thread, so an earlier snapshot
   never shows it and an offer the queue dropped never does.
 - **What ends the chain.** A user pause or Stop (also during the handover), an engine error run at the end (which pauses
-  instead of archiving), a failed archive, the switch turned off (read at each handover), or
-  no next item.
+  instead of archiving), a failed archive, the switch turned off (read at each handover), a
+  new playback speaker swapped in during the handover (a voice or engine change, or a rebind;
+  REA-51, as a pause there), or no next item.
 - **Trim state is left alone.** An item read by continuous play keeps `opened_at` NULL and gets
   no cuts (AGENTS.md 12), so the user's own first open still shows Trim. Its saved position is
   kept and remapped as for any play.

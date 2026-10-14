@@ -219,10 +219,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     val wanted = choice()
     val failed = speaker.status == TtsSpeaker.EngineStatus.NO_ENGINE || speaker.status == TtsSpeaker.EngineStatus.NO_VOICE
     if ((wanted != speakerFor || failed) && speaker.status != TtsSpeaker.EngineStatus.PENDING && !rebinding) {
-      speaker.shutdown()
+      // REA-51: the old speaker is shut down only after the queue has left its generation.
+      val old = speaker
       speaker = TtsSpeaker(this, this, wanted.second)
       speakerFor = wanted
-      queue.swapSynth(speaker)
+      queue.swapSynth(speaker) { old.shutdown() }
       hold(r)
       return
     }
@@ -490,9 +491,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   /** REA-33: a new speaker for Settings' engine and voice; onReady resumes where it stopped. */
   private fun follow(): Boolean {
     speakerFor = choice()
-    speaker.shutdown()
+    val old = speaker
     speaker = TtsSpeaker(this, this, speakerFor.second)
-    queue.swapSynth(speaker)
+    queue.swapSynth(speaker) { old.shutdown() }
     rebinding = true
     resumeAfterRebind = true
     Log.i(TAG, "playback voice changed")
@@ -509,10 +510,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     rebinding = true
     resumeAfterRebind = true
     Log.i(TAG, "playback engine lost; rebinding")
-    speaker.shutdown()
+    val old = speaker
     speakerFor = choice()
     speaker = TtsSpeaker(this, this, speakerFor.second)
-    queue.swapSynth(speaker)
+    queue.swapSynth(speaker) { old.shutdown() }
   }
 
   /** False when playback could not be granted focus or the foreground, and was paused. */

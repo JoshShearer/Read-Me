@@ -56,7 +56,9 @@ class TtsSpeaker(context: Context, private val callbacks: Callbacks, private val
         override fun onError(id: String?, errorCode: Int) {
           if (id != null) callbacks.onSynthError(id, lost = errorCode == TextToSpeech.ERROR_SERVICE)
         }
-        // Only after stop(), whose generation the queue has already left behind.
+        // Only after stop(), whose generation the queue has already left behind: the queue flushes
+        // (a new generation) before each stop() it makes, and PlaybackService shuts an old
+        // speaker down only through swapSynth's retire, after the swap's flush (REA-51).
         override fun onStop(id: String?, interrupted: Boolean) { if (id != null) callbacks.onSynthError(id, lost = false) }
       })
     }
