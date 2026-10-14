@@ -60,4 +60,26 @@ class StoreStatsTest {
     assertEquals(store.stats()[a], one[a])
     assertNull(one[b])
   }
+
+  @Test fun wordsAreRunsOfAnyWhitespace() {
+    val id = store.insertText(
+      "t",
+      listOf("one\ntwo\tthree\r\nfour  five", "six\u00A0seven\u3000eight", "  ", "a\u0000b c d", "😀 x😀y"),
+      1000,
+    )
+    // 5 + 3 + 0 + 3 + 2; the space-only count gave 3 + 1 + 0 + 1 + 2 = 7.
+    assertEquals(13, store.stats()[id]!!.words)
+  }
+
+  @Test fun fetchedItemsListsOnlyFetchedOnesNewestFirst() {
+    // REA-50: the JS drain's list, read without any paragraph or stats.
+    val a = store.insertLink("https://example.com/a", "example.com", 1000)
+    val b = store.insertLink("https://example.com/b", "example.com", 2000)
+    store.insertText("t", listOf("x"), 3000)
+    store.fetchSucceeded(a, "<p>a</p>")
+    store.fetchSucceeded(b, "<p>b</p>")
+    val c = store.insertLink("https://example.com/c", "example.com", 4000)
+    assertEquals(listOf(b, a), store.fetchedItems().map { it.id })
+    assertEquals(States.FETCHING, store.item(c)!!.state)
+  }
 }

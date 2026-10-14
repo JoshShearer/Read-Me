@@ -9,6 +9,7 @@ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import io.loopstring.readme.fetch.Recovery
 import io.loopstring.readme.playback.PlaybackFiles
+import io.loopstring.readme.store.Store
 
 class MainApplication : Application(), ReactApplication {
 
@@ -38,6 +39,10 @@ class MainApplication : Application(), ReactApplication {
         Log.w("ReadMe", "playback sweep failed: ${t.javaClass.simpleName}")
       }
     }.start()
+    // ADR 0013: count the words of paragraphs stored before `words` existed. On its own worker
+    // so the open's lock is never held through it and a slow count delays nothing else; a
+    // failure is logged by class and retried at the next start (Store.backfillAtStart).
+    Thread { Store.backfillAtStart(this) }.start()
     // R-M02 recovery at every process start, off the main thread (WorkManager queries block).
     Thread {
       try {
