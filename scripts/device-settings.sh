@@ -53,7 +53,7 @@ centre_of() {
   echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
 tap() { local p; p=$(centre_of "$@") || return 1; adb shell input tap $p; }
-on_screen() { for _ in $(seq "${2:-15}"); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
+on_screen() { for _ in $(seq "${2:-15}"); do grep -qE "$1" <<<"$(ui)" && return 0; sleep 1; done; return 1; }
 health() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H @"$HDR" "http://127.0.0.1:$PORT/health" || true; }
 
 BRIDGE='Use the bridge'
@@ -74,7 +74,7 @@ on_screen 'content-desc="play"' || { echo "FAIL: the Reader did not show"; exit 
 adb shell input keyevent KEYCODE_BACK
 tap content-desc settings || { echo "FAIL: no Settings button"; exit 1; }
 for _ in $(seq 6); do
-  ui | grep -qE "content-desc=\"$BRIDGE\"" && break
+  grep -qE "content-desc=\"$BRIDGE\"" <<<"$(ui)" && break
   adb shell input swipe 670 2000 670 900 300; sleep 1
 done
 tap content-desc "$BRIDGE" || { echo "FAIL: no bridge switch"; exit 1; }
@@ -171,7 +171,7 @@ done
 echo "== bridge off"
 tap content-desc settings 10 || true
 for _ in $(seq 6); do
-  ui | grep -qE "content-desc=\"$BRIDGE\"" && break
+  grep -qE "content-desc=\"$BRIDGE\"" <<<"$(ui)" && break
   adb shell input swipe 670 2000 670 900 300; sleep 1
 done
 tap content-desc "$BRIDGE" || true

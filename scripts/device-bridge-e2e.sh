@@ -45,7 +45,7 @@ tap_desc() {
 # Settings scrolls: once the voices load, the bridge row can sit below the fold.
 scroll_to_desc() {
   for _ in $(seq 6); do
-    ui | grep -qE "content-desc=\"$1\"" && return 0
+    grep -qE "content-desc=\"$1\"" <<<"$(ui)" && return 0
     adb shell input swipe 670 2400 670 900 300
     sleep 1
   done
@@ -62,12 +62,12 @@ tap_text() {
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
-on_screen() { for _ in $(seq 15); do ui | grep -qE "$1" && return 0; sleep 1; done; return 1; }
+on_screen() { for _ in $(seq 15); do grep -qE "$1" <<<"$(ui)" && return 0; sleep 1; done; return 1; }
 # REA-28: the bridge is a switch labelled "Use the bridge"; its state is the node's checked=.
 BRIDGE='Use the bridge'
 bridge_is() { on_screen "content-desc=\"$BRIDGE\"[^>]*checked=\"$1\""; }
 logs() { adb logcat -d -s ReadMe:I; }
-wait_log() { for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done; return 1; }
+wait_log() { for _ in $(seq "$2"); do grep -qE "$1" <<<"$(logs)" && return 0; sleep 1; done; return 1; }
 
 # A ten-sentence text to play during the contention check.
 TEXT=""
@@ -95,7 +95,7 @@ TOK=$(ui | grep -oE 'text="[0-9a-f]{32}"' | head -1 | grep -oE '[0-9a-f]{32}' ||
 [ -n "$TOK" ] || { echo "FAIL: no pairing token on screen"; exit 1; }
 printf 'Authorization: Bearer %s\n' "$TOK" > "$HDR"
 check "the notification says the bridge is on" \
-  "adb shell dumpsys notification --noredact | grep -q 'Obsidian bridge on'"
+  "grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
 
 adb forward tcp:$PORT tcp:$PORT >/dev/null
 B="http://127.0.0.1:$PORT"
@@ -103,13 +103,13 @@ code() { curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$@"; }
 
 echo "== contract"
 check "/health 200 ok, version 1, not busy" \
-  "curl -s --max-time 10 $B/health | grep -q '\"ok\":true,\"version\":1,.*\"busy\":false'"
+  "grep -q '\"ok\":true,\"version\":1,.*\"busy\":false' <<<\"\$(curl -s --max-time 10 $B/health)\""
 W1=$(mktemp); W2=$(mktemp)
 H1=$(printf 'Hello from the bridge test at rate one.' | curl -s -D - -o "$W1" --max-time 60 -X POST -H @"$HDR" \
   -H 'Content-Type: text/plain' -H 'Origin: http://localhost' --data-binary @- "$B/synthesize")
 check "/synthesize 200 audio/wav, X-Rate 1.0, CORS" \
   "grep -q '^HTTP/1.1 200' <<<\"\$H1\" && grep -qi '^content-type: audio/wav' <<<\"\$H1\" && grep -qi '^x-rate: 1.0' <<<\"\$H1\" && grep -qi '^access-control-allow-origin: http://localhost' <<<\"\$H1\""
-check "the body is a RIFF WAV" "head -c 4 '$W1' | grep -q RIFF"
+check "the body is a RIFF WAV" "grep -q RIFF <<<\"\$(head -c 4 '$W1')\""
 H2=$(printf 'Hello from the bridge test at rate one.' | curl -s -D - -o "$W2" --max-time 60 -X POST -H @"$HDR" \
   -H 'Content-Type: text/plain' --data-binary @- "$B/synthesize?rate=2.0")
 check "rate=2.0 reports X-Rate 2.0" "grep -qi '^x-rate: 2.0' <<<\"\$H2\""
@@ -128,7 +128,7 @@ check "Content-Length abc: 400" "[ \"\$(code -X POST -H @$HDR -H 'Content-Length
 check "body over 64 KiB: 413" \
   "[ \"\$(head -c 65537 /dev/zero | tr '\\0' a | code -X POST -H @$HDR --data-binary @- $B/synthesize)\" = 413 ]"
 check "a 20 KB header: 431" "[ \"\$(code -H \"X-Pad: \$(head -c 20000 /dev/zero | tr '\\0' a)\" $B/health)\" = 431 ]"
-check "other origin: no CORS" "! curl -s -D - -o /dev/null -H 'Origin: http://evil.example' $B/health | grep -qi access-control"
+check "other origin: no CORS" "! grep -qi access-control <<<\"\$(curl -s -D - -o /dev/null -H 'Origin: http://evil.example' $B/health)\""
 exec 3<>/dev/tcp/127.0.0.1/$PORT   # a silent client
 check "a silent client does not block /health" "[ \"\$(code --max-time 3 $B/health)\" = 200 ]"
 exec 3<&- 3>&-
@@ -142,7 +142,7 @@ wait_log 'playback start item=1 ' 20 || { echo "FAIL: playback did not start"; f
 sleep 2
 R=$(printf 'Busy test.' | curl -s -w ' %{http_code}' --max-time 10 -X POST -H @"$HDR" --data-binary @- "$B/synthesize")
 check "/synthesize while playing: 503 busy playback" "[ \"\$R\" = '{\"error\":\"busy\",\"reason\":\"playback\"} 503' ]"
-check "/health says busy" "curl -s $B/health | grep -q '\"busy\":true'"
+check "/health says busy" "grep -q '\"busy\":true' <<<\"\$(curl -s $B/health)\""
 
 if adb shell pm path md.obsidian >/dev/null 2>&1; then
   echo "== Obsidian, Read Me in the background, while it plays"
@@ -154,9 +154,9 @@ fi
 echo "== playback ends; the bridge stays"
 wait_log 'playback finished item=1' 90 || { echo "FAIL: playback did not finish"; fail=1; }
 sleep 2
-check "/health 200 and not busy after playback" "curl -s --max-time 5 $B/health | grep -q '\"busy\":false'"
+check "/health 200 and not busy after playback" "grep -q '\"busy\":false' <<<\"\$(curl -s --max-time 5 $B/health)\""
 check "the notification still says the bridge is on" \
-  "adb shell dumpsys notification --noredact | grep -q 'Obsidian bridge on'"
+  "grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
 
 if adb shell pm path md.obsidian >/dev/null 2>&1; then
   echo "== Obsidian, Read Me in the background, idle"
@@ -186,7 +186,7 @@ check "the bridge is gone" "[ \"\$(code --max-time 3 $B/health)\" = 000 ]"
 
 echo "== privacy"
 check "the token is not in logcat" "[ \"\$(adb logcat -d | grep -c \"$TOK\" || true)\" = 0 ]"
-check "the test text is not in logcat" "! adb logcat -d | grep -q 'Bridge test\\|Hello from the bridge'"
+check "the test text is not in logcat" "! grep -q 'Bridge test\\|Hello from the bridge' <<<\"\$(adb logcat -d)\""
 check "no crash" "! adb logcat -d | device_crash_seen"
 logs | grep -E 'bridge ' | sed -E 's/.*(bridge .*)/\1/' | sort | uniq -c | sort -rn | head -20
 

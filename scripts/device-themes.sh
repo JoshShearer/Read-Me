@@ -73,7 +73,7 @@ tap_node() {
 read -r SCREEN_W SCREEN_H < <(adb shell wm size | tail -1 | grep -oE '[0-9]+x[0-9]+' | tr x ' ')
 scroll_to_desc() {
   for _ in $(seq 6); do
-    ui | grep -qE "content-desc=\"$1\"" && return 0
+    grep -qE "content-desc=\"$1\"" <<<"$(ui)" && return 0
     adb shell input swipe $((SCREEN_W / 2)) $((SCREEN_H * 8 / 10)) $((SCREEN_W / 2)) $((SCREEN_H * 3 / 10)) 300
     sleep 1
   done
