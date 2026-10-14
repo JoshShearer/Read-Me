@@ -92,6 +92,17 @@ them on its own output.
   check no longer asks `isSpeaking`: no sentence audio and no engine answer for 15 s with a
   dead binding (`getVoice` asked outside the queue's lock), or for 2 minutes whatever the
   binding says, is a lost engine. A slow sentence on a live engine is not.
+- **Output failures** (REA-52): an error from Read Me's own player (a file it cannot open or
+  decode, a refused output, a failed `AudioTrack` write; a writer failure reports every
+  buffered sentence) means audio was lost, so the queue never skips or saves past the sentence:
+  it restarts the generation on a fresh output at the first sentence not finished, and the
+  listener hears that sentence again (a writer failure's later reports belong to the
+  discarded generation and count once). The engine is healthy, so nothing rebinds. The run is
+  counted apart from synthesis errors and reset only by a sentence heard to its end
+  (`onPlayerDone`), not one that merely started, so an output that plays a few frames and then
+  fails cannot read the item through; three restarts in a row without a finished sentence
+  pause at the first unfinished one with that position saved. While paused such an error
+  moves and counts nothing (as REA-51); Play restarts the heard sentence.
 - The bridge is unchanged: its own instance (AGENTS.md 13) and 503 while Read Me plays
   (ADR 0004). Playback's synthesis competes with the bridge's exactly as its speech did.
 - **Continuous play (ADR 0011).** An item ends when the player reports its last sentence's

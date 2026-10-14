@@ -479,6 +479,28 @@ class PlaybackQueueTest {
     assertEquals(listOf("1", "3"), indices(player.enqueued))
   }
 
+  private fun longRows(n: Int) = (0 until n).map { SentenceRow(it, 0, 4, "S$it.") }
+
+  @Test fun aPlayerErrorWhilePausedMovesNothing() {
+    queue.load(7, longRows(20), 0, 2.0f)
+    val g = g()
+    synthDone(0, 1, 2)
+    start(0)
+    queue.pause()
+    val saves = sink.saves.size
+    queue.onPlayerError("$g:0")
+    queue.onPlayerError("$g:1")
+    queue.onPlayerError("$g:2")
+    assertEquals(saves, sink.saves.size)
+    assertEquals(0, queue.snapshot().sentence?.paragraphIndex)
+    assertEquals(0, queue.takeStats().errors)
+    assertTrue(queue.resume())
+    assertTrue(queue.snapshot().playing)
+    // The restart asks for the heard sentence, first in a new generation.
+    val fresh = synth.requested.filter { !it.startsWith("$g:") }
+    assertEquals("0", fresh.first().substringAfter(':'))
+  }
+
   @Test fun errorsAtTheEndPauseInsteadOfArchiving() {
     queue.load(7, rows, 4, 2.0f)
     synthDone(4)
@@ -1340,9 +1362,15 @@ class PlaybackQueueTest {
     var playing = false
     var released = false
     override val startFrames = 0
+    /** REA-52: a write error (a negative return, as AudioTrack's) while this holds. */
+    var failWhen: (Out) -> Boolean = { false }
+    /** A non-blocking track's room in frames: it takes only what fits (REA-52). */
+    var cap = Long.MAX_VALUE
     override fun write(buf: ByteArray, off: Int, len: Int): Int {
-      written += len / format.frameBytes
-      return len
+      if (failWhen(this)) return -1
+      val frames = minOf((len / format.frameBytes).toLong(), (cap - (written - head)).coerceAtLeast(0))
+      written += frames
+      return (frames * format.frameBytes).toInt()
     }
     override fun play() { playing = true }
     override fun pause() { playing = false }
@@ -1363,7 +1391,7 @@ class PlaybackQueueTest {
   }
 
   /** A queue on a real TrackPlayer, stepped by the test as its writer thread would be. */
-  private inner class Rig {
+  private inner class Rig(private val openOut: (PcmFormat) -> Out? = { f -> Out(f) }) {
     val outs = mutableListOf<Out>()
     val engine = FakeSynth()
     private val answered = HashSet<String>()
@@ -1374,7 +1402,7 @@ class PlaybackQueueTest {
         override fun onPlayerDone(id: String) = q.onPlayerDone(id)
         override fun onPlayerError(id: String) = q.onPlayerError(id)
       },
-      { f -> Out(f).also { outs += it } },
+      { f -> openOut(f)?.also { outs += it } },
       padMs = 40,
     )
 
@@ -1391,17 +1419,37 @@ class PlaybackQueueTest {
       }
     }
 
+    private val failAll = TrackPlayer::class.java.getDeclaredMethod("failAll").apply { isAccessible = true }
+
+    /** As TrackPlayer.loop does: a throw from step() reports every sentence it had buffered. */
+    fun step() {
+      try {
+        player.step()
+      } catch (t: Throwable) {
+        failAll.invoke(player)
+      }
+    }
+
+    /** Synthesis and playback in turn while the queue plays, as a phone would. */
+    fun drive(rounds: Int, ms: Long = 250) {
+      for (k in 0 until rounds) {
+        if (!q.snapshot().playing) break
+        synthesizeAll()
+        play(ms)
+      }
+    }
+
     /** Lets the output play [ms], 10 ms per writer step. */
     fun play(ms: Long) {
-      repeat(3) { player.step() }
+      repeat(3) { step() }
       var left = ms
       while (left > 0) {
         val n = minOf(left, 10L)
         outs.lastOrNull()?.let { if (it.playing) it.head = minOf(it.head + n, it.written) }
         left -= n
-        player.step()
+        step()
       }
-      repeat(3) { player.step() }
+      repeat(3) { step() }
     }
   }
 
@@ -1460,5 +1508,77 @@ class PlaybackQueueTest {
     assertEquals(2, r.outs.size)
     assertTrue(r.outs.last().playing)
     assertEquals(rows8[0], r.q.snapshot().sentence)
+  }
+
+  // --- REA-52: the output fails, the engine does not (real TrackPlayer, real queue) ---
+
+  private fun rigPaused(r: Rig, at: Int) {
+    assertFalse(r.q.snapshot().playing)
+    assertTrue("not archived", sink.finished.isEmpty())
+    assertEquals(0, sink.lost)
+    assertEquals(Triple(7L, at, 0), sink.saves.last())
+    assertTrue("nothing saved past $at: ${sink.saves}", sink.saves.all { it.second <= at })
+  }
+
+  @Test fun anOutputThatNeverOpensPausesAtTheFirstSentenceAfterThreeTries() {
+    val r = Rig { null }
+    r.q.load(7, longRows(20), 0, 1.0f)
+    r.drive(20)
+    rigPaused(r, 0)
+    assertEquals(3, r.q.takeStats().errors)
+    assertTrue(leftover().isEmpty())
+  }
+
+  @Test fun anOutputThatPlaysItsFirstFramesThenFailsPausesInsteadOfReadingTheItemThrough() {
+    val r = Rig { f -> Out(f).also { o -> o.cap = 500; o.failWhen = { it.head > 0 } } }
+    r.q.load(7, longRows(20), 0, 1.0f)
+    r.drive(20)
+    rigPaused(r, 0)
+    assertEquals(3, r.outs.size)
+  }
+
+  @Test fun aTransientWriterFailureReplaysTheSentenceAndSkipsNothing() {
+    var opened = 0
+    val r = Rig { f -> Out(f).also { o -> o.cap = 500; if (opened++ == 0) o.failWhen = { it.head >= 200 } } }
+    r.q.load(7, longRows(3), 0, 1.0f)
+    r.synthesizeAll()
+    r.play(600) // sentence 0 is heard for 200 ms, then the write fails with 1-2 sentences buffered
+    assertTrue(r.q.snapshot().playing)
+    assertTrue("nothing saved past the sentence not finished: ${sink.saves}", sink.saves.all { it.second == 0 })
+    val g0 = r.engine.requested.first().substringBefore(':')
+    val fresh = r.engine.requested.filter { !it.startsWith("$g0:") }
+    assertEquals("0", fresh.first().substringAfter(':')) // asked for again, first
+    assertTrue("the failed output is released", r.outs.first().released)
+    repeat(8) { r.synthesizeAll(); r.play(1_000) }
+    assertEquals(listOf(7L), sink.finished)
+    assertEquals(1, r.q.takeStats().errors)
+    assertTrue(leftover().isEmpty())
+    assertEquals(2, r.outs.size)
+  }
+
+  @Test fun aFileRefusedOnOpenWhileAnEarlierSentencePlaysRestartsAtTheEarlierOne() {
+    val r = Rig()
+    r.q.load(7, longRows(4), 0, 1.0f)
+    val g = r.engine.requested.last().substringBefore(':')
+    // Sentence 1's file is not a WAV: reported at once, before sentence 0 (earlier) is heard.
+    for (id in r.engine.requested.toList()) {
+      if (id.endsWith(":1")) r.engine.files.getValue(id).writeText("not a wav") else writeWav(r.engine.files.getValue(id), 1_500)
+      r.q.onSynthDone(id)
+    }
+    r.play(300)
+    assertTrue(r.q.snapshot().playing)
+    assertEquals(0, r.q.snapshot().sentence?.paragraphIndex)
+    assertTrue(sink.saves.all { it.second == 0 })
+    val again = r.engine.requested.filter { !it.startsWith("$g:") }
+    assertEquals("0", again.first().substringAfter(':'))
+  }
+
+  @Test fun sentencesHeardBetweenOutputFailuresEndTheRun() {
+    // Each output plays one sentence to its end before failing: never three without progress.
+    val r = Rig { f -> Out(f).also { o -> o.failWhen = { it.head >= 1_600 } } }
+    r.q.load(7, longRows(6), 0, 1.0f)
+    r.drive(40, 400)
+    assertEquals(listOf(7L), sink.finished)
+    assertTrue(r.outs.size > 3)
   }
 }

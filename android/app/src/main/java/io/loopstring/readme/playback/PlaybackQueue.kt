@@ -86,6 +86,11 @@ class PlaybackQueue(
   // Reset only by a sentence that synthesized: a failing engine must not read silence to the end.
   private var consecutiveErrors = 0
   private var firstErrorIndex = -1
+  // REA-52: output failures (the player lost audio), each of which restarts the generation.
+  // Counted apart from synthesis errors, which every synthesized sentence resets while synthesis
+  // runs ahead of the player; only a sentence heard to its end (onPlayerDone) ends the run, so
+  // an output that starts a sentence and then fails never reads on.
+  private var playerErrors = 0
   private var stallTicks = 0
   private var events = 0L
   private var lastProgress = 0L
@@ -325,6 +330,7 @@ class PlaybackQueue(
       stallTicks = 0
       inPlayer--
       lastDoneAt = clock()
+      playerErrors = 0
       advanceLocked(i)
     }
     if (pending != null) handOver(pending)
@@ -336,8 +342,14 @@ class PlaybackQueue(
       events++
       inPlayer--
       lastDoneAt = -1
-      failedLocked(i)
-      if (pipelined) advanceLocked(i) else null
+      if (!playing) {
+        // Paused: like a late engine answer (REA-51) this moves and counts nothing; the next
+        // Play restarts the heard sentence on a fresh pipeline.
+        pausedAnswerLocked(false)
+        return
+      }
+      playerFailedLocked(i)
+      null
     }
     if (pending != null) handOver(pending)
   }
@@ -433,6 +445,27 @@ class PlaybackQueue(
   private fun pausedAnswerLocked(lost: Boolean) {
     flushLocked()
     if (lost) engineLostWhilePaused = true
+  }
+
+  /**
+   * An output failure (REA-52): the player lost audio of sentence [i] (a file it cannot play, a
+   * failed write that reports every sentence it buffered). The engine is healthy, so nothing
+   * rebinds, and nothing is skipped or saved past: the generation restarts on a fresh output at
+   * the first sentence not finished ([current], or [i] if lower), so the listener hears the
+   * rest of it again. A writer failure reports its sentences one after another; the restart
+   * discards the generation, so the later reports are ignored and count once. A run of
+   * [MAX_CONSECUTIVE_ERRORS] restarts without any sentence finishing pauses there instead.
+   */
+  private fun playerFailedLocked(i: Int) {
+    errors++
+    val n = playerErrors + 1
+    val at = minOf(current, i)
+    if (n >= MAX_CONSECUTIVE_ERRORS) {
+      pauseAtLocked(at)
+      return
+    }
+    restartLocked(at)
+    playerErrors = n // restartLocked starts a user's run; this one continues
   }
 
   private fun failedLocked(i: Int) {
@@ -578,6 +611,7 @@ class PlaybackQueue(
     playing = false
     current = index
     consecutiveErrors = 0
+    playerErrors = 0
     saveLocked()
     publishLocked()
   }
@@ -607,6 +641,7 @@ class PlaybackQueue(
     stallTicks = 0
     // A new generation: errors before a jump or another item are not this run's.
     consecutiveErrors = 0
+    playerErrors = 0
     current = index
     requested = index
     fed = index
@@ -743,6 +778,7 @@ class PlaybackQueue(
     lastDoneAt = -1
     loadedAt = -1
     consecutiveErrors = 0
+    playerErrors = 0
     publishLocked()
   }
 
