@@ -69,9 +69,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   @Volatile private var rebinding = false
   // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
   @Volatile private var resumeAfterRebind = false
-  // REA-18: counts user Pauses and Stops, so a rebind the queue asked for just before one does
-  // not resume (engineLost).
+  // REA-18: counts user Pauses and Stops. Whatever asks for a rebind (a loss the queue found, a
+  // user Play) takes the count first; the rebind resumes only if it has not moved since, however
+  // the request and the Pause were ordered across threads.
   private val userStops = java.util.concurrent.atomic.AtomicInteger()
+  // The userStops count taken by the request behind the current rebind.
+  @Volatile private var rebindMark = 0
   private var pausedAt = -1L
   private val pauseExpired = Runnable {
     if (destroyed) return@Runnable
@@ -314,8 +317,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       // REA-18: so does Play on a speaker whose engine failed or never answered; that bind is
       // the user's, so it does not count against RecoveryPolicy's one rebind.
       if (needsFreshSpeaker()) {
-        // TtsSpeaker is built and `speaker` written on main; control() may be on the JS thread.
-        onMain { if (needsFreshSpeaker()) follow() else queue.resume() }
+        // TtsSpeaker is built and `speaker` written on main; control() may be on the JS thread,
+        // so a Pause or Stop can arrive before this runs. The mark is taken here, at the Play.
+        val mark = userStops.get()
+        onMain {
+          if (needsFreshSpeaker()) follow(mark) else if (userStops.get() == mark) queue.resume()
+        }
         true
       } else {
         queue.resume()
@@ -404,7 +411,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
         // A play request made while rebinding wins over resuming what was lost.
         val r = waiting
         waiting = null
-        if (r != null) load(r) else if (resumeAfterRebind) queue.resume()
+        if (r != null) load(r) else if (resumeAfterRebind && userStops.get() == rebindMark) queue.resume()
       } else {
         // REA-35 #3: a request held for this engine is dropped, the engine state reaches JS,
         // and the foreground follows the paused item again; the next Play binds afresh (begin).
@@ -497,7 +504,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     // Called under the queue lock: a user Pause or Stop counted after this one did not exist
     // when the loss was found, so the rebind must not resume past it (REA-18, REA-51).
     val mark = userStops.get()
-    main.post { if (!destroyed) recoverEngine(resume = userStops.get() == mark) }
+    main.post { if (!destroyed) recoverEngine(mark) }
   }
 
   override fun stall(detail: String) {
@@ -547,31 +554,35 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
 
   /**
    * REA-33: a new speaker for Settings' engine and voice; onReady resumes where it stopped.
-   * Main thread only. REA-18: also a user Play on a speaker whose engine failed.
+   * Main thread only. REA-18: also a user Play on a speaker whose engine failed. [mark] is the
+   * userStops count when that Play was given: a Pause or Stop after it means no resume.
    */
-  private fun follow() {
+  private fun follow(mark: Int) {
     val failed = speakerFailed()
     speakerFor = choice()
     val old = speaker
     speaker = TtsSpeaker(this, this, speakerFor.second)
     queue.swapSynth(speaker) { old.shutdown() }
     rebinding = true
-    resumeAfterRebind = true
+    rebindMark = mark
+    resumeAfterRebind = userStops.get() == mark
     Log.i(TAG, if (failed) "playback engine rebinding for play" else "playback voice changed")
   }
 
   /**
    * REA-18: rebind playback's own engine (never the bridge's). It resumes where it stopped
-   * unless the user paused or stopped after the loss was found ([resume] false).
+   * unless the user paused or stopped after the loss was found ([mark], the userStops count
+   * then, has moved).
    */
-  private fun recoverEngine(resume: Boolean) {
+  private fun recoverEngine(mark: Int) {
     if (!RecoveryPolicy.rebind(rebinds, rebinding)) {
       if (!rebinding) Log.i(TAG, "playback engine lost; paused")
       return
     }
     rebinds++
     rebinding = true
-    resumeAfterRebind = resume
+    rebindMark = mark
+    resumeAfterRebind = userStops.get() == mark
     Log.i(TAG, "playback engine lost; rebinding")
     val old = speaker
     speakerFor = choice()

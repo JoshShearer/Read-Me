@@ -193,9 +193,21 @@ class PlaybackServiceTest {
       Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
     shadowOf(Looper.getMainLooper()).idle()
     c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    disarmStartTimeout(c)
     shadowOf(Looper.getMainLooper()).idle()
     assertTrue(PlaybackHub.queue!!.snapshot().playing)
     return c
+  }
+
+  /**
+   * onReady called directly leaves the speaker PENDING with its 30 s start timeout armed, which
+   * a device never reaches (onInit cancels it before onReady). Cancel it as onInit would, so a
+   * test that moves the clock sees only the timeouts it means to.
+   */
+  private fun disarmStartTimeout(c: org.robolectric.android.controller.ServiceController<PlaybackService>) {
+    val speaker = PlaybackService::class.java.getDeclaredField("speaker").apply { isAccessible = true }.get(c.get())
+    fun field(name: String) = TtsSpeaker::class.java.getDeclaredField(name).apply { isAccessible = true }.get(speaker)
+    (field("main") as android.os.Handler).removeCallbacks(field("startTimeout") as Runnable)
   }
 
   @Test fun aPauseDuringAFocusPauseKeepsThePausedWindow() {
@@ -789,6 +801,107 @@ class PlaybackServiceTest {
     idle()
     assertFalse(before === lastTts())
     Settings(ctx).voice = null
+    c.destroy()
+  }
+
+  // --- REA-18 fix round 1: a Play on the JS thread posts its rebind to main; a Pause or Stop
+  // given after that Play, before the post runs, must still win (ADR 0012 D5) ---
+
+  private fun onJs(action: String) {
+    val t = Thread { PlaybackHub.controller!!(action) }
+    t.start()
+    t.join()
+  }
+
+  @Test fun aJsPlayThenPauseAfterAVoiceChangeStaysPausedWhenTheEngineIsBack() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY) // posts the rebind to main
+      onJs(PlaybackCommands.ACTION_PAUSE) // before main runs it
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aJsPlayThenStopAfterAVoiceChangeStartsNothingWhenTheEngineIsBack() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY)
+      onJs(PlaybackCommands.ACTION_STOP)
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("started by itself after a user Stop", PlaybackHub.last.playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aJsPlayThenPauseOnATimedOutEngineStaysPausedWhenTheFreshEngineIsBack() {
+    val c = playing()
+    rebindTimedOut(c)
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    onJs(PlaybackCommands.ACTION_PLAY)
+    onJs(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
+  @Test fun aJsPlayAloneAfterAVoiceChangeStillResumes() {
+    // Guard for the fix: with no Pause after it, the Play's rebind resumes.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY)
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aSessionPlayThenPauseAfterAVoiceChangeStaysPausedWhenTheEngineIsBack() {
+    // The media session calls back on main, so the rebind is not posted; guard for that path.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    val cb = PlaybackService::class.java.getDeclaredField("sessionCallback").apply { isAccessible = true }
+      .get(c.get()) as android.media.session.MediaSession.Callback
+    try {
+      cb.onPlay()
+      cb.onPause()
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
     c.destroy()
   }
 }
