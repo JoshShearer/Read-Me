@@ -47,8 +47,11 @@ posted to REA-31).
 Playback's `TextToSpeech` never speaks. It synthesizes sentences to files and Read Me plays
 them on its own output.
 
-- **Synthesis ahead.** `PlaybackQueue` asks the engine for the current sentence and 3 more
-  (`synthesizeToFile`), one more each time the player finishes one. Files live in
+- **Synthesis ahead.** `PlaybackQueue` asks the engine (`synthesizeToFile`) for the current
+  sentence and at least 3 more, then more while less than 10 s of audio and 8 MB are ahead, at
+  most 8 ahead (the gap fix below; `AHEAD`, `AHEAD_MS`, `MAX_AHEAD`, `AHEAD_BYTES`). Sentences
+  longer than 160 characters are synthesized in pieces. The player starts once 2 s of audio is
+  queued in it, or the item's last sentence is, or the limits ask for nothing more. Files live in
   `noBackupFilesDir/playback` (app-private, not backed up), named
   `play-<item>-<generation>-<paragraph>-<offset>.wav`: ids and offsets, never text
   (AGENTS.md 1, 3, 10).
@@ -63,13 +66,16 @@ them on its own output.
 - **D1, a true pause.** Pause holds the output mid-sentence and keeps the files; Play goes on
   from the same frame. A rate, voice or engine change, a jump, new cuts, a lost engine, or the
   end of ADR 0009's 30-minute window discards the unplayed files and restarts at the start of
-  the current sentence.
+  the current sentence, or of its current piece when it was split. A voice or engine change
+  made while paused discards them at the swap, with any requests the old engine has not
+  answered.
 - **D3, the gap.** R-M07's gap is the player's end of sentence n to its start of n+1, on the
   service's clock. When the next file is not ready the output is fed silence rather than left
   to run dry: a dry `AudioTrack` holds the end of the last sentence back, and the gap would
   read as zero however long the engine took. The `playback gaps` log line keeps its fields and
   order and appends `underruns=`, `synthP50=` and `synthP95=`; `playback first-audio ms=` is
-  logged once per play.
+  logged once per item a user plays, not on a resume or at a continuous-play handover (which
+  logs `playback handover ms=` instead).
 - **D5, engine loss** keeps its behaviour (REA-18, REA-25): a refused request or an
   `ERROR_SERVICE` pauses at the current sentence and rebinds once per user Play. The stall
   check no longer asks `isSpeaking`: no sentence audio and no engine answer for 15 s with a
@@ -170,9 +176,10 @@ decision on REA-31 was files; it would also tie playback to an optional callback
 
 - First audio waits for the whole first sentence to be synthesized, where `speak()` started
   as the engine produced audio.
-- The engine's files take app storage while they wait: at most the current sentence and 3
-  more, as 16-bit PCM, about 88 KB per second of audio at Supertonic's 44100 Hz mono and 44 KB
-  at GrapheneOS Speech Services' 22050 Hz (arithmetic from the gate's formats).
+- The engine's files take app storage while they wait: at most the current sentence and 8
+  more, capped at 8 MB ahead, as 16-bit PCM, about 88 KB per second of audio at Supertonic's
+  44100 Hz mono and 44 KB at GrapheneOS Speech Services' 22050 Hz (arithmetic from the gate's
+  formats).
 - On every engine, audio focus belongs to Read Me's output, so another app's focus request
   pauses Read Me exactly as R-M07 says, and an engine's own player cannot.
 - Google TTS has not been run on the reference device for this change (not installed for user

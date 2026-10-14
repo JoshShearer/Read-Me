@@ -574,6 +574,31 @@ class PlaybackQueueTest {
     assertEquals(listOf("3", "4", "5"), indices(fresh.requested))
   }
 
+  @Test fun aSynthSwappedWhilePausedDiscardsTheOldEnginesAudio() {
+    // Critique F1 (REA-33's path): pause, change the voice or engine in Settings, Play. The old
+    // engine's files must not play, and its unanswered requests must not hold the new run.
+    queue.load(7, rows, 0, 2.0f)
+    val old = g()
+    synthDone(0, 1)
+    start(0)
+    queue.pause()
+    val flushes = player.flushes
+    val fresh = FakeSynth()
+    queue.swapSynth(fresh)
+    assertTrue(player.flushes > flushes)
+    // The queue's own files (the ones the player was not given) are gone; the player deletes its own on flush.
+    assertFalse(synth.files.getValue("$old:2").exists())
+    assertFalse(synth.files.getValue("$old:3").exists())
+    assertTrue(queue.resume())
+    // From the start of the sentence that was playing, all of it asked of the new engine.
+    assertEquals(listOf("0", "1", "2", "3"), indices(fresh.requested))
+    assertTrue(fresh.requested.none { it.startsWith("$old:") })
+    // A late answer from the old engine is ignored.
+    val enqueued = player.enqueued.size
+    queue.onSynthDone("$old:2")
+    assertEquals(enqueued, player.enqueued.size)
+  }
+
   @Test fun aJumpEndsTheErrorRun() {
     // Critique: two errors, Next, Next, then one error paused back at sentence 0.
     queue.load(7, rows, 0, 2.0f)
@@ -763,6 +788,23 @@ class PlaybackQueueTest {
     val g = s.requested.last().substringBefore(':')
     durations[s.files.getValue("$g:0").name] = 300
     q.onSynthDone("$g:0")
+    assertEquals(1, player.plays)
+  }
+
+  @Test fun sentencesTooShortToFillTheStartBufferStillStartOnceNothingMoreIsAsked() {
+    // Critique F2: nine sentences of 150 ms (dialogue at 2x) are under the start buffer, and the
+    // prefetch cap then asks for nothing more: the player never started, silent while "playing".
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    q.load(7, many(30), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0 until 30) {
+      val id = "$g:$i"
+      if (id !in s.requested) break
+      durations[s.files.getValue(id).name] = 150
+      q.onSynthDone(id)
+    }
+    assertEquals((0..8).map { "$it" }, indices(s.requested))
     assertEquals(1, player.plays)
   }
 

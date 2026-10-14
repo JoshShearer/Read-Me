@@ -22,9 +22,12 @@ class TrackPlayerTest {
     var released = false
     var head = 0L
     var underrunCount = 0
+    var onRelease: () -> Unit = {}
+    var throwOnWrite: Throwable? = null
     override var startFrames = 0
     val written get() = bytes.size().toLong() / format.frameBytes
     override fun write(buf: ByteArray, off: Int, len: Int): Int {
+      throwOnWrite?.let { throwOnWrite = null; throw it }
       val room = ((capacity - (written - head)) * format.frameBytes).toInt()
       val n = minOf(len, room)
       bytes.write(buf, off, n)
@@ -32,9 +35,10 @@ class TrackPlayerTest {
     }
     override fun play() { playing = true }
     override fun pause() { playing = false }
-    override fun release() { released = true }
+    override fun release() { released = true; onRelease() }
     override fun head() = head
-    override fun underruns() = underrunCount
+    // AudioTrack.getUnderrunCount on a released track throws IllegalStateException (AOSP JNI).
+    override fun underruns() = if (released) throw IllegalStateException("released") else underrunCount
     fun advance(frames: Long) { if (playing) head = minOf(head + frames, written) }
     /** Frame values written, as 16-bit mono samples. */
     fun samples(): ShortArray {
@@ -222,6 +226,41 @@ class TrackPlayerTest {
     out.underrunCount = 2
     assertEquals(2, player.takeUnderruns())
     assertEquals(0, player.takeUnderruns())
+  }
+
+  @Test fun underrunsAreNeverReadFromAReleasedOutput() {
+    // Critique F3: the main thread's takeUnderruns raced the writer releasing the track at an
+    // item's end. Here the read lands inside release(), the window the race hits.
+    player.enqueue("0:0", wav("a.wav", 100))
+    player.play()
+    steps()
+    out.underrunCount = 3
+    var read: Result<Int>? = null
+    out.onRelease = { read = runCatching { player.takeUnderruns() } }
+    player.flush()
+    steps(1)
+    assertTrue(out.released)
+    assertEquals(3, read!!.getOrThrow())
+  }
+
+  @Test fun anErrorOnTheWriterThreadFailsTheSentenceAndTheThreadGoesOn() {
+    // Critique F4: the writer caught Exception only, so an Error ended the thread silently and
+    // the queue later blamed the engine.
+    val p = TrackPlayer(events, { f -> FakeOut(f).also { if (outs.isEmpty()) it.throwOnWrite = StackOverflowError(); outs += it } }, padMs = 40)
+    p.start()
+    try {
+      p.enqueue("0:0", wav("a.wav", 100))
+      p.play()
+      val deadline = System.currentTimeMillis() + 2_000
+      while ("error 0:0" !in synchronized(events.log) { events.log.toList() } && System.currentTimeMillis() < deadline) Thread.sleep(10)
+      assertTrue(events.log.contains("error 0:0"))
+      p.enqueue("0:1", wav("b.wav", 100))
+      while ((outs.size < 2 || outs.last().written == 0L) && System.currentTimeMillis() < deadline) Thread.sleep(10)
+      assertEquals(2, outs.size)
+      assertTrue(outs.last().written > 0)
+    } finally {
+      p.release()
+    }
   }
 
   @Test fun aShortFirstSentenceIsPaddedUntilTheOutputCanStart() {

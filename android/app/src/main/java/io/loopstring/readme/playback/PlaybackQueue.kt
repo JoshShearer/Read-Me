@@ -375,8 +375,14 @@ class PlaybackQueue(
     }
   }
 
-  /** A rebound engine (PlaybackService). Paused stays paused; the rate is applied once more. */
+  /**
+   * A rebound engine or a new voice (PlaybackService, called while paused). Paused stays
+   * paused; the rate is applied once more. Files the old engine made are discarded (ADR 0012),
+   * and so are its requests still in flight, which it may never answer: the next Play restarts
+   * at the current sentence's start on the new engine.
+   */
   fun swapSynth(s: SentenceSynth) = synchronized(lock) {
+    if (pipelined && !playing) flushLocked()
     synth = s
     s.setRate(rate)
   }
@@ -425,11 +431,14 @@ class PlaybackQueue(
    * REA-31 start buffer: a short first sentence played while a cold engine still wrote the
    * next one, and the output ran dry (device:gap 2026-10-04 09:23: 1154 ms at index 1, the
    * next sentence's synthesis 6678 ms from the load). So the player starts only when
-   * [START_MS] of audio is queued in it, or the item's last sentence is.
+   * [START_MS] of audio is queued in it, or the item's last sentence is, or everything asked for
+   * is in it and the prefetch limits ask for nothing more (sentences too short to add up to
+   * [START_MS] within [MAX_AHEAD] would otherwise never start).
    */
   private fun primeLocked() {
     if (primed || !playing || !pipelined || inPlayer == 0) return
-    if (fedMs < START_MS && fed < rows.size) return
+    val more = requested < rows.size && wantMoreLocked()
+    if (fedMs < START_MS && fed < rows.size && (fed < requested || more)) return
     primed = true
     player.play()
   }

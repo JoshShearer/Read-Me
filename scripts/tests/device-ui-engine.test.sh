@@ -55,6 +55,9 @@ check "an unset default is deleted again, not set to null" \
   "$(run '' "$GOS")" "put app.grapheneos.speechservices delete -> unset"
 check "an engine installed only for another user is never pinned" \
   "$(run com.brahmadeo.supertonic.tts "$S")" "-> com.brahmadeo.supertonic.tts"
+check "a package whose name only starts with a known engine's is never pinned" \
+  "$(run com.brahmadeo.supertonic.tts "package:app.grapheneos.speechservicesx\npackage:com.google.android.ttsx\n$S")" \
+  "-> com.brahmadeo.supertonic.tts"
 check "READ_ME_ENGINE overrides the choice" \
   "$(READ_ME_ENGINE=com.brahmadeo.supertonic.tts run app.grapheneos.speechservices "$GOS\n$S")" \
   "put com.brahmadeo.supertonic.tts put app.grapheneos.speechservices -> app.grapheneos.speechservices"

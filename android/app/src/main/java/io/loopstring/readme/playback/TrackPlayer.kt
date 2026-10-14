@@ -165,7 +165,8 @@ class TrackPlayer(
       if (synchronized(lock) { closed }) break
       val wait = try {
         step()
-      } catch (e: Exception) {
+      } catch (e: Throwable) {
+        // An Error too (as handOver, REA-46): a dead writer would read later as a lost engine.
         // The class only (AGENTS.md 1). Whatever was buffered is lost: say so for each sentence,
         // so the queue skips it instead of waiting for a "done" that never comes.
         log("playback output failed: ${e.javaClass.simpleName}")
@@ -282,6 +283,7 @@ class TrackPlayer(
     if (out == null) {
       val made = open(r.format)
       if (made == null) {
+        log("playback output failed: open")
         r.close()
         events.onPlayerError(r.id)
         return !flushed()
@@ -347,9 +349,13 @@ class TrackPlayer(
   }
 
   private fun retire(o: AudioOut) {
-    retired += o.underruns()
+    // Under the lock takeUnderruns holds (main thread): it must never reach a released track,
+    // whose getUnderrunCount throws.
+    synchronized(lock) {
+      retired += runCatching { o.underruns() }.getOrDefault(0)
+      out = null
+    }
     runCatching { o.release() }
-    out = null
     outPlaying = false
     writtenBytes = 0
     started = false
