@@ -271,7 +271,12 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `device:lifecycle`, `device:gap` (2 min: n=27 p50=12 p95=18 max=19 ms, stalls 0, underruns
   0) and `device:continuous` (handovers 772 and 1048 ms) passed, and a scripted pause, voice
   change (Supertonic M3 to F2) and media-key Play resumed and read on with no stall or engine
-  loss. The 10-min R-M07 run is still due before the next release.
+  loss. The 10-min R-M07 run is still due before the next release. Open from REA-31's second
+  review (merged as e8567b4 by the owner's choice; reproduced in unit tests, not on the phone):
+  REA-51 (while paused, late engine replies can move the saved position past unheard text, and
+  an engine death can restart audio by itself), REA-52 (a failing audio output skips every
+  sentence silently), REA-53 (an item deleted after a mid-play process death leaves its audio
+  files until the next service start), REA-54 (writer-thread wakeups and work).
 - **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
   `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
