@@ -7,16 +7,17 @@
 # Settings lists a voice and Licenses lists packages. Then REA-35's cold start: a rate tap and
 # a cut made while the engine starts, and a cut while playing. Checks logs for text and crashes.
 #
-# The run pins Google TTS as the system's default engine and puts the previous default back on
-# every exit (REA-37): the timings before the cold start assume it, and Supertonic's own media
-# session and fast reading are REA-31's. The cold-start section needs a slow-starting engine and
+# The run pins a known engine as the system's default and puts the previous default back on
+# every exit (REA-37): the timings before the cold start assume a moderate reader (Supertonic
+# read ten sentences before the first screen check). It is the first of $DEVICE_ENGINES
+# installed for the phone's current user (GrapheneOS Speech Services on the reference phone,
+# REA-31), or READ_ME_ENGINE when set. The cold-start section needs a slow-starting engine and
 # switches to the previous default (see there). UI_ONLY=coldstart runs only that section.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 device_take interactive
 device_require_unlocked
-ENGINE=com.google.android.tts
 prev_engine=$(adb shell settings get secure tts_default_synth | tr -d '\r')
 engine_pinned=0
 # The screen dump lives on shared storage, and the engine was pinned: undo both however the
@@ -32,8 +33,8 @@ cleanup() {
   echo "engine: restored tts_default_synth to $(adb shell settings get secure tts_default_synth | tr -d '\r')"
 }
 DEVICE_ON_EXIT=cleanup
-packages=$(adb shell pm list packages)
-device_has "$packages" "^package:$ENGINE\s*$" || { echo "FAIL: $ENGINE is not installed; device:ui needs it"; exit 1; }
+packages=$(adb shell pm list packages --user "$(adb shell am get-current-user | tr -d '\r')")
+ENGINE=$(device_pick_engine $DEVICE_ENGINES) || { echo "FAIL: none of ${READ_ME_ENGINE:-$DEVICE_ENGINES} is installed for this user; device:ui needs one"; exit 1; }
 engine_pinned=1
 adb shell settings put secure tts_default_synth "$ENGINE"
 echo "engine: $ENGINE (was ${prev_engine:-unset})"
@@ -267,11 +268,12 @@ fi # UI_ONLY
 # Read Me is force-stopped too: only a new service's speaker is still pending. Each tap sequence
 # goes to the phone as one adb shell script so it lands inside the window, which is measured
 # from a marker logged just before the Play tap.
-# The window must outlast the taps, and each `input tap` takes about 0.1 s. Google TTS came back
-# from a force-stop in about 0.2 s, before even the second tap (2026-10-03, reference device,
-# build b1be02f); Supertonic took 0.86-0.95 s (REA-35's verify). So this section runs on the
-# phone's own default engine (the one before the pin), or COLD_ENGINE when set; Google TTS only
-# when neither is installed. Nothing here depends on media keys or reading speed (REA-31).
+# The window must outlast the taps, and each `input tap` takes about 0.1 s. The engine pinned as
+# "Google TTS" came back from a force-stop in about 0.2 s, before even the second tap (2026-10-03,
+# reference device, build b1be02f; REA-31 later found that pin bound GrapheneOS Speech Services,
+# Google TTS not being installed for user 0); Supertonic took 0.86-0.95 s (REA-35's verify). So this section runs on the
+# phone's own default engine (the one before the pin), or COLD_ENGINE when set; the pinned
+# engine only when neither is installed. Nothing here depends on media keys or reading speed (REA-31).
 COLD_ENGINE=${COLD_ENGINE:-$prev_engine}
 if [ -z "$COLD_ENGINE" ] || [ "$COLD_ENGINE" = null ] || ! device_has "$packages" "^package:$COLD_ENGINE\s*$"; then
   COLD_ENGINE=$ENGINE

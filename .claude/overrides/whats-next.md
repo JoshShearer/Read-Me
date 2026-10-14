@@ -19,7 +19,7 @@ Also: Obsidian not on the phone; plugin-side work tracked as NRL-130 in the plug
 | Release build | real APK size (`ls -l`) and the resolved-dependency F-Droid check, verbatim |
 | Manifest | permissions and `<queries>` from the merged manifest, verbatim |
 | Synthesis | RTF = compute s / audio s, with input length, rate, engine, and whether offline (how checked) |
-| Inter-utterance gap | `onDone(n)` to `onStart(n+1)` per R-M07: p95, max, sample count, run duration |
+| Inter-utterance gap | Player end(n) to start(n+1) per R-M07 (ADR 0012): p95, max, sample count, run duration |
 | Bridge | exact `curl` status codes for the hostile-input set; pid before and after |
 | Device and build | device, Android version, TTS engine package, `versionName`/`versionCode`, commit |
 

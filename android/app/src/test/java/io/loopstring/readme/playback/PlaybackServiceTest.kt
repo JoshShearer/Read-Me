@@ -135,6 +135,30 @@ class PlaybackServiceTest {
     c.destroy()
   }
 
+  @Test fun startUpAndDestroySweepPlaybackAudio() {
+    // REA-31, AGENTS.md 3: synthesized sentences are app-private and never outlive the service.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val dir = java.io.File(ctx.noBackupFilesDir, "playback").apply { mkdirs() }
+    val stale = java.io.File(dir, "play-1-0-0-0.wav").apply { writeText("x") }
+    val c = Robolectric.buildService(PlaybackService::class.java).create()
+    assertFalse(stale.exists())
+    val late = java.io.File(dir, "play-1-2-0-5.wav").apply { writeText("x") }
+    c.destroy()
+    assertFalse(late.exists())
+  }
+
+  @Test fun playingSynthesizesToAppPrivateFilesAndNeverSpeaks() {
+    // REA-31: the engine writes files and Read Me plays them, so media keys reach Read Me.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    val tts = shadowOf(org.robolectric.shadows.ShadowTextToSpeech.getLastTextToSpeechInstance())
+    // Both sentences were asked for at once: the queue synthesizes ahead of the player.
+    assertEquals("World", tts.lastSynthesizeToFileText?.toString())
+    assertEquals(null, tts.lastSpokenText)
+    assertTrue(java.io.File(ctx.noBackupFilesDir, "playback").listFiles().orEmpty().all { it.name.startsWith("play-") })
+    c.destroy()
+  }
+
   @Test fun startingPlaybackPreemptsTheBridge() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     Settings(ctx).apply { bridgePort = freePort(); bridgeEnabled = true }
@@ -404,11 +428,22 @@ class PlaybackServiceTest {
 
   // --- R-S05 continuous play: the service hands over to the next unread item ---
 
-  /** Every generation's last sentence reported done: only the live one counts (the queue drops the rest). */
-  private fun finishCurrent(c: org.robolectric.android.controller.ServiceController<PlaybackService>, last: Int) {
+  /**
+   * REA-31 (ADR 0012): sentences [from]..[last] synthesized and heard to the end, every
+   * generation's ids sent: only the live one counts (the queue drops the rest). Robolectric's
+   * engine never answers by itself, and the service's own writer thread is stopped first, so the
+   * player's events are the test's alone and none arrive on a thread of their own.
+   */
+  private fun finishCurrent(c: org.robolectric.android.controller.ServiceController<PlaybackService>, from: Int, last: Int) {
+    val writer = PlaybackService::class.java.getDeclaredField("player").apply { isAccessible = true }
+    (writer.get(c.get()) as TrackPlayer).release()
     val item = PlaybackHub.queue!!.snapshot().itemId
-    for (g in 0..20) {
-      c.get().onDone("$g:$last")
+    for (g in 0..40) {
+      for (i in from..last) c.get().onSynthDone("$g:$i")
+      for (i in from..last) {
+        c.get().onPlayerStart("$g:$i")
+        c.get().onPlayerDone("$g:$i")
+      }
       if (PlaybackHub.queue?.snapshot()?.itemId != item) break
     }
     idle()
@@ -434,7 +469,7 @@ class PlaybackServiceTest {
     val c = playingItem(first)
     val seen = mutableListOf<PlaybackSnapshot>()
     PlaybackHub.addListener { seen += it }
-    finishCurrent(c, 1)
+    finishCurrent(c, 1, 1)
     val s = PlaybackHub.queue!!.snapshot()
     assertEquals(older, s.itemId)
     assertTrue(s.playing)
@@ -458,7 +493,7 @@ class PlaybackServiceTest {
     val older = store.insertText("Second title", listOf("Not read."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
     val c = playingItem(first)
-    finishCurrent(c, 1)
+    finishCurrent(c, 1, 1)
     assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
     assertTrue(store.item(first)!!.archivedAt != null)
     assertEquals(null, store.item(older)!!.archivedAt)
@@ -473,9 +508,9 @@ class PlaybackServiceTest {
     val first = store.insertText("First title", listOf("Hello World"), 200L)
     Settings(ctx).continuousPlay = true
     val c = playingItem(first)
-    finishCurrent(c, 1)
+    finishCurrent(c, 1, 1)
     assertEquals(older, PlaybackHub.queue!!.snapshot().itemId)
-    finishCurrent(c, 0)
+    finishCurrent(c, 0, 0)
     assertTrue(store.item(older)!!.archivedAt != null)
     assertTrue(shadowOf(c.get()).isStoppedBySelf)
     c.destroy()

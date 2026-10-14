@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # npm run device:gap - R-M07's gap target on the reference device: 2.0x on (simulated)
 # battery in forced Doze with the screen off. Reads the service's own "playback gaps" line
-# (onDone(n) to onStart(n+1), measured in PlaybackService). Shares a long public-domain text
-# (Pride and Prejudice, the gutenberg-1342 fixture). Resets battery and Doze state on exit.
+# (Read Me's player finishing sentence n to starting n+1, measured in PlaybackService; REA-31,
+# ADR 0012). The line also carries underruns= and synthP50=/synthP95=, reported, not judged.
+# Shares a long public-domain text (Pride and Prejudice, the gutenberg-1342 fixture). Resets
+# battery and Doze state on exit.
 # Plays 2 minutes by default (about 4 in total), a quick check. R-M07 defines the target over
 # 10 minutes, so only `GAP_MINUTES=10 npm run device:gap` (about 12) is the spec measurement.
 # AIRPLANE=1 adds airplane mode during the measurement (R-M14 run 2), restored on exit.

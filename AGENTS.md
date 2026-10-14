@@ -39,14 +39,14 @@ npm run device:install                      # takes the device slot, installs th
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
-npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text (clears app data)
+npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text and that Read Me holds the media-button session after the start and each resume (REA-31). Runs on the phone's default engine; READ_ME_ENGINE=<package> pins one and restores the default on exit (clears app data)
 npm run device:lifecycle  # REA-25: a paused session survives 75 s in the background and headset Play resumes it (ADR 0009); a force-stopped TTS engine is rebound and reading resumes (clears app data; about 3 min)
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off (about 4 min; clears app data)
 GAP_MINUTES=10 npm run device:gap   # the R-M07 measurement (10 min, about 12): once, before a release (Phase 6b acceptance). Branches that touch queue timing run the 2-min default
 AIRPLANE=1 GAP_MINUTES=10 npm run device:gap   # R-M14 run 2 (the release run): the 10-min measurement in airplane mode, restored on exit
 npm run device:accept-share   # R-M14 run 1: shares a long Wikipedia article, trims, plays at 2.0x, locks 60 s, waits for the owner's unlock, checks the position held and resumes after a kill (needs network; clears app data)
 npm run device:screens    # 10 x List to Trim (cut a paragraph) to Reader on a real article; fails on a blank screen or "Unable to find viewState" (RN #58265 class). Run after any change to App's screen switching or a React Native upgrade
-npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins com.google.android.tts as the default engine (fails if it is not installed) and restores the previous one on exit; the cold-start section uses the previous default instead (Google TTS restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
+npm run device:ui         # every Phase 4 screen: list states, Trim on first open, Reader highlight and kept-only play, delete, Settings, Licenses; then REA-35's cold start (force-stops the engine: a rate tap and a cut during it, a cut while playing; each step prints RUN/PASS, RUN/FAIL or NOT REACHED and a miss fails). Pins the first of app.grapheneos.speechservices, com.google.android.tts installed for the phone's current user (READ_ME_ENGINE overrides) as the default engine and restores the previous one on exit; the cold-start section uses the previous default instead (the pinned engine restarts in about 0.2 s, too fast to tap into), or COLD_ENGINE. UI_ONLY=coldstart runs only that section (clears app data)
 npm run device:bridge     # R-M12: turns the bridge on in Settings, then contract, hostile input, 503 while playing, Obsidian's WebView over CDP when installed, bridge off; logcat has no token (clears app data)
 npm run device:continuous # R-S05 WITHOUT clearing data: shares three synthetic texts, checks they are the top three unread rows, plays the newest with the screen off, checks by logcat ids and sentence counts that each hands over to the next in List order and archives; the owner unlocks within SWITCH_DEADLINE (45 s) so it can turn Continuous play off while the last (long) one plays, else Read Me is force-stopped (never a media key); fails loudly if any non-test id played; then Trim on the first open of a continuous-played item from Archive. Its EXIT trap stops Read Me, deletes its items and restores the switch (needs an unlock; CLEANUP_ONLY=1 redoes that; SCREEN_OFF=0 for a run nobody unlocks)
 npm run device:settings   # REA-27 guard: bridge on, then LOOPS (default 20) x List to Settings, alternating with Reader, Home and /health; fails on a missing bridge control, stuck "Checking...", viewState error, crash, or token/item text in logcat (clears app data)
@@ -164,8 +164,11 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
 - **Playback (Phase 3, REA-17):** `PlaybackService` (`mediaPlayback` FGS, ADR 0005) owns a
   sentence queue on its own `TextToSpeech` with an offline voice; media session,
   notification, audio focus, noisy pause, partial wake lock while speaking; position saved
-  per sentence, archive at the end. Media keys reach it only because `MediaButtonClaim`
-  plays 200 ms of silence at each start (TTS audio belongs to the engine's uid). Verified
+  per sentence, archive at the end. Until REA-31 media keys reached it only because
+  `MediaButtonClaim` played 200 ms of silence at each start (TTS audio belonged to the engine's
+  uid), which Supertonic's own session beat; since REA-31 (ADR 0012) the engine synthesizes
+  to files in `noBackupFilesDir/playback` and Read Me plays them on its own `AudioTrack`, with
+  a true pause, and `MediaButtonClaim` is gone. Verified
   2026-10-02 on the reference device: `npm run device:playback` (build ec5bce1),
   `GAP_MINUTES=10 npm run device:gap` (build 59324f5: n=92 p50=7 p95=17 max=31 ms, stalls 0, errors 0,
   10 min at 2x, battery, forced Doze, screen off), `npm run device:intake` (build da81794);
@@ -231,9 +234,44 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   and `device:bridge` passed; `device:ui` passed on a80352b but failed once on f4493c9 (paused
   before anything was read, right after the default engine was switched to Google TTS;
   unexplained). Twice the default rate read 1.7x after scripted runs that never press slower;
-  `device:ui` now fails on a repeat. Select keyboard navigation is untested. Supertonic's own
-  media session can take media keys from Read Me (REA-31); `device:playback` has since passed
-  with Supertonic as the default (Release 1.0.1 below).
+  `device:ui` now fails on a repeat. Select keyboard navigation is untested. The reference
+  phone's default engine is Supertonic. Before REA-31 its own media session took media keys
+  from Read Me, so `device:playback` passed only with another engine pinned. REA-31 (ADR 0012,
+  2026-10-04): `com.google.android.tts` is not installed for the owner's user 0 (only user 12;
+  plain `pm list packages` lists it anyway), so every earlier "Google TTS" pin on this phone
+  bound `app.grapheneos.speechservices`; device scripts now pin that engine
+  (`device_pick_engine`). On the REA-31 build only one `device:playback` with GrapheneOS
+  Speech Services passed (gaps p95 16 ms), and with Supertonic after its own app had played
+  (its session existed) Read Me held the media-button session in all 17 samples from first
+  audio to the end, media keys reached it, gaps p95 19 ms (2026-10-04, uncommitted build on
+  c77cd94); `device:lifecycle`, `device:ui`, `device:bridge` passed. First audio cold/warm:
+  GrapheneOS 5527/593 ms, Supertonic 1479/622 ms; GrapheneOS reloads per new binding (5233 ms
+  with the engine running). `device:gap` (2 min, GrapheneOS, 08:17) FAILED: n=18 p50=14
+  p95=1161 max=1161 ms, stalls 1, errors 0, underruns 0. Cause (ADR 0012): a long sentence's
+  whole-file synthesis outlasted the audio ahead under count-gated prefetch. Fixed in code
+  (160-char synthesis pieces, 10 s / 8 sentences / 8 MB audio prefetch, `playback stall` log
+  line); on 8e4af79 plus REA-31 (uncommitted, 2026-10-04) `device:playback` (GrapheneOS)
+  passed, gaps n=20 p95=17 max=17 ms; `device:gap` still stalled once (1154 ms at index 1: a
+  short title played while the cold engine wrote the next sentence). With a 2 s start buffer
+  added, `device:gap` (2 min, GrapheneOS, 09:28, same base) passed: n=27 p50=14 p95=19 max=20
+  ms, stalls 0, underruns 0, first audio 6662 ms (cold). `device:playback` and the Supertonic
+  run not yet rerun on the start-buffer build. Those numbers are from the 2026-10-04 builds
+  (c77cd94 or 8e4af79, uncommitted). On the rebased build: `device:playback` with Supertonic
+  passed on f40e264 (2026-10-11; the media-button session was Read Me's after the start, the
+  Reader's resume and the media-key resume; gaps n=19 p95=19 max=19 ms, underruns 0, first
+  audio 805 ms). On 69b3db1 (the same code rebased onto 2ea3150, 2026-10-13, GrapheneOS
+  Speech Services as the default engine) `device:playback` (gaps n=20 p50=12 p95=17 max=17 ms),
+  `device:lifecycle`, `device:gap` (2 min: n=27 p50=8 p95=15 max=19 ms, stalls 0, underruns 0)
+  and `device:continuous` passed. The L2+Double review of that build (fable 66, opus 58,
+  CONCERNS) found a paused voice or engine change resuming with the old engine's files, very
+  short sentences never starting the player, and an underrun read that could reach a released
+  AudioTrack; fixed with tests in 93ba8e0. On 93ba8e0 (2026-10-13) `device:playback` passed
+  with GrapheneOS Speech Services (gaps n=19 p95=16 max=16 ms) and with Supertonic (Read Me's
+  media-button session after the start and both resumes; gaps n=19 p95=17 max=17 ms),
+  `device:lifecycle`, `device:gap` (2 min: n=27 p50=12 p95=18 max=19 ms, stalls 0, underruns
+  0) and `device:continuous` (handovers 772 and 1048 ms) passed, and a scripted pause, voice
+  change (Supertonic M3 to F2) and media-key Play resumed and read on with no stall or engine
+  loss. The 10-min R-M07 run is still due before the next release.
 - **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
   `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
@@ -345,7 +383,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   an `Error` included, ends the chain as if there were none (REA-46, PR #38). Verified 2026-10-09
   on the reference device, build 77a8d15: `npm run device:continuous` (three test items read in
   List order with the screen off, handovers 35 and 20 ms, each archived; Trim on the first open
-  from Archive). Open: REA-47.
+  from Archive). Open: REA-47. Since REA-31 (ADR 0012) the handover loads the next item as a
+  new generation: the finished item's files are deleted and the next item's synthesis starts
+  only then (nothing is synthesized across the boundary), so its first sentence waits for the
+  engine; the 35 and 20 ms above were `speak()`'s. On 69b3db1 (2026-10-13, GrapheneOS Speech
+  Services) `device:continuous` passed with handovers 731 and 818 ms (772 and 1048 ms on
+  93ba8e0); the owner accepted that for REA-31, and REA-49 prepares the next item's first audio
+  before the end.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

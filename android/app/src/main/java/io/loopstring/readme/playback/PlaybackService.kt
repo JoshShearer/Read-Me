@@ -32,18 +32,23 @@ import io.loopstring.readme.bridge.TtsSynth
 import io.loopstring.readme.playback.PlaybackCommands.Route
 import io.loopstring.readme.store.Settings
 import io.loopstring.readme.store.Store
+import java.io.File
 import java.io.IOException
 
 /**
  * R-M07 and R-M12: the `mediaPlayback` foreground service that owns playback and, when
- * enabled, hosts the bridge (ADR 0005). The queue runs on TTS binder threads and never needs JS. Logs carry ids,
- * counts, offsets and durations only; the title appears in the notification, never in a log
- * (AGENTS.md 1).
+ * enabled, hosts the bridge (ADR 0005). The queue runs on TTS binder threads and the player's
+ * thread, and never needs JS. Logs carry ids, counts, offsets and durations only; the title
+ * appears in the notification, never in a log (AGENTS.md 1).
+ *
+ * REA-31 (ADR 0012): the engine synthesizes sentences to app-private files and [TrackPlayer]
+ * plays them, so the audio, the audio focus and the media keys are Read Me's for every engine.
  */
-class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
+class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEvents {
   private val main = Handler(Looper.getMainLooper())
-  private val claim = MediaButtonClaim(main)
   private lateinit var store: Store
+  private lateinit var files: PlaybackFiles
+  private lateinit var player: TrackPlayer
   private lateinit var audio: AudioManager
   private lateinit var speaker: TtsSpeaker
   private var speakerFor: Pair<String?, String?> = null to null
@@ -61,7 +66,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
   // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
   private var resumeAfterRebind = false
   private var pausedAt = -1L
-  private val pauseExpired = Runnable { if (!destroyed) syncForeground(queue.snapshot()) }
+  private val pauseExpired = Runnable {
+    if (destroyed) return@Runnable
+    // The service may be stopped from here on: keep the saved position, not the audio files.
+    queue.dropPrefetch()
+    syncForeground(queue.snapshot())
+  }
   private var rebinds = 0
   private val stallTick = object : Runnable {
     override fun run() {
@@ -71,9 +81,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
   }
   private var title = ""
-  // R-S05: the title of the item nextItem offered (TTS binder thread). It becomes [title] only
-  // when a snapshot of that item reaches the main thread, so an earlier item's snapshot never
-  // shows it and an offer the queue dropped never does (ADR 0011).
+  // R-S05: the title of the item nextItem offered (the player's or a TTS binder thread). It
+  // becomes [title] only when a snapshot of that item reaches the main thread, so an earlier
+  // item's snapshot never shows it and an offer the queue dropped never does (ADR 0011).
   @Volatile private var offered: Pair<Long, String>? = null
   private var shown: PlaybackSnapshot? = null
   @Volatile private var destroyed = false
@@ -100,9 +110,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       )
     }
     session = MediaSession(this, "ReadMe").apply { setCallback(sessionCallback, main) }
+    files = PlaybackFiles(File(noBackupFilesDir, "playback"))
+    val stale = files.sweep()
+    if (stale > 0) Log.i(TAG, "playback swept files=$stale")
+    player = TrackPlayer(this, TrackPlayer::track, log = { Log.i(TAG, it) })
+    player.start()
     speaker = TtsSpeaker(this, this, Settings(this).voice)
     speakerFor = choice()
-    queue = PlaybackQueue(speaker, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars())
+    queue = PlaybackQueue(speaker, player, files, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars())
     PlaybackHub.queue = queue
     PlaybackHub.controller = ::handle
     PlaybackHub.engine = speaker.status.wire
@@ -153,7 +168,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     PlaybackHub.controller = null
     PlaybackHub.queue = null
     PlaybackHub.publish(queue.snapshot().copy(playing = false))
-    claim.release()
+    // Paused above; the item stays (JS shows it paused), its audio files do not (AGENTS.md 3).
+    queue.dropPrefetch()
+    player.release()
+    files.sweep()
     stopForeground(STOP_FOREGROUND_REMOVE)
     getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     session.release()
@@ -204,7 +222,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       speaker.shutdown()
       speaker = TtsSpeaker(this, this, wanted.second)
       speakerFor = wanted
-      queue.swapSpeaker(speaker)
+      queue.swapSynth(speaker)
       hold(r)
       return
     }
@@ -376,9 +394,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     }
   }
 
-  override fun onStart(id: String) = queue.onStart(id)
-  override fun onDone(id: String) = queue.onDone(id)
-  override fun onError(id: String) = queue.onError(id)
+  override fun onSynthDone(id: String) = queue.onSynthDone(id)
+  override fun onSynthError(id: String, lost: Boolean) = queue.onSynthError(id, lost)
+
+  // --- PlayerEvents (the player's thread) ---
+
+  override fun onPlayerStart(id: String) = queue.onPlayerStart(id)
+  override fun onPlayerDone(id: String) = queue.onPlayerDone(id)
+  override fun onPlayerError(id: String) = queue.onPlayerError(id)
 
   // --- PlaybackSink (queue lock held; no calls back into the queue) ---
 
@@ -417,6 +440,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
 
   override fun engineLost() {
     main.post { if (!destroyed) recoverEngine() }
+  }
+
+  override fun stall(detail: String) {
+    Log.i(TAG, "playback stall $detail")
+  }
+
+  override fun firstAudio(itemId: Long, ms: Long) {
+    Log.i(TAG, "playback first-audio ms=$ms item=$itemId")
   }
 
   override fun changed(snapshot: PlaybackSnapshot) {
@@ -461,7 +492,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     speakerFor = choice()
     speaker.shutdown()
     speaker = TtsSpeaker(this, this, speakerFor.second)
-    queue.swapSpeaker(speaker)
+    queue.swapSynth(speaker)
     rebinding = true
     resumeAfterRebind = true
     Log.i(TAG, "playback voice changed")
@@ -481,7 +512,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     speaker.shutdown()
     speakerFor = choice()
     speaker = TtsSpeaker(this, this, speakerFor.second)
-    queue.swapSpeaker(speaker)
+    queue.swapSynth(speaker)
   }
 
   /** False when playback could not be granted focus or the foreground, and was paused. */
@@ -493,12 +524,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
       queue.pause()
       return false
     }
-    claim.claim()
     main.removeCallbacks(stallTick)
     main.postDelayed(stallTick, STALL_TICK_MS)
     if (wakeLock == null) {
       // SPIKE-05 measured gaps on USB power without a wake lock; battery and Doze were never
-      // measured, so playback holds one while speaking (device:gap measures it).
+      // measured, so playback holds one while playing: the engine synthesizes and the player
+      // writes with the screen off (device:gap measures it).
       wakeLock = getSystemService(PowerManager::class.java)
         .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ReadMe:playback")
         .apply { setReferenceCounted(false); acquire(WAKE_LOCK_MS) }
@@ -588,7 +619,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks {
     val st = queue.takeStats()
     val g = st.gaps
     if (g.count == 0 && st.errors == 0 && st.saveErrors == 0) return
-    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors} saveErrors=${st.saveErrors}")
+    // device-gap.sh reads these fields by name; REA-31's are appended after saveErrors.
+    Log.i(TAG, "playback gaps n=${g.count} p50=${g.p50} p95=${g.p95} max=${g.max} stalls=${g.stalls} errors=${st.errors} saveErrors=${st.saveErrors} underruns=${st.underruns} synthP50=${st.synthP50} synthP95=${st.synthP95}")
   }
 
   // --- focus, noisy, session, notification ---

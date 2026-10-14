@@ -157,7 +157,8 @@ set_switch() { # set_switch true|false, from the List; back on the List after
 }
 
 # stop_readme: ends playback through Read Me's own process. Not a media key: those go to whichever
-# session holds them, which on the reference phone can be the TTS engine's own (REA-31).
+# session holds them, which before REA-31 (ADR 0012) could be the TTS engine's own; a force-stop
+# ends Read Me whoever holds them.
 stop_readme() {
   adb shell am force-stop "$PKG" || true
   echo "stopped Read Me (am force-stop $PKG)"

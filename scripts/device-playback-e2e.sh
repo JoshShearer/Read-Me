@@ -4,11 +4,35 @@
 # pauses and resumes with media-button presses, and waits for the item to finish. Checks the
 # service's log lines, that reading advanced with the screen off, that the item archived, and
 # that no log line carries the text (AGENTS.md 1). Leaves the screen off: unlock it after.
+#
+# REA-31: after the start, after the Reader's resume and after the media-key resume, Android must
+# name Read Me's session as the media-button session (Supertonic's own session took it while the
+# engine played the audio). Runs on the phone's default engine; READ_ME_ENGINE=<package> pins
+# that engine instead (it must be installed for the current user) and puts the default back on
+# every exit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 device_take interactive
 device_require_unlocked
+prev_engine=$(adb shell settings get secure tts_default_synth | tr -d '\r')
+engine_pinned=0
+restore_engine() {
+  [ "$engine_pinned" = 1 ] || return 0
+  if [ -z "$prev_engine" ] || [ "$prev_engine" = null ]; then
+    adb shell settings delete secure tts_default_synth >/dev/null 2>&1 || true
+  else
+    adb shell settings put secure tts_default_synth "$prev_engine" >/dev/null 2>&1 || true
+  fi
+  echo "engine: restored tts_default_synth to $(adb shell settings get secure tts_default_synth | tr -d '\r')"
+}
+DEVICE_ON_EXIT=restore_engine
+if [ -n "${READ_ME_ENGINE:-}" ]; then
+  engine=$(device_pick_engine) || { echo "FAIL: $READ_ME_ENGINE is not installed for this user"; exit 1; }
+  engine_pinned=1
+  adb shell settings put secure tts_default_synth "$engine"
+fi
+echo "engine: $(adb shell settings get secure tts_default_synth | tr -d '\r')"
 device_install_release
 
 MARK='Quietly the heron waited'
@@ -70,6 +94,20 @@ on_screen() {
 }
 
 fail=0
+# The session Android sends media keys to: "Media button session is <package>/<tag>/<id> ...".
+button_session() {
+  local d
+  d=$(adb shell dumpsys media_session)
+  grep -m1 -oE 'Media button session is [^ ]+' <<<"$d" | awk '{print $5}' || true
+}
+expect_button_session() {
+  local s
+  s=$(button_session)
+  case "$s" in
+    "$PKG/"*) echo "ok: the media-button session is Read Me's ($1)" ;;
+    *) echo "FAIL: the media-button session is ${s:-none}, not Read Me's ($1)"; fail=1 ;;
+  esac
+}
 on_screen 'text="ready"' || fail=1
 # Phase 4: a first open goes to Trim; Done goes to the Reader, whose Play/Pause button is
 # one button in one place (relabelled), so its position is taken once.
@@ -79,12 +117,18 @@ adb shell input tap $done_at
 play_at=$(centre_of play)
 adb shell input tap $play_at
 wait_count 'playback start item=1 ' 1 20 || fail=1
-sleep 4
+# REA-31: the first sentence is heard once the engine has written all of it (ADR 0012).
+wait_count 'playback first-audio ' 1 20 || fail=1
+sleep 3
+# Supertonic's session took the buttons back about 0.6 s after Read Me's claim (REA-31).
+expect_button_session "after start"
 adb shell input tap $play_at
 wait_count 'playback paused item=1 ' 1 10 || fail=1
 on_screen 'content-desc="play"' || fail=1
 adb shell input tap $play_at
 wait_count 'playback resumed item=1' 1 10 || fail=1
+sleep 3
+expect_button_session "after the Reader's resume"
 
 # Screen off, then media-button controls (lock screen / headset path, R-M07).
 adb shell input keyevent KEYCODE_SLEEP
@@ -100,9 +144,11 @@ if [ "${p2:-0}" -lt "${p1:-0}" ] || { [ "${p2:-0}" -eq "${p1:-0}" ] && [ "${o2:-
 fi
 adb shell cmd media_session dispatch play
 wait_count 'playback resumed item=1' 2 10 || fail=1
+sleep 3
+expect_button_session "after the media-key resume"
 wait_count 'playback finished item=1' 1 180 || fail=1
 wait_count 'playback gaps n=' 1 5 || fail=1
-logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine)' | sed 's/^/  /'
+logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine|first-audio)' | sed 's/^/  /'
 
 all=$(adb logcat -d)
 if device_has "$all" "$MARK|heron|Paragraph [0-9] begins"; then

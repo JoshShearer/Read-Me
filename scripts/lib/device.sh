@@ -114,6 +114,25 @@ device_require_measured_build() {
   fi
 }
 
+# device_pick_engine <package>...: prints the first TTS engine installed for the phone's current
+# user, trying $READ_ME_ENGINE alone when it is set (an override that must be installed). Plain
+# `pm list packages` lists every user's apps: on the reference phone Google TTS is installed only
+# in user 12, and asking user 0's TextToSpeech for it bound GrapheneOS Speech Services instead
+# (REA-31 gate, 2026-10-04). Exits 1, printing nothing, when none is installed.
+device_pick_engine() {
+  local user pkgs p
+  user=$(adb shell am get-current-user | tr -d '\r')
+  pkgs=$(adb shell pm list packages --user "${user:-0}")
+  for p in ${READ_ME_ENGINE:-$*}; do
+    if device_has "$pkgs" "^package:$p\s*$"; then echo "$p"; return 0; fi
+  done
+  return 1
+}
+
+# The engine device scripts pin when they need a known one: GrapheneOS Speech Services, the
+# reference phone's own (REA-31 baseline), then Google TTS where that is installed.
+DEVICE_ENGINES="app.grapheneos.speechservices com.google.android.tts"
+
 # device_crash_seen <pid>: reads ALL of logcat on stdin (see device_has); exits 0 if it shows a
 # crash of $PKG.
 # The native libc "Fatal signal ... pid N (comm)" line carries /proc/self/comm, which ART
