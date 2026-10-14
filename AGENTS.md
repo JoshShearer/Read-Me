@@ -36,7 +36,7 @@ node scripts/check-licenses.mjs             # OSI licenses, ADR 0002 exceptions
 npm run build:release                       # assembleRelease once per ABI (REA-40); READ_ME_ABIS=arm64-v8a for the phone's only
 scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolved Gradle tree, licenses
 npm run device:install                      # takes the device slot, installs the release build
-npm run device:smoke                        # takes the slot, installs, launches, checks for crashes
+npm run device:smoke                        # takes the slot, installs, launches, checks for crashes; fails unless am start reports Status: ok (REA-13)
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
 npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
 npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text and that Read Me holds the media-button session after the start and each resume (REA-31). Runs on the phone's default engine; READ_ME_ENGINE=<package> pins one and restores the default on exit (clears app data)
@@ -271,12 +271,33 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `device:lifecycle`, `device:gap` (2 min: n=27 p50=12 p95=18 max=19 ms, stalls 0, underruns
   0) and `device:continuous` (handovers 772 and 1048 ms) passed, and a scripted pause, voice
   change (Supertonic M3 to F2) and media-key Play resumed and read on with no stall or engine
-  loss. The 10-min R-M07 run is still due before the next release. Open from REA-31's second
-  review (merged as e8567b4 by the owner's choice; reproduced in unit tests, not on the phone):
-  REA-51 (while paused, late engine replies can move the saved position past unheard text, and
-  an engine death can restart audio by itself), REA-52 (a failing audio output skips every
-  sentence silently), REA-53 (an item deleted after a mid-play process death leaves its audio
-  files until the next service start), REA-54 (writer-thread wakeups and work).
+  loss. The 10-min R-M07 run is still due before the next release. REA-31's second review
+  (merged as e8567b4 by the owner's choice) left four defects, fixed by /run-tickets on
+  2026-10-14 with unit tests that failed first; none of the fixed flows was exercised on the
+  phone (the scripts that could show them clear app data):
+  - REA-53 (PR #47, 351eadc): deleting an item removes its `play-<id>-*.wav`, and
+    `MainApplication` sweeps the playback directory once per process start. `device:install`
+    and `device:smoke` passed on 13c5a4c; the delete-after-kill flow was not run.
+  - REA-51 (PR #48, d850652): while paused, late engine answers move and save nothing and an
+    engine death rebinds nothing (the next Play does); a voice or engine change swaps the
+    speaker before shutting the old one down. Not installed (a lock-ownership slip).
+  - REA-52 (PR #49, 1067745): an output (player) error never skips or saves past a sentence:
+    the generation restarts at the lowest unfinished sentence, and three restarts without a
+    finished sentence pause there. `device:install` and `device:smoke` passed on c51cd60; an
+    output fault cannot be caused on the phone. Open owner question: a sentence the output
+    always refuses pauses at the sentence before it, and only Next twice gets past it.
+  - REA-54 (PR #51, da2cd3c): the writer thread waits untimed when there is no output (idle,
+    bridge-only, after an item ends); a paused output still polls every 10 ms. Still open on
+    REA-54: moving `savePosition`, `synthesizeToFile` and deletes off the audio thread
+    (needs a before-and-after `device:gap`). Idle wakeup rate and battery effect unmeasured.
+  Lifecycle edges (REA-18, PR #50, 03868ab, unit tests only): `onReady` returns after destroy;
+  a rebind whose engine never calls back times out after 30 s (a chosen bound) and the item
+  stays paused, the next Play binding a fresh engine; the wake lock is re-taken hourly while
+  playing; the notification is posted only when what it shows changes; a user Pause or Stop
+  after a rebind request always wins (ADR 0012 D5). Open: Play, Pause, Play from JS inside a
+  rebind loses the last Play (as on main before); `scripts/lib/device.sh:167` is outside the
+  new pipefail scan. The device scripts' check lines changed, so `device:gap`, `playback`,
+  `lifecycle`, `bridge` and `smoke` are due on current main.
 - **Which engine (REA-32, PR #23, ADR 0010):** Supertonic and Marmalade declare
   `BIND_TEXT_TO_SPEECH_SERVICE`, so below Android 14 no app can bind them and `TextToSpeech`
   throws instead of falling back; that crashed Read Me on every start on the Huawei tablet
@@ -318,6 +339,11 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   let Read Me restart it from the background (Android bound iFlytek instead), so reading
   through the bridge stops there until Read Me is opened; battery exemptions do not help and
   Google TTS has no entry in EMUI's App launch list. Not run on the reference device.
+  Phase 5 follow-ups (REA-23, PR #45, 690981b, 2026-10-13): a rate must be a plain decimal; a
+  head with bare LF line endings is 400 at once; `close()` drops live connections after a 1 s
+  grace and answers anything caught in it 503 `stopping`; `onResume` restarts only a stopped
+  bridge; a first binding with no engine or voice is retried by the next request. srs.md R-M12
+  and ADR 0004 carry the contract. `device:bridge` has not been rerun since.
 - **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven (including the
   substituted react-android and hermes-android), the native libraries in `libreactnative.so`
   (folly, glog, double-conversion, fast_float, fmt, boost), libjpeg-turbo 2.1.5.1 inside Fresco's

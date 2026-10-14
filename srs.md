@@ -506,9 +506,10 @@ sentence is heard once it is synthesized (nothing is synthesized across the item
 Pause is a true pause: the player stops mid-sentence and resumes from the same frame, with the
 synthesized files kept. A rate change, a voice or engine change, a jump, new cuts, a lost
 engine, or the end of ADR 0009's paused window discards the files not yet played and restarts
-from the start of the current sentence (a rate change while paused stays paused). Each file is
-deleted once the player has it, and all of them on stop, item delete, service start and service
-destroy. None of this touches the bridge's engine instance.
+from the start of the current sentence, or of its current piece when it was split (ADR 0012; a
+rate change while paused stays paused). Each file is deleted once the player has it, and all of
+them on stop, item delete (an item's own files even with no service running, REA-53), service
+start, service destroy and once per process start. None of this touches the bridge's engine instance.
 
 ## Bridge contract (v1)
 
