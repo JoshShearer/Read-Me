@@ -37,4 +37,19 @@ class PlaybackFilesTest {
     assertTrue(other.exists())
     assertEquals(0, PlaybackFiles(File(dir, "absent")).sweep())
   }
+
+  @Test fun deleteItemTakesOnlyThatItemsFiles() {
+    // Item 1 must not take item 12's files, nor a non-wav of its own.
+    dir.mkdirs()
+    val a = File(dir, "play-1-0-0-0.wav").apply { writeText("x") }
+    val b = File(dir, "play-1-3-2-5.wav").apply { writeText("x") }
+    val twelve = File(dir, "play-12-0-0-0.wav").apply { writeText("x") }
+    val note = File(dir, "play-1-0-0-0.txt").apply { writeText("x") }
+    assertEquals(2, files.deleteItem(1))
+    assertFalse(a.exists())
+    assertFalse(b.exists())
+    assertTrue(twelve.exists())
+    assertTrue(note.exists())
+    assertEquals(0, PlaybackFiles(File(dir, "absent")).deleteItem(1))
+  }
 }

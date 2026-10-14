@@ -14,6 +14,7 @@ import io.loopstring.readme.playback.EnginePolicy
 import io.loopstring.readme.playback.TtsOpen
 import io.loopstring.readme.playback.VoiceLabels
 import io.loopstring.readme.playback.PlaybackCommands
+import io.loopstring.readme.playback.PlaybackFiles
 import io.loopstring.readme.playback.PlaybackHub
 import io.loopstring.readme.playback.PlaybackService
 import io.loopstring.readme.playback.PlaybackSnapshot
@@ -114,6 +115,8 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   // Review Focus 2: stop first, so no onDone saves into a row that is going away.
   override fun deleteItem(id: Double, promise: Promise) = settle(promise) {
     PlaybackHub.stopItem(id.toLong())
+    // REA-53: files a dead process left behind (no queue to remove them).
+    PlaybackFiles.of(reactApplicationContext).deleteItem(id.toLong())
     store.delete(id.toLong())
     null
   }
