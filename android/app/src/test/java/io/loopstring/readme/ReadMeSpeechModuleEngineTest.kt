@@ -56,4 +56,20 @@ class ReadMeSpeechModuleEngineTest {
     assertEquals("ready", PlaybackHub.engine)
     c.destroy()
   }
+
+  @Test fun deletingAnItemRemovesAudioAProcessDeathLeftBehind() {
+    // REA-53: no service and no queue (the process was killed mid-play), then the user deletes.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val id = store.insertText("t", listOf("Hello World"), 1L)
+    val other = store.insertText("u", listOf("Other"), 2L)
+    val dir = java.io.File(ctx.noBackupFilesDir, "playback").apply { mkdirs() }
+    val mine = listOf("play-$id-0-0-0.wav", "play-$id-1-0-9.wav").map { java.io.File(dir, it).apply { writeText("x") } }
+    val others = listOf("play-$other-0-0-0.wav", "play-${id}0-0-0-0.wav").map { java.io.File(dir, it).apply { writeText("x") } }
+    val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, _, _ -> null } as Promise
+    ReadMeSpeechModule(BridgeReactContext(ctx)).deleteItem(id.toDouble(), promise)
+    assertTrue(mine.none { it.exists() })
+    assertTrue(others.all { it.exists() })
+    others.forEach { it.delete() }
+  }
 }
