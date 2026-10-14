@@ -15,7 +15,7 @@ fail=0
 # silently under set -e); the launch counts only if the output says exactly "Status: ok".
 start_out=$(adb shell am start -W -n "$PKG/.MainActivity" 2>&1 | tr -d '\r' || true)
 printf '%s\n' "$start_out" | grep -E "Status|LaunchState|TotalTime" || true
-printf '%s\n' "$start_out" | grep -qE '^Status: ok$' \
+grep -qE '^Status: ok$' <<<"$start_out" \
   || { echo "FAIL: am start did not report Status: ok"; fail=1; }
 # The pid is taken before any crash, for the native match. pidof exits 1 while the process is
 # not up yet, which would end the script silently under set -e, so poll and tolerate misses.

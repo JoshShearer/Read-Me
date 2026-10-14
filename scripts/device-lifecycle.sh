@@ -40,7 +40,7 @@ centre_of() {
 }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() {
-  for _ in $(seq "$2"); do logs | grep -qE "$1" && return 0; sleep 1; done
+  for _ in $(seq "$2"); do grep -qE "$1" <<<"$(logs)" && return 0; sleep 1; done
   echo "FAIL: no '$1' within $2 s"; return 1
 }
 session_state() {
@@ -67,7 +67,7 @@ sleep 75
 n=$(adb shell dumpsys activity services "$PKG" | grep -cE 'ServiceRecord.*PlaybackService' || true)
 if [ "$n" -ge 1 ]; then echo "ok: the service is still there"; else echo "FAIL: the service is gone"; fail=1; fi
 # Still there is not enough: a paused service that left the foreground is the 60 s case.
-if adb shell dumpsys activity services "$PKG" | grep -q 'isForeground=true'; then
+if grep -q 'isForeground=true' <<<"$(adb shell dumpsys activity services "$PKG")"; then
   echo "ok: still in the foreground"
 else
   echo "FAIL: no longer in the foreground"; fail=1
@@ -89,7 +89,7 @@ adb shell input keyevent KEYCODE_MEDIA_PAUSE
 wait_log 'playback gaps n=[1-9]' 10 && echo "ok: sentences spoken after the rebind" || fail=1
 
 echo "== privacy and crashes"
-if logs | grep -q 'Quietly the heron\|Paragraph [0-9]* begins'; then echo "FAIL: text in the log"; fail=1; fi
+if grep -q 'Quietly the heron\|Paragraph [0-9]* begins' <<<"$(logs)"; then echo "FAIL: text in the log"; fail=1; fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then echo "FAIL: crash logged"; fail=1; fi
 

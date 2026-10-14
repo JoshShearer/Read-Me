@@ -181,9 +181,25 @@ object PauseWindow {
   fun held(pausedAt: Long, now: Long) = pausedAt >= 0 && now - pausedAt < HOLD_MS
 }
 
+/**
+ * REA-18: playback's wake lock is taken with a timeout (a leak must not hold the phone awake
+ * for ever), so a single item or chain read for longer than that would lose it. While playing it
+ * is taken again once per [EVERY_MS], well inside the timeout, and not per sentence.
+ */
+object WakeRenewal {
+  const val EVERY_MS = 60 * 60 * 1000L
+  fun due(acquiredAt: Long, now: Long) = now - acquiredAt >= EVERY_MS
+}
+
 /** R-M12: "its foreground notification MUST say so". */
 object ServiceText {
   data class Text(val title: String, val body: String, val media: Boolean)
+
+  /**
+   * REA-18: everything the notification shows ([text], the toggle and ongoing from [playing], the
+   * bridge action) and whether it is the foreground one. Equal means nothing to repost.
+   */
+  data class Shown(val text: Text, val playing: Boolean, val bridgeOn: Boolean, val foreground: Boolean)
 
   fun of(itemTitle: String, s: PlaybackSnapshot, bridgeOn: Boolean): Text {
     if (s.itemId == null) return Text("Read Me", if (bridgeOn) "Obsidian bridge on" else "Starting", false)

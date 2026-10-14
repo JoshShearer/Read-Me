@@ -92,6 +92,18 @@ them on its own output.
   check no longer asks `isSpeaking`: no sentence audio and no engine answer for 15 s with a
   dead binding (`getVoice` asked outside the queue's lock), or for 2 minutes whatever the
   binding says, is a lost engine. A slow sentence on a live engine is not.
+  REA-18 amends it: an engine that does not answer its start (a rebind, a voice change or a
+  cold start) within 30 s (`TtsSpeaker.START_TIMEOUT_MS`; the slowest cold engine measured
+  took 8 s to first audio, and `EngineProbe` gives up at 20 s) is shut down and its late answer
+  ignored. A play request held for it is dropped; an item stays paused at its saved position
+  with its transport, and with no item the service ends. The engine state published is
+  `pending`, not `no-engine`, so the Reader does not show R-M06's no-voice card for an engine
+  that was slow, not absent. The next user Play binds a fresh engine, and that bind does not
+  count as the one rebind, so a later loss is rebound again. A rebind resumes only if no user
+  Pause or Stop came after what asked for it: the loss the queue found, or the user Play on a
+  changed voice or a failed engine (a Play from JS posts its rebind to the main thread, so a
+  Pause can land before that runs). The 30 s is a chosen bound, measured only against the
+  reference phone's engines.
 - **Output failures** (REA-52): an error from Read Me's own player (a file it cannot open or
   decode, a refused output, a failed `AudioTrack` write; a writer failure reports every
   buffered sentence) means audio was lost, so the queue never skips or saves past the sentence:

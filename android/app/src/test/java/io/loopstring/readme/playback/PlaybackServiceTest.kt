@@ -193,9 +193,21 @@ class PlaybackServiceTest {
       Intent(ctx, PlaybackService::class.java).setAction(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
     shadowOf(Looper.getMainLooper()).idle()
     c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    disarmStartTimeout(c)
     shadowOf(Looper.getMainLooper()).idle()
     assertTrue(PlaybackHub.queue!!.snapshot().playing)
     return c
+  }
+
+  /**
+   * onReady called directly leaves the speaker PENDING with its 30 s start timeout armed, which
+   * a device never reaches (onInit cancels it before onReady). Cancel it as onInit would, so a
+   * test that moves the clock sees only the timeouts it means to.
+   */
+  private fun disarmStartTimeout(c: org.robolectric.android.controller.ServiceController<PlaybackService>) {
+    val speaker = PlaybackService::class.java.getDeclaredField("speaker").apply { isAccessible = true }.get(c.get())
+    fun field(name: String) = TtsSpeaker::class.java.getDeclaredField(name).apply { isAccessible = true }.get(speaker)
+    (field("main") as android.os.Handler).removeCallbacks(field("startTimeout") as Runnable)
   }
 
   @Test fun aPauseDuringAFocusPauseKeepsThePausedWindow() {
@@ -612,6 +624,284 @@ class PlaybackServiceTest {
     idle()
     assertEquals(first, PlaybackHub.queue!!.snapshot().itemId)
     assertEquals("First title", shownTitle(c))
+    c.destroy()
+  }
+
+  // --- REA-18: lifecycle edges deferred from Phase 3 ---
+
+  private fun advance(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms))
+
+  /**
+   * A service playing item 1 on an engine that answered through the real TtsSpeaker.onInit (so
+   * the speaker is READY and its start timeout is cancelled), for tests that move the clock.
+   */
+  private fun playingAnswered(): org.robolectric.android.controller.ServiceController<PlaybackService> {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-a"))
+    Settings(ctx).voice = "v-a"
+    val id = Store.get(ctx).insertText("t", listOf("Hello World"), 1L)
+    PlaybackHub.offer(request(id))
+    val c = Robolectric.buildService(PlaybackService::class.java, intent(PlaybackCommands.ACTION_START)).create().startCommand(0, 1)
+    idle()
+    engineUp()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    Settings(ctx).voice = null
+    return c
+  }
+
+  @Test fun anEngineAnswerAfterDestroyStartsNothing() {
+    // onReady ignored `destroyed`: a late READY loaded the waiting request on a released player.
+    val (c, _) = waiting()
+    c.destroy()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(null, PlaybackHub.last.itemId)
+    assertFalse(PlaybackHub.last.playing)
+  }
+
+  @Test fun aLateEngineInitAfterDestroyStartsNothing() {
+    // The same through the real path: TtsSpeaker posts onInit on its own handler, which
+    // onDestroy's removeCallbacksAndMessages does not clear.
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-a"))
+    val (c, _) = waiting()
+    c.destroy()
+    engineUp()
+    assertEquals(null, PlaybackHub.last.itemId)
+    assertFalse(PlaybackHub.last.playing)
+  }
+
+  /** Item 1 lost its engine and the rebind's engine never answers; returns that engine. */
+  private fun rebindTimedOut(c: org.robolectric.android.controller.ServiceController<PlaybackService>): android.speech.tts.TextToSpeech {
+    val first = lastTts()
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() }
+    idle() // recoverEngine: rebinding
+    val rebound = lastTts()
+    assertFalse(first === rebound)
+    advance(TtsSpeaker.START_TIMEOUT_MS)
+    return rebound
+  }
+
+  @Test fun aRebindThatNeverAnswersTimesOutAndPlayBindsAFreshEngine() {
+    val c = playing()
+    val dead = rebindTimedOut(c)
+    val s = PlaybackHub.queue!!.snapshot()
+    assertFalse(s.playing)
+    assertTrue("the item stays, paused", s.itemId != null)
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    // Not R-M06's no-voice card: nothing says this phone has no engine, only that this one
+    // did not answer in time.
+    assertEquals("pending", PlaybackHub.engine)
+    // Play reaches a fresh engine, not the one that never answered.
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PLAY)
+    idle()
+    val fresh = lastTts()
+    assertFalse("Play reused the engine that never answered", dead === fresh)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    // That fresh engine did not spend the one rebind: a later loss on it is rebound again.
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() }
+    idle()
+    assertFalse("a later loss was not rebound", fresh === lastTts())
+    c.destroy()
+  }
+
+  @Test fun aLateAnswerFromATimedOutEngineStartsNothing() {
+    // ADR 0012 D5: playback never starts by itself. With an offline voice, that answer would
+    // be READY and resume the item.
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-a"))
+    val c = playing()
+    val dead = rebindTimedOut(c)
+    shadowOf(dead).onInitListener.onInit(android.speech.tts.TextToSpeech.SUCCESS)
+    idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    assertEquals("pending", PlaybackHub.engine)
+    c.destroy()
+  }
+
+  @Test fun aColdStartThatNeverAnswersDropsTheWaitingPlay() {
+    val (c, _) = waiting()
+    advance(TtsSpeaker.START_TIMEOUT_MS)
+    assertEquals(null, PlaybackHub.last.waitingItemId)
+    assertEquals(null, PlaybackHub.last.itemId)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun anEngineAnsweringJustInsideTheTimeoutStillPlays() {
+    // Guard: a slow engine (8 s cold was measured) must not be cut off.
+    org.robolectric.shadows.ShadowTextToSpeech.addVoice(offlineVoice("v-a"))
+    val (c, id) = waiting()
+    advance(TtsSpeaker.START_TIMEOUT_MS - 1_000)
+    engineUp()
+    assertEquals(id, PlaybackHub.queue!!.snapshot().itemId)
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
+  @Test fun theWakeLockIsRenewedWhilePlaying() {
+    // The 4 h wake lock was taken once per play, so a longer read lost it.
+    val c = playingAnswered()
+    val wl = org.robolectric.shadows.ShadowPowerManager.getLatestWakeLock()
+    assertTrue(wl.isHeld)
+    val held = shadowOf(wl).timesHeld
+    // One stall tick after an hour, not the 720 between: a tick with no progress is not a loss.
+    org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(WakeRenewal.EVERY_MS))
+    idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    assertEquals(held + 1, shadowOf(wl).timesHeld)
+    // Not again on the next tick.
+    org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(5_000))
+    idle()
+    assertEquals(held + 1, shadowOf(wl).timesHeld)
+    c.destroy()
+  }
+
+  @Test fun aNewSentenceDoesNotRepostTheNotification() {
+    val c = playing()
+    val n1 = shadowOf(c.get()).lastForegroundNotification
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_NEXT)
+    idle()
+    assertEquals(6, PlaybackHub.queue!!.snapshot().sentence?.start)
+    org.junit.Assert.assertSame(n1, shadowOf(c.get()).lastForegroundNotification)
+    // What it shows changes: it is posted again.
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    val n2 = shadowOf(c.get()).lastForegroundNotification
+    assertFalse(n1 === n2)
+    assertTrue(n2.actions.any { it.title.toString() == "Play" })
+    c.destroy()
+  }
+
+  @Test fun aPauseBeforeTheRebindStartsStaysPausedWhenTheEngineIsBack() {
+    // REA-51's window: the Pause lands between the queue reporting the loss and the posted
+    // recoverEngine, which then set resumeAfterRebind again.
+    val c = playing()
+    repeat(PlaybackQueue.STALL_TICKS) { PlaybackHub.queue!!.checkStall() } // no idle: not yet rebinding
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
+  @Test fun aPlayFromTheJsThreadBuildsTheNewSpeakerOnMain() {
+    // control() runs on the JS thread; TtsSpeaker must be built (and speaker written) on main.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    val before = lastTts()
+    val t = Thread { PlaybackHub.controller!!(PlaybackCommands.ACTION_PLAY) }
+    t.start()
+    t.join()
+    assertTrue("built off main", before === lastTts())
+    idle()
+    assertFalse(before === lastTts())
+    Settings(ctx).voice = null
+    c.destroy()
+  }
+
+  // --- REA-18 fix round 1: a Play on the JS thread posts its rebind to main; a Pause or Stop
+  // given after that Play, before the post runs, must still win (ADR 0012 D5) ---
+
+  private fun onJs(action: String) {
+    val t = Thread { PlaybackHub.controller!!(action) }
+    t.start()
+    t.join()
+  }
+
+  @Test fun aJsPlayThenPauseAfterAVoiceChangeStaysPausedWhenTheEngineIsBack() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY) // posts the rebind to main
+      onJs(PlaybackCommands.ACTION_PAUSE) // before main runs it
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aJsPlayThenStopAfterAVoiceChangeStartsNothingWhenTheEngineIsBack() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY)
+      onJs(PlaybackCommands.ACTION_STOP)
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("started by itself after a user Stop", PlaybackHub.last.playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aJsPlayThenPauseOnATimedOutEngineStaysPausedWhenTheFreshEngineIsBack() {
+    val c = playing()
+    rebindTimedOut(c)
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    onJs(PlaybackCommands.ACTION_PLAY)
+    onJs(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
+  @Test fun aJsPlayAloneAfterAVoiceChangeStillResumes() {
+    // Guard for the fix: with no Pause after it, the Play's rebind resumes.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    try {
+      onJs(PlaybackCommands.ACTION_PLAY)
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
+    c.destroy()
+  }
+
+  @Test fun aSessionPlayThenPauseAfterAVoiceChangeStaysPausedWhenTheEngineIsBack() {
+    // The media session calls back on main, so the rebind is not posted; guard for that path.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playing()
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PAUSE)
+    idle()
+    Settings(ctx).voice = "another-voice"
+    val cb = PlaybackService::class.java.getDeclaredField("sessionCallback").apply { isAccessible = true }
+      .get(c.get()) as android.media.session.MediaSession.Callback
+    try {
+      cb.onPlay()
+      cb.onPause()
+      idle()
+      c.get().onReady(TtsSpeaker.EngineStatus.READY)
+      idle()
+      assertFalse("resumed by itself after a user Pause", PlaybackHub.queue!!.snapshot().playing)
+    } finally {
+      Settings(ctx).voice = null
+    }
     c.destroy()
   }
 }

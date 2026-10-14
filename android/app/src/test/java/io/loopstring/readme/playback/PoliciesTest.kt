@@ -136,3 +136,34 @@ class VoiceLabelsTest {
     assertEquals(EnginePolicy.Answer("ready", write = true), EnginePolicy.answer("ready", serviceAlive = false, serviceEngine = "unknown"))
   }
 }
+
+class WakeRenewalTest {
+  @Test fun dueOncePerHourWhilePlaying() {
+    // REA-18: the 4 h wake lock is taken again well inside its timeout, not per sentence.
+    assertEquals(false, WakeRenewal.due(1_000L, 1_000L + WakeRenewal.EVERY_MS - 1))
+    assertEquals(true, WakeRenewal.due(1_000L, 1_000L + WakeRenewal.EVERY_MS))
+  }
+}
+
+class ServiceTextShownTest {
+  private val reading = PlaybackSnapshot(1L, true, SentenceRow(0, 0, 5, "Hello"), 1.0f)
+
+  private fun shown(s: PlaybackSnapshot = reading, title: String = "t", bridgeOn: Boolean = false, foreground: Boolean = true) =
+    ServiceText.Shown(ServiceText.of(title, s, bridgeOn), s.playing, bridgeOn, foreground)
+
+  @Test fun aNewSentenceShowsTheSame() {
+    // REA-18: one snapshot per sentence must not repost the notification.
+    assertEquals(shown(), shown(reading.copy(sentence = SentenceRow(0, 6, 11, "World"))))
+  }
+
+  @Test fun everyInputOfTheNotificationCounts() {
+    val base = shown()
+    for (other in listOf(
+      shown(title = "another title"),
+      shown(reading.copy(playing = false)),
+      shown(bridgeOn = true),
+      shown(foreground = false),
+      shown(reading.copy(itemId = null)),
+    )) org.junit.Assert.assertNotEquals(base, other)
+  }
+}

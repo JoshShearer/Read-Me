@@ -50,21 +50,31 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   private lateinit var files: PlaybackFiles
   private lateinit var player: TrackPlayer
   private lateinit var audio: AudioManager
-  private lateinit var speaker: TtsSpeaker
-  private var speakerFor: Pair<String?, String?> = null to null
+  // Written on the main thread only (REA-18: follow() is posted there); read by control() on
+  // the JS thread.
+  @Volatile private lateinit var speaker: TtsSpeaker
+  @Volatile private var speakerFor: Pair<String?, String?> = null to null
   private lateinit var queue: PlaybackQueue
   private lateinit var session: MediaSession
   private var focusRequest: AudioFocusRequest? = null
   @Volatile private var pausedForFocus = false
   private var wakeLock: PowerManager.WakeLock? = null
+  private var wakeAcquiredAt = 0L
   private var noisyRegistered = false
   // A play request held while the engine starts. Read on the JS thread by handle().
   @Volatile private var waiting: PlaybackHub.Request? = null
   // REA-35: end() stops with the newest start id, so a start Android delivered since survives.
   private var lastStartId = 0
-  private var rebinding = false
+  // These three are written by control() on the JS thread as well as on main.
+  @Volatile private var rebinding = false
   // Cleared by a Pause or Stop during the rebind: the user's pause wins over resuming.
-  private var resumeAfterRebind = false
+  @Volatile private var resumeAfterRebind = false
+  // REA-18: counts user Pauses and Stops. Whatever asks for a rebind (a loss the queue found, a
+  // user Play) takes the count first; the rebind resumes only if it has not moved since, however
+  // the request and the Pause were ordered across threads.
+  private val userStops = java.util.concurrent.atomic.AtomicInteger()
+  // The userStops count taken by the request behind the current rebind.
+  @Volatile private var rebindMark = 0
   private var pausedAt = -1L
   private val pauseExpired = Runnable {
     if (destroyed) return@Runnable
@@ -72,11 +82,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     queue.dropPrefetch()
     syncForeground(queue.snapshot())
   }
-  private var rebinds = 0
+  @Volatile private var rebinds = 0
   private val stallTick = object : Runnable {
     override fun run() {
       if (destroyed) return
       queue.checkStall()
+      renewWakeLock()
       main.postDelayed(this, STALL_TICK_MS)
     }
   }
@@ -86,6 +97,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   // item's snapshot never shows it and an offer the queue dropped never does (ADR 0011).
   @Volatile private var offered: Pair<Long, String>? = null
   private var shown: PlaybackSnapshot? = null
+  // REA-18: what the posted notification shows; a snapshot that changes none of it (a new
+  // sentence) posts nothing.
+  private var posted: ServiceText.Shown? = null
   @Volatile private var destroyed = false
   // Written on the main thread; read on TTS binder threads by preemptOnPlay.
   @Volatile private var bridge: BridgeServer? = null
@@ -287,15 +301,32 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       pausedForFocus = false
       // Already paused by a focus loss: no snapshot follows, so release what that held here,
       // and start ADR 0009's window as a user pause would.
-      queue.pause() || heldForFocus.also {
+      val changed = queue.pause() || heldForFocus.also {
         if (it) main.post { if (!destroyed) { startPauseWindow(); releaseHeld() } }
       }
+      // After the queue call, never before: pause() takes the queue lock, so a loss the queue
+      // reported before it (engineLost, under that lock) saw the old count and its rebind will
+      // not resume; one after it found nothing playing (REA-18).
+      userStops.incrementAndGet()
+      changed
     }
     PlaybackCommands.ACTION_PLAY -> {
       rebinds = 0
       // REA-33: Play on a paused item resumed with the engine and voice it had, so a change in
       // Settings never reached it. Rebind with the new choice and resume once it is ready.
-      if (choice() != speakerFor && !rebinding && !queue.snapshot().playing) follow() else queue.resume()
+      // REA-18: so does Play on a speaker whose engine failed or never answered; that bind is
+      // the user's, so it does not count against RecoveryPolicy's one rebind.
+      if (needsFreshSpeaker()) {
+        // TtsSpeaker is built and `speaker` written on main; control() may be on the JS thread,
+        // so a Pause or Stop can arrive before this runs. The mark is taken here, at the Play.
+        val mark = userStops.get()
+        onMain {
+          if (needsFreshSpeaker()) follow(mark) else if (userStops.get() == mark) queue.resume()
+        }
+        true
+      } else {
+        queue.resume()
+      }
     }
     PlaybackCommands.ACTION_TOGGLE ->
       if (queue.snapshot().playing) {
@@ -309,10 +340,18 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     PlaybackCommands.ACTION_STOP -> {
       resumeAfterRebind = false
       queue.stop()
+      // After the queue call, as for Pause.
+      userStops.incrementAndGet()
       true
     }
     else -> false
   }
+
+  private fun speakerFailed() =
+    speaker.status == TtsSpeaker.EngineStatus.NO_ENGINE || speaker.status == TtsSpeaker.EngineStatus.NO_VOICE
+
+  private fun needsFreshSpeaker() =
+    !rebinding && !queue.snapshot().playing && (choice() != speakerFor || speakerFailed())
 
   /** R-M12: the bridge runs exactly while Settings says so, on the port Settings names. */
   private fun syncBridge() {
@@ -362,6 +401,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   // --- TtsSpeaker.Callbacks ---
 
   override fun onReady(status: TtsSpeaker.EngineStatus) {
+    // A late engine answer after onDestroy: the player is released and nothing may start.
+    if (destroyed) return
     if (rebinding) {
       rebinding = false
       PlaybackHub.engine = status.wire
@@ -370,7 +411,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
         // A play request made while rebinding wins over resuming what was lost.
         val r = waiting
         waiting = null
-        if (r != null) load(r) else if (resumeAfterRebind) queue.resume()
+        if (r != null) load(r) else if (resumeAfterRebind && userStops.get() == rebindMark) queue.resume()
       } else {
         // REA-35 #3: a request held for this engine is dropped, the engine state reaches JS,
         // and the foreground follows the paused item again; the next Play binds afresh (begin).
@@ -393,6 +434,26 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       publishState()
       end()
     }
+  }
+
+  /**
+   * REA-18: the engine of [s] never answered (a rebind, a voice change or a cold start). Before,
+   * `rebinding` or `waiting` stayed set for ever, so later losses were ignored and every request
+   * was held. A held request is dropped; an item stays paused at its saved position, with its
+   * transport (ADR 0012 D5: nothing starts by itself); with no item the service ends. The
+   * engine state published is "pending", not "no-engine": a timeout does not show that this
+   * phone has no voice (R-M06's card), and the next Play binds a fresh engine.
+   */
+  override fun onStartTimedOut(s: TtsSpeaker) {
+    if (destroyed || s !== speaker) return
+    Log.i(TAG, "playback engine start timed out ms=${TtsSpeaker.START_TIMEOUT_MS}")
+    rebinding = false
+    resumeAfterRebind = false
+    PlaybackHub.engine = TtsSpeaker.EngineStatus.PENDING.wire
+    waiting?.let { Log.i(TAG, "playback start cancelled item=${it.itemId}") }
+    waiting = null
+    publishState()
+    if (queue.snapshot().itemId == null) end() else syncForeground(queue.snapshot())
   }
 
   override fun onSynthDone(id: String) = queue.onSynthDone(id)
@@ -440,7 +501,10 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   }
 
   override fun engineLost() {
-    main.post { if (!destroyed) recoverEngine() }
+    // Called under the queue lock: a user Pause or Stop counted after this one did not exist
+    // when the loss was found, so the rebind must not resume past it (REA-18, REA-51).
+    val mark = userStops.get()
+    main.post { if (!destroyed) recoverEngine(mark) }
   }
 
   override fun stall(detail: String) {
@@ -476,7 +540,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     } else if (s.playing && before?.itemId != null && before.itemId != s.itemId) {
       // R-S05: a continuous-play handover keeps focus, the session and the foreground; the
       // wake lock's timeout restarts so a long chain is not cut at WAKE_LOCK_MS.
-      wakeLock?.acquire(WAKE_LOCK_MS)
+      wakeLock?.let { it.acquire(WAKE_LOCK_MS); wakeAcquiredAt = SystemClock.elapsedRealtime() }
     } else if (!s.playing && before?.playing == true) {
       Log.i(TAG, "playback paused item=${s.itemId} paragraph=${s.sentence?.paragraphIndex} offset=${s.sentence?.start}")
       logStats()
@@ -488,27 +552,37 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     syncForeground(s)
   }
 
-  /** REA-33: a new speaker for Settings' engine and voice; onReady resumes where it stopped. */
-  private fun follow(): Boolean {
+  /**
+   * REA-33: a new speaker for Settings' engine and voice; onReady resumes where it stopped.
+   * Main thread only. REA-18: also a user Play on a speaker whose engine failed. [mark] is the
+   * userStops count when that Play was given: a Pause or Stop after it means no resume.
+   */
+  private fun follow(mark: Int) {
+    val failed = speakerFailed()
     speakerFor = choice()
     val old = speaker
     speaker = TtsSpeaker(this, this, speakerFor.second)
     queue.swapSynth(speaker) { old.shutdown() }
     rebinding = true
-    resumeAfterRebind = true
-    Log.i(TAG, "playback voice changed")
-    return true
+    rebindMark = mark
+    resumeAfterRebind = userStops.get() == mark
+    Log.i(TAG, if (failed) "playback engine rebinding for play" else "playback voice changed")
   }
 
-  /** REA-18: rebind playback's own engine (never the bridge's) and resume where it stopped. */
-  private fun recoverEngine() {
+  /**
+   * REA-18: rebind playback's own engine (never the bridge's). It resumes where it stopped
+   * unless the user paused or stopped after the loss was found ([mark], the userStops count
+   * then, has moved).
+   */
+  private fun recoverEngine(mark: Int) {
     if (!RecoveryPolicy.rebind(rebinds, rebinding)) {
       if (!rebinding) Log.i(TAG, "playback engine lost; paused")
       return
     }
     rebinds++
     rebinding = true
-    resumeAfterRebind = true
+    rebindMark = mark
+    resumeAfterRebind = userStops.get() == mark
     Log.i(TAG, "playback engine lost; rebinding")
     val old = speaker
     speakerFor = choice()
@@ -534,6 +608,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       wakeLock = getSystemService(PowerManager::class.java)
         .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ReadMe:playback")
         .apply { setReferenceCounted(false); acquire(WAKE_LOCK_MS) }
+      wakeAcquiredAt = SystemClock.elapsedRealtime()
     }
     if (!noisyRegistered) {
       val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
@@ -542,6 +617,15 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       noisyRegistered = true
     }
     return true
+  }
+
+  /** REA-18: a read longer than WAKE_LOCK_MS keeps its wake lock (WakeRenewal). */
+  private fun renewWakeLock() {
+    val wl = wakeLock ?: return
+    val now = SystemClock.elapsedRealtime()
+    if (!queue.snapshot().playing || !WakeRenewal.due(wakeAcquiredAt, now)) return
+    wl.acquire(WAKE_LOCK_MS)
+    wakeAcquiredAt = now
   }
 
   /** ADR 0009: a user pause keeps the foreground for PauseWindow.HOLD_MS. */
@@ -571,16 +655,28 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     val bridgeOn = bridge != null
     if (s.itemId == null && !bridgeOn) return
     val held = PauseWindow.held(pausedAt, SystemClock.elapsedRealtime())
-    if (ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn, held)) {
+    val foreground = ServiceLife.foreground(s.playing, pausedForFocus, bridgeOn, held)
+    // REA-18: one snapshot per sentence rebuilt and posted the notification each time (a rate
+    // limit risk at 4x). Only a change in what it shows posts it.
+    if (shownOf(s, foreground) == posted) return
+    if (foreground) {
       goForeground(s)
     } else {
       // Paused for longer than ADR 0009's window: the notification stays (with Play) but can be
       // swiped away, and the system may stop the service; the position is already saved.
       stopForeground(STOP_FOREGROUND_DETACH)
       getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
+      posted = shownOf(s, foreground = false)
     }
   }
 
+  /** Every input of [notification], plus whether it is the foreground one. */
+  private fun shownOf(s: PlaybackSnapshot, foreground: Boolean): ServiceText.Shown {
+    val bridgeOn = bridge != null
+    return ServiceText.Shown(ServiceText.of(title, s, bridgeOn), s.playing, bridgeOn, foreground)
+  }
+
+  /** Always posts: onStartCommand owes Android a startForeground whatever is shown. */
   private fun goForeground(s: PlaybackSnapshot) {
     val n = notification(s)
     try {
@@ -589,7 +685,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       } else {
         startForeground(NOTIFICATION_ID, n)
       }
+      posted = shownOf(s, foreground = true)
     } catch (e: IllegalStateException) {
+      posted = null
       // Android 12+ refuses a foreground start from the background outside the exemptions
       // (notification action, media button). Stay paused rather than speak unprotected.
       Log.i(TAG, "playback resume refused: ${e.javaClass.simpleName}")
@@ -612,6 +710,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       return
     }
     stopForeground(STOP_FOREGROUND_REMOVE)
+    posted = null
     // REA-35 #2: stopSelf() would also discard a start Android delivered after this one.
     stopSelfResult(lastStartId)
   }

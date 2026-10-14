@@ -135,8 +135,8 @@ adb shell input keyevent KEYCODE_SLEEP
 sleep 8
 adb shell cmd media_session dispatch pause
 wait_count 'playback paused item=1 ' 2 10 || fail=1
-first=$(logs | grep -oE 'playback paused item=1 paragraph=[0-9]+ offset=[0-9]+' | sed -n 1p)
-second=$(logs | grep -oE 'playback paused item=1 paragraph=[0-9]+ offset=[0-9]+' | sed -n 2p)
+first=$(logs | grep -oE 'playback paused item=1 paragraph=[0-9]+ offset=[0-9]+' | sed -n 1p || true)
+second=$(logs | grep -oE 'playback paused item=1 paragraph=[0-9]+ offset=[0-9]+' | sed -n 2p || true)
 key() { sed -E 's/.*paragraph=([0-9]+) offset=([0-9]+)/\1 \2/' <<<"$1"; }
 read -r p1 o1 <<<"$(key "$first")"; read -r p2 o2 <<<"$(key "$second")"
 if [ "${p2:-0}" -lt "${p1:-0}" ] || { [ "${p2:-0}" -eq "${p1:-0}" ] && [ "${o2:-0}" -le "${o1:-0}" ]; }; then
@@ -148,7 +148,7 @@ sleep 3
 expect_button_session "after the media-key resume"
 wait_count 'playback finished item=1' 1 180 || fail=1
 wait_count 'playback gaps n=' 1 5 || fail=1
-logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine|first-audio)' | sed 's/^/  /'
+logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine|first-audio)' | sed 's/^/  /' || true
 
 all=$(adb logcat -d)
 if device_has "$all" "$MARK|heron|Paragraph [0-9] begins"; then
@@ -156,7 +156,7 @@ if device_has "$all" "$MARK|heron|Paragraph [0-9] begins"; then
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
 # REA-25: a cold engine (8 s to first audio) must not be taken for a dead one.
-if logs | grep -q 'engine lost'; then echo "FAIL: a stall was declared during normal playback"; fail=1; fi
+if grep -q 'engine lost' <<<"$(logs)"; then echo "FAIL: a stall was declared during normal playback"; fail=1; fi
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then
   echo "FAIL: crash logged"; fail=1
 fi

@@ -44,10 +44,10 @@ for ABI in ${READ_ME_ABIS:-$READ_ME_ALL_ABIS}; do
     # that predates one method leaves the app crashing when JS first calls it. Only names of 9+
     # characters are checkable: clang writes shorter literals as immediates, so "getItem" is in
     # no string table even in a good build (seen 2026-10-02 on the Phase 3 build).
-    for m in "$SPEC" $(node -e "
-      const s=require('fs').readFileSync('$SPEC_TS','utf8');
-      const body=s.slice(s.indexOf('interface Spec'));
-      console.log([...body.matchAll(/^  (\w{9,})\(/gm)].map(x=>x[1]).join(' '))"); do
+    # REA-18: assigned before the loop, so set -e stops on spec-methods' refusal (zero names); a
+    # failing command substitution in a for list is ignored.
+    methods=$(node scripts/lib/spec-methods.mjs "$SPEC_TS")
+    for m in "$SPEC" $methods; do
       [ "$(grep -ac "$m" "$SO" || true)" = 0 ] && missing="$missing $m"
     done
     rm -f "$SO"
