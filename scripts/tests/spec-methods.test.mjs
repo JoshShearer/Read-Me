@@ -3,9 +3,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
+import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {specMethods} from '../lib/spec-methods.mjs';
 
 const SPEC_TS = 'src/native/NativeReadMeSpeech.ts';
@@ -43,4 +43,26 @@ test('build-release.sh stops on that refusal under set -e', () => {
   const r = spawnSync('bash', ['-c', `set -euo pipefail; SPEC_TS=${file}; methods=$(node scripts/lib/spec-methods.mjs "$SPEC_TS"); echo reached`], {encoding: 'utf8'});
   assert.notEqual(r.status, 0);
   assert.doesNotMatch(r.stdout, /reached/);
+});
+
+test('the CLI runs from a path with a space and through a symlink', () => {
+  // The CLI guard compared import.meta.url with file://argv[1]: a space (URL-encoded as %20) or
+  // a symlinked script made them differ, so it printed nothing and exited 0, refusal included.
+  const dir = mkdtempSync(join(tmpdir(), 'spec methods '));
+  mkdirSync(join(dir, 'real dir'));
+  const script = join(dir, 'real dir', 'spec-methods.mjs');
+  copyFileSync('scripts/lib/spec-methods.mjs', script);
+  const link = join(dir, 'linked spec-methods.mjs');
+  symlinkSync(script, link);
+  const empty = join(dir, 'Empty Spec.ts');
+  writeFileSync(empty, 'export interface Spec {}\n');
+  const names = specMethods(readFileSync(SPEC_TS, 'utf8'));
+  for (const path of [script, link]) {
+    const ok = spawnSync('node', [path, resolve(SPEC_TS)], {encoding: 'utf8'});
+    assert.equal(ok.status, 0, path);
+    assert.deepEqual(ok.stdout.trim().split(' '), names, path);
+    const refused = spawnSync('node', [path, empty], {encoding: 'utf8'});
+    assert.equal(refused.status, 1, path);
+    assert.match(refused.stderr, /refused/, path);
+  }
 });
