@@ -52,10 +52,20 @@ Two smaller facts shaped the handover itself:
   item is dropped; a rate change applies to the next item; next, previous and back-paragraph
   do nothing; the stall check does not count the silence as a lost engine; an item deleted
   meanwhile is refused and ends the chain.
+- **A pause in the handover is not held (REA-47).** ADR 0009 holds a user pause (foreground,
+  focus, session) so Play resumes the paused item. In the handover window there is no such item:
+  the finished one is archived and the next has not started. So a pause there ends the session
+  as an item end with the switch off does: the foreground, focus and media session are released,
+  no ADR 0009 window opens, and the next item stays unread at its old position. Holding it would
+  need a new rule for which item Play resumes. The window is short (Store reads and segmentation;
+  the 0.7-1 s handover silences measured on the phone run from the load to the first audio, after
+  it). A pause after the next item has loaded is an ordinary held pause under ADR 0009
+  (`PlaybackQueueTest.aPauseAfterTheNextItemLoadsIsAnOrdinaryHeldPause`).
 - **Title.** `nextItem` only offers the next item's title; it becomes the notification and
   session title when a snapshot of that item reaches the main thread, so an earlier snapshot
   never shows it and an offer the queue dropped never does.
-- **What ends the chain.** A user pause or Stop (also during the handover), an engine error run at the end (which pauses
+- **What ends the chain.** A user pause or Stop (also during the handover, where a pause is not
+  held: see above), an engine error run at the end (which pauses
   instead of archiving), a failed archive, the switch turned off (read at each handover), a
   new playback speaker swapped in during the handover (a voice or engine change, or a rebind;
   REA-51, as a pause there), or no next item.
@@ -76,8 +86,16 @@ Two smaller facts shaped the handover itself:
 - R-S02 (sleep timer) is not built. When it is, its "at the end of the current item" must win
   over continuous play: the sink's `nextItem` returns null while that timer is armed.
 - The device check (`npm run device:continuous`) runs on the owner's library without clearing
-  it, so the chain must never reach one of the owner's items: the script identifies its three
-  items by List position and sentence count, turns the switch off through Settings while the
-  last (long) one plays, which needs the owner to unlock, and otherwise force-stops Read Me
-  while that item still plays. "Stops after the last unread item" is covered by the queue and
-  service unit tests, not on the phone.
+  it, so the chain must never reach one of the owner's items: the script identifies its items
+  by List position and sentence count, turns the switch off through Settings while the last
+  (long) one plays, which needs the owner to unlock, and otherwise force-stops Read Me while
+  that item still plays. "Stops after the last unread item" is covered by the queue and
+  service unit tests, not on the phone. Since REA-47 a fourth, long test item (the buffer) is
+  shared first, so it sits directly below the last one: if that item ends before the switch is
+  off, the chain reaches the buffer, not the owner's newest item, and a background watcher
+  force-stops Read Me within about a second of the handover line (the script checks the watcher
+  is alive and stops Read Me itself if not). The run then fails as not completed. Nothing plays
+  unless the four are the top four unread rows and all ready. A full run refuses to start while
+  an earlier run's saved switch setting is still pending its cleanup. Residual risk: if the
+  host loses adb or power mid-run, nothing stops the chain, and the buffer's length (at least the
+  last item's) is all that stands before the owner's items.

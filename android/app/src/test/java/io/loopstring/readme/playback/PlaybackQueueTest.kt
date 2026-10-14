@@ -1275,6 +1275,24 @@ class PlaybackQueueTest {
     assertTrue(leftover().none { it.startsWith("play-8-") })
   }
 
+  @Test fun aPauseAfterTheNextItemLoadsIsAnOrdinaryHeldPause() {
+    // REA-47, ADR 0011: once the next item has loaded the handover is over, so a pause holds
+    // that item as ADR 0009 holds any pause (unlike a pause inside the handover window).
+    sink.next = NextItem(8, rows8, 0)
+    finishSeven()
+    assertEquals(8L, queue.snapshot().itemId)
+    val saves = sink.saves.size
+    assertTrue(queue.pause())
+    val s = queue.snapshot()
+    assertEquals(8L, s.itemId)
+    assertFalse(s.playing)
+    assertEquals(Triple(8L, rows8[0].paragraphIndex, rows8[0].start), sink.saves.drop(saves).last())
+    assertEquals(listOf(7L), sink.finished)
+    assertTrue(queue.resume())
+    assertEquals(8L, queue.snapshot().itemId)
+    assertTrue(queue.snapshot().playing)
+  }
+
   @Test fun aSwapDuringAHandoverEndsTheChain() {
     // REA-51, ADR 0011: a new speaker while the next item is built ends the chain as a pause does.
     sink.next = NextItem(8, rows8, 0)

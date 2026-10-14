@@ -564,7 +564,10 @@ class PlaybackQueue(
   }
 
   /**
-   * R-S05, ADR 0011: archive-then-load in one step. No itemId=null snapshot is published
+   * R-S05, ADR 0011: the second of two steps. [endLocked] archived the finished item under the
+   * lock and opened this handover; the next item is built here without the lock, and loaded only
+   * if this handover's token is still current (no pause, stop, play, speaker swap or deletion
+   * meanwhile); a next item deleted meanwhile ends the chain. No itemId=null snapshot is published
    * between the two items, so the service keeps focus, the wake lock, the session and the
    * foreground (Android 12+ refuses a new foreground start from the background). The rate is
    * the queue's own and is not applied again (AGENTS.md 9). The next item starts as a new

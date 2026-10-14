@@ -389,6 +389,12 @@ during the chain are not picked up. An item read this way keeps `opened_at` unse
 cuts. A pause, Stop, engine error or failed archive ends the chain; an item being deleted is
 skipped. The service segments the next item itself with a Kotlin port of R-M08's fallback.
 
+Amended 2026-10-14 (REA-47, ADR 0011): the handover is two steps. Under the queue lock the
+finished item is archived and a handover begins; the next item is built outside the lock and
+loaded only if nothing (pause, Stop, play, voice or engine change, deletion) happened meanwhile.
+A pause in that window ends the chain and is not held as ADR 0009 holds a pause: no item is left
+to resume. A pause after the next item has loaded is an ordinary held pause.
+
 ## Could Have
 
 ### R-C01 - Save to Obsidian
@@ -496,9 +502,11 @@ sentence is synthesized. JS is a view of the service, not its driver, so screen-
 does not depend on the JS runtime.
 
 Continuous play (R-S05, ADR 0011): when the switch is on and the player finishes the last
-kept sentence, the service archives the item and, in the same queue step, loads the next unread
-item with sentences from its own Kotlin segmenter, without leaving the foreground or releasing
-focus, the wake lock or the media session in between. This is the one case where the service
+kept sentence, the service archives the item under the queue lock and begins a handover; it then
+builds the next unread item's sentences with its own Kotlin segmenter outside the lock, and loads
+it only if nothing happened meanwhile (a pause, Stop, user play or speaker change ends the
+handover; a next item deleted meanwhile is refused and ends the chain). The foreground, focus,
+the wake lock and the media session are kept throughout. This is the one case where the service
 builds a sentence list itself. Loading it is a new generation (ADR 0012): the finished item's
 remaining files are deleted, and the next item's synthesis starts only then, so its first
 sentence is heard once it is synthesized (nothing is synthesized across the item boundary).
