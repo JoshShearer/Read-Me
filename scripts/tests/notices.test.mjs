@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCoordinates, parsePomLicenses, gradleCache, spdxFor, nativeNotices, androidText} from '../make-notices.mjs';
+import {parseCoordinates, parsePomLicenses, gradleCache, spdxFor, nativeNotices, androidText, compareNotices} from '../make-notices.mjs';
 
 test('coordinates come from the dependency tree, resolved versions win, deduped', () => {
   const tree = `releaseRuntimeClasspath
@@ -71,4 +71,38 @@ test('libjpeg-turbo, compiled into Fresco\'s imagetranscoder, ships its BSD and 
   assert.ok(j, 'no libjpeg-turbo notice');
   assert.match(j.text, /Independent JPEG Group/);
   assert.match(j.text, /Redistribution and use in source and binary forms/);
+});
+
+test('REA-50: {prefer} and {require} unwrap like {strictly}; the arrow still wins', () => {
+  const tree = `releaseRuntimeClasspath
++--- a.b:prefer-only:{prefer 1.2.0}
++--- a.b:prefer-arrow:{prefer 1.2.0} -> 1.3.0
++--- a.b:require-only:{require 2.0}
++--- a.b:require-arrow:{require 2.0} -> 2.1 (c)
++--- a.b:require-reject:{require 1.0; reject 2.0} -> 1.1
+\\--- a.b:strict:{strictly 3.0}`;
+  assert.deepEqual(parseCoordinates(tree), [
+    'a.b:prefer-arrow:1.3.0',
+    'a.b:prefer-only:1.2.0',
+    'a.b:require-arrow:2.1',
+    'a.b:require-only:2.0',
+    'a.b:require-reject:1.1',
+    'a.b:strict:3.0',
+  ]);
+});
+
+test('REA-50: a rich version that cannot be resolved fails loudly, naming the module', () => {
+  assert.throws(
+    () => parseCoordinates('+--- a.b:c:{require 1.0; reject 2.0}'),
+    /a\.b:c/,
+  );
+  assert.throws(() => parseCoordinates('+--- a.b:d:{strictly [1.0, 2.0)}'), /a\.b:d/);
+});
+
+test('REA-50: npm notices sort by UTF-16 code unit, not by locale', () => {
+  const names = ['string_decoder', 'string-width', 'String', 'éclair', 'zeta'];
+  const sorted = names.map(name => ({name, version: '1.0.0'})).sort(compareNotices).map(n => n.name);
+  assert.deepEqual(sorted, ['String', 'string-width', 'string_decoder', 'zeta', 'éclair']);
+  assert.ok(compareNotices({name: 'a', version: '1.10.0'}, {name: 'a', version: '1.9.0'}) < 0);
+  assert.equal(compareNotices({name: 'a', version: '1'}, {name: 'a', version: '1'}), 0);
 });
