@@ -1,6 +1,6 @@
 # Commands - Read Me
 
-**13 of these 14 commands are shared.** They come from `~/Dev/claude-workflow/core/commands/` and
+**14 of these 15 commands are shared.** They come from `~/Dev/claude-workflow/core/commands/` and
 are linked into `.claude/commands/` by `claude-workflow/install.sh`. Don't edit a linked file: the
 edit would land in every project. Instead:
 
@@ -41,7 +41,7 @@ This index lives at `.claude/COMMANDS.md`, not inside `commands/`, so it is not 
 branch's fault"; `/verify` answers "does it work on the phone" and owns the `VERIFIED ON DEVICE`
 verdict.
 
-## Quality (4)
+## Quality (5)
 
 | Command | Purpose |
 |---|---|
@@ -49,6 +49,7 @@ verdict.
 | `/check-constraints` | Mechanical pass over the non-negotiables in `AGENTS.md`; a BLOCK stops `/ship` |
 | `/spec-check` | Map the tree against `srs.md` requirement and spike IDs and report what moved |
 | `/update-docs` | Diff `AGENTS.md`, `srs.md` and `CONTEXT.md` against reality after a merge |
+| `/update-packages` | npm dependency updates on a dated branch in its own worktree: minors and patches in one commit, each major alone, licenses, notices, release build and F-Droid scan after each, then a PR. React Native stays held |
 
 ## Orchestration (2)
 
