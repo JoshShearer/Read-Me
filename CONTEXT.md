@@ -113,6 +113,7 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   the sensitive-clip Copy)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
                              fdroid-scan.sh, check-licenses.mjs, lib/device.sh (one-phone slot),
+                             lib/spec-methods.mjs (build-release's TurboModule spec guard, REA-18),
                              devcheck.sh + devcheck-report.mjs (pipeline on Hermes vs Node),
                              device-intake-e2e.sh (share a link, a text and a dead link),
                              device-playback-e2e.sh (play, pause, media keys screen-off, archive),
