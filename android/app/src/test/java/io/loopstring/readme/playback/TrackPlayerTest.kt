@@ -74,6 +74,32 @@ class TrackPlayerTest {
 
   private fun steps(n: Int = 5) = repeat(n) { player.step() }
 
+  /**
+   * Starts [p] and returns its writer thread once it is asleep with nothing to do. The thread is
+   * caught from an event it reports (an unreadable file), so nothing in the player exposes it.
+   */
+  private fun sleepingWriter(p: TrackPlayer): Thread {
+    var writer: Thread? = null
+    events.onEvent = { if (it == "error idle:0") writer = Thread.currentThread() }
+    p.start()
+    p.enqueue("idle:0", File(dir, "empty.wav").apply { writeBytes(ByteArray(0)) })
+    val t = waitFor("the writer reports the unreadable file") { writer }
+    events.onEvent = {}
+    // Untimed: the state a missed wakeup would leave it in for good.
+    waitFor("the writer to sleep untimed") { t.takeIf { it.state == Thread.State.WAITING } }
+    return t
+  }
+
+  /** Polls [get] until non-null, failing after [ms] instead of hanging the suite. */
+  private fun <T : Any> waitFor(what: String, ms: Long = 2_000, get: () -> T?): T {
+    val deadline = System.currentTimeMillis() + ms
+    while (true) {
+      get()?.let { return it }
+      if (System.currentTimeMillis() > deadline) throw AssertionError("timed out waiting for $what")
+      Thread.sleep(2)
+    }
+  }
+
   @Test fun aSentenceStartsWhenItsFirstFramePlaysAndIsDoneAtItsLast() {
     val f = wav("a.wav", 300)
     player.enqueue("0:0", f)
@@ -282,6 +308,92 @@ class TrackPlayerTest {
     player.play()
     steps()
     assertTrue(outs.isEmpty())
+  }
+
+  // REA-54: the writer woke every 10 ms for the service's whole life, bridge-only and idle
+  // included. With no output and nothing to read it now waits until a call gives it work.
+
+  @Test fun anIdlePlayerWaitsUntilWokenInsteadOfPolling() {
+    assertEquals("no timed wait while idle", TrackPlayer.UNTIL_WOKEN, player.step())
+    player.play() // wanting audio with none enqueued is still idle: nothing opens
+    assertEquals(TrackPlayer.UNTIL_WOKEN, player.step())
+  }
+
+  @Test fun anOutputIsWatchedEvenWhenNothingIsLeftToRead() {
+    // Its head still has to pass the marks, and a starved one needs silence: keep polling.
+    player.enqueue("0:0", wav("a.wav", 100))
+    player.play()
+    assertEquals(TrackPlayer.IDLE_MS, player.step())
+    out.advance(100)
+    assertEquals(TrackPlayer.IDLE_MS, player.step())
+    player.pause()
+    assertEquals(TrackPlayer.IDLE_MS, player.step())
+    player.flush() // the output goes: idle again
+    assertEquals(TrackPlayer.UNTIL_WOKEN, player.step())
+    assertTrue(out.released)
+  }
+
+  @Test fun anIdleWriterThreadSleepsWithoutATimeout() {
+    val p = TrackPlayer(events, { f -> FakeOut(f).also { outs += it } }, padMs = 40)
+    try {
+      val t = sleepingWriter(p)
+      assertEquals(Thread.State.WAITING, t.state)
+    } finally {
+      p.release()
+    }
+  }
+
+  /** A threaded player whose writer is asleep untimed; [body] runs, then it is released. */
+  private fun withSleepingWriter(body: (TrackPlayer, Thread) -> Unit) {
+    val p = TrackPlayer(events, { f -> FakeOut(f).also { synchronized(outs) { outs += it } } }, padMs = 40)
+    try {
+      body(p, sleepingWriter(p))
+    } finally {
+      p.release()
+    }
+  }
+
+  private fun playingOut(): FakeOut = waitFor("an output written and playing") {
+    synchronized(outs) { outs.lastOrNull() }?.takeIf { it.playing && it.written > 0 }
+  }
+
+  @Test fun aSleepingWriterPlaysOnEnqueueThenPlay() = withSleepingWriter { p, _ ->
+    p.enqueue("0:0", wav("a.wav", 100))
+    p.play()
+    playingOut()
+  }
+
+  @Test fun aSleepingWriterPlaysOnPlayThenEnqueue() = withSleepingWriter { p, t ->
+    p.play()
+    // play() alone is no work: it must sleep again, untimed, and still wake on the enqueue.
+    waitFor("the writer to sleep again") { t.takeIf { it.state == Thread.State.WAITING } }
+    p.enqueue("0:0", wav("a.wav", 100))
+    playingOut()
+  }
+
+  @Test fun aSleepingWriterFollowsAFlushAndPlaysWhatComesAfter() = withSleepingWriter { p, t ->
+    p.flush()
+    waitFor("the writer to sleep after the flush") { t.takeIf { it.state == Thread.State.WAITING } }
+    p.enqueue("1:0", wav("a.wav", 100))
+    p.play()
+    playingOut()
+  }
+
+  @Test fun aFlushedOutputIsReleasedAndTheWriterSleepsAgain() = withSleepingWriter { p, t ->
+    p.enqueue("0:0", wav("a.wav", 100))
+    p.play()
+    val o = playingOut()
+    assertFalse(t.state == Thread.State.WAITING) // an output is being watched: timed waits
+    p.flush()
+    waitFor("the output released") { o.takeIf { it.released } }
+    waitFor<Thread>("the writer to sleep untimed") { t.takeIf { it.state == Thread.State.WAITING } }
+  }
+
+  @Test fun releaseWakesASleepingWriterAndItsThreadEnds() = withSleepingWriter { p, t ->
+    val before = System.currentTimeMillis()
+    p.release()
+    assertFalse("the writer thread joined", t.isAlive)
+    assertTrue(System.currentTimeMillis() - before < 1_000)
   }
 
   @Test fun releaseDeletesQueuedFiles() {
