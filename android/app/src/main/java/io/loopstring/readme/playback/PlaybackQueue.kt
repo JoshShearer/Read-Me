@@ -23,7 +23,8 @@ data class QueueStats(
  * the player says so, so positions and R-M07's gap (player done(n) to player start(n+1)) are
  * what the listener hears. Pause is a true pause (D1): the player holds its place and the files
  * stay. A rate change, a jump, a new item or a lost engine discards the files not yet played
- * and starts again from the start of a sentence.
+ * and starts again from the start of a row: a sentence, or the [chunkChars] piece of a long
+ * one that was playing, so a restart repeats at most one piece.
  *
  * R-S05 (ADR 0011): when the player finishes an item's last sentence the queue archives it and,
  * outside its lock, asks the sink for the next item; loading it is a new generation like any
@@ -35,7 +36,8 @@ data class QueueStats(
  *
  * REA-51: while paused, nothing the engine answers moves or saves the position, rebinds or
  * starts audio. A failed or lost request discards the prefetch instead, and the next Play
- * restarts at the start of the sentence the user heard (a lost engine is reported then).
+ * restarts at the start of the row (sentence or piece) the user heard (a lost engine is
+ * reported then).
  */
 class PlaybackQueue(
   private var synth: SentenceSynth,
@@ -201,7 +203,8 @@ class PlaybackQueue(
 
   /**
    * setSpeechRate is the only rate lever (AGENTS.md 9). Files made at the old rate are
-   * discarded; playing restarts at the current sentence's start, paused stays paused.
+   * discarded; playing restarts at the start of the current row (the current [chunkChars] piece
+   * of a long sentence, ADR 0012), paused stays paused.
    */
   fun setRate(rate: Float) = synchronized(lock) {
     this.rate = rate
@@ -404,7 +407,8 @@ class PlaybackQueue(
   /**
    * A rebound engine or a new voice (PlaybackService). The rate is applied once more. Files the
    * old engine made are discarded (ADR 0012), and so are its requests still in flight, which it
-   * may never answer: the next Play restarts at the current sentence's start on the new engine.
+   * may never answer: the next Play restarts at the start of the current row (sentence or
+   * [chunkChars] piece) on the new engine.
    *
    * REA-51: [retire] shuts the old speaker down, and runs only after the flush has left its
    * generation, so the errors its stop() turns in-flight requests into are ignored. It runs
@@ -440,7 +444,7 @@ class PlaybackQueue(
    * REA-51: an engine answer while paused (a request asked for before the pause failed, or the
    * engine died). It must not move or save the position, count against the engine, or rebind,
    * so the pipeline is discarded (every other answer of it is then ignored) and the next start
-   * restarts the current sentence; a lost engine is reported to the sink at that start.
+   * restarts the current row (sentence or piece); a lost engine is reported to the sink at that start.
    */
   private fun pausedAnswerLocked(lost: Boolean) {
     flushLocked()

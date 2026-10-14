@@ -61,6 +61,11 @@ interface AudioOut {
  * output that runs dry holds the end of the last sentence back, so the gap would read as zero.
  *
  * [step] does one round of work; [start] runs it on a thread. Tests call [step] directly.
+ *
+ * REA-54: the thread polls every [IDLE_MS] only while an output exists (its head, marks and
+ * silence need watching, paused or not). With no output and nothing to read it waits with no
+ * timeout; every call that can give it work bumps [changes] and wakes it, and the loop sleeps
+ * only if [changes] is what [step] saw, checked under the lock it waits on, so no wakeup is lost.
  */
 class TrackPlayer(
   private val events: PlayerEvents,
@@ -91,9 +96,12 @@ class TrackPlayer(
   private var closed = false
   private var taken = 0
   private var thread: Thread? = null
+  /** Bumped with every notifyAll: a round that saw an older value has not seen that work. */
+  private var changes = 0L
 
   // The writer's own state: only step() and reset() touch it.
   private var seen = 0
+  private var seenChanges = 0L
   @Volatile private var out: AudioOut? = null
   private var outPlaying = false
   private var writtenBytes = 0L
@@ -113,17 +121,17 @@ class TrackPlayer(
       return
     }
     pending.addLast(Entry(id, file))
-    lock.notifyAll()
+    wakeLocked()
   }
 
   override fun play() = synchronized(lock) {
     want = true
-    lock.notifyAll()
+    wakeLocked()
   }
 
   override fun pause() = synchronized(lock) {
     want = false
-    lock.notifyAll()
+    wakeLocked()
   }
 
   override fun flush() = synchronized(lock) {
@@ -131,7 +139,7 @@ class TrackPlayer(
     want = false
     pending.forEach { it.file.delete() }
     pending.clear()
-    lock.notifyAll()
+    wakeLocked()
   }
 
   override fun progress(): Long = played
@@ -153,10 +161,16 @@ class TrackPlayer(
       epoch++
       pending.forEach { it.file.delete() }
       pending.clear()
-      lock.notifyAll()
+      wakeLocked()
       thread
     }
     if (t == null) reset() else t.join(JOIN_MS)
+  }
+
+  /** Under [lock]: work may have arrived. */
+  private fun wakeLocked() {
+    changes++
+    lock.notifyAll()
   }
 
   private fun loop() {
@@ -173,14 +187,30 @@ class TrackPlayer(
         failAll()
         IDLE_MS
       }
-      if (wait > 0) synchronized(lock) { if (!closed) lock.wait(wait) }
+      synchronized(lock) {
+        if (closed) {
+          // release() woke it; the while check ends the loop.
+        } else if (wait == UNTIL_WOKEN) {
+          // Decided by step() outside the lock: sleep only if nothing changed since it looked.
+          // pending and epoch are checked too, so a sleep never leaves queued work behind.
+          if (changes == seenChanges && epoch == seen && pending.isEmpty()) lock.wait()
+        } else if (wait > 0) {
+          lock.wait(wait)
+        }
+      }
     }
     reset()
   }
 
-  /** One round: follow a flush, play or pause, report what the head passed, then write. */
+  /**
+   * One round: follow a flush, play or pause, report what the head passed, then write. Returns
+   * how long to wait before the next round: [UNTIL_WOKEN] when there is nothing to watch.
+   */
   fun step(): Long {
-    val (e, w) = synchronized(lock) { epoch to want }
+    val (e, w) = synchronized(lock) {
+      seenChanges = changes
+      epoch to want
+    }
     if (e != seen) {
       reset()
       seen = e
@@ -193,8 +223,15 @@ class TrackPlayer(
       if (!emit(o)) return 0
     }
     write(w)
-    return IDLE_MS
+    return if (idle()) UNTIL_WOKEN else IDLE_MS
   }
+
+  /**
+   * Nothing for the writer until a call gives it work: no output to watch (a head that moves,
+   * marks to report, silence to pad or a drain before a format change all need one) and nothing
+   * half read. pending is checked again under the lock before the wait.
+   */
+  private fun idle() = out == null && reading == null && waiting == null && carryLen == 0
 
   /** False when an event flushed the player: the rest of this round belongs to old work. */
   private fun emit(o: AudioOut): Boolean {
@@ -381,6 +418,8 @@ class TrackPlayer(
     /** Silence kept buffered while starved: above one mixer period, small enough to be quick. */
     const val PAD_MS = 60
     const val IDLE_MS = 10L
+    /** [step]'s answer when only a call can make work: wait with no timeout. */
+    const val UNTIL_WOKEN = -1L
     private const val CHUNK = 16_384
     private const val JOIN_MS = 1_000L
 
@@ -417,7 +456,8 @@ private class TrackOut(override val format: PcmFormat, private val track: AudioT
       }
       val mask = if (format.channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
       val min = AudioTrack.getMinBufferSize(format.sampleRate, mask, enc)
-      // At least 200 ms: the writer wakes every 10 ms, and a pause or flush discards nothing heard.
+      // At least 200 ms: the writer wakes every 10 ms while an output exists, and a pause or
+      // flush discards nothing heard.
       val size = maxOf(if (min > 0) min * 2 else 0, format.sampleRate * format.frameBytes / 5)
       val t = AudioTrack.Builder()
         .setAudioAttributes(TtsSpeaker.ATTRIBUTES)
