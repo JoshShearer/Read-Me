@@ -8,17 +8,18 @@
 # in the background. Turns the bridge off and checks it is gone. Checks logcat for the token
 # and the test text.
 #
-# REA-44: the while-playing WebView check needs playback to outlast Obsidian's start, whatever
-# the engine's speed, so the test text is 40 sentences and the CDP call reports /health's busy
-# flag: busy=false there is a failed precondition (timing), reported apart from a bridge fault.
+# REA-44: the while-playing WebView check needs playback to outlast Obsidian's start. The test
+# text is 40 sentences (about 4x the old margin; a fast enough engine or a slow enough Obsidian
+# start can still beat it), and the CDP call reports /health's busy flag: busy=false there is a
+# failed precondition (timing), reported apart from a bridge fault. Known gap: /health and the
+# POST are two fetches, so playback ending between them still reads as a bridge fault.
 # Runs on the phone's default engine; READ_ME_ENGINE=<package> pins that engine instead (it must
 # be installed for the current user) and puts the default back on every exit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 PORT=8787
-HDR=$(mktemp)          # the Authorization header lives in a 0600 file, not in curl's argv
-chmod 600 "$HDR"
+HDR=""                 # made after the source-only guard, so a sourced test run leaves no file
 prev_engine=""
 engine_pinned=0
 restore_engine() {
@@ -32,30 +33,46 @@ restore_engine() {
 }
 cleanup() {
   restore_engine
-  rm -f "$HDR"
+  [ -z "$HDR" ] || rm -f "$HDR"
   adb forward --remove tcp:$PORT >/dev/null 2>&1 || true
   adb shell rm -f /sdcard/readme-ui.xml >/dev/null 2>&1 || true
 }
 DEVICE_ON_EXIT=cleanup
-fail=0
-PRECOND=0
+fail=0      # a bridge, privacy or harness failure
+PRECOND=0   # the while-playing WebView check could not be judged: playback had already ended
 check() { if eval "$2"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
 
 # The Obsidian WebView half of the contention check. $TOK is the pairing token (stdin to node,
 # never argv). /health's busy flag over CDP right before the POST says whether Read Me was still
 # playing: busy=false means the run was too slow, which is not a bridge fault and not a pass.
+# If the CDP call itself failed (Obsidian not running, no debuggable page, a CDP timeout), the
+# bridge was never asked, so that is reported as an Obsidian/CDP failure, not as a bridge fault.
 obsidian_playing_check() {
-  local P
-  P=$(printf '%s' "$TOK" | node scripts/obsidian-cdp-bridge.mjs playing) || P=""
+  local P rc=0
+  P=$(printf '%s' "$TOK" | node scripts/obsidian-cdp-bridge.mjs playing) || rc=$?
   echo "$P"
-  if grep -q '"health":"200 busy=false"' <<<"$P"; then
+  if [ "$rc" != 0 ] || ! grep -q '"health":' <<<"$P"; then
+    echo "FAIL (Obsidian/CDP): the WebView call did not complete (node exit $rc), not a bridge fault; the 64 KiB POST was not judged"
+    fail=1
+  elif grep -q '"health":"200 busy=false"' <<<"$P"; then
     echo "FAIL (precondition, timing): playback ended before the WebView check, not a bridge fault; the 64 KiB POST was not judged"
-    fail=1; PRECOND=1
+    PRECOND=1
   else
     check "WebView: 64 KiB POST while playing reads 503 busy" "grep -q '\"bigBusy\":\"503 ' <<<\"\$P\""
   fi
 }
+# The closing line. A failed precondition is never a pass; it is called a timing rerun only when
+# nothing else failed, so a real bridge or privacy failure is never summarised as a flake.
+verdict() {
+  if [ "$fail" = 0 ] && [ "$PRECOND" = 0 ]; then echo "device:bridge PASS (Obsidian: ${OBSIDIAN:-unknown})"; return 0
+  elif [ "$fail" = 0 ]; then echo "device:bridge FAIL (precondition: playback ended before the WebView check; rerun)"
+  elif [ "$PRECOND" = 1 ]; then echo "device:bridge FAIL (checks above failed; also the precondition: playback ended before the WebView check)"
+  else echo "device:bridge FAIL"; fi
+  return 1
+}
 [ -n "${DEVICE_BRIDGE_SOURCE_ONLY:-}" ] && return 0
+HDR=$(mktemp)          # the Authorization header lives in a 0600 file, not in curl's argv
+chmod 600 "$HDR"
 
 device_take interactive
 device_require_unlocked
@@ -233,6 +250,4 @@ check "the test text is not in logcat" "! grep -q 'Bridge test\\|Hello from the 
 check "no crash" "! adb logcat -d | device_crash_seen"
 logs | grep -E 'bridge ' | sed -E 's/.*(bridge .*)/\1/' | sort | uniq -c | sort -rn | head -20
 
-if [ "$fail" = 0 ]; then echo "device:bridge PASS (Obsidian: $OBSIDIAN)"
-elif [ "$PRECOND" = 1 ]; then echo "device:bridge FAIL (precondition: playback ended before the WebView check; rerun)"; exit 1
-else echo "device:bridge FAIL"; exit 1; fi
+verdict || exit 1
