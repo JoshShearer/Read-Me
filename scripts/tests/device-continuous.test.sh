@@ -60,7 +60,7 @@ check "the trap is set right after the slot is taken" \
 # --- helpers ---
 LOG='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback finished item=12
-I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
 I ReadMe  : playback handover from=12 item=11 ms=180
 I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=9
 I ReadMe  : playback finished item=10
@@ -68,19 +68,30 @@ I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
 check "playback ids are read from every playback line" "$(src "playback_ids \"\$1\"" _ "$LOG" | tr '\n' ' ')" "4 10 11 12 "
 check "a non-test id is found" "$(src "foreign_ids \"\$1\" '12 11 10'" _ "$LOG" | tr '\n' ' ')" "4 "
 check "no foreign id when all are test ids" "$(src "foreign_ids \"\$1\" '12 11 10 4'" _ "$LOG")" ""
-check "sentence windows: T1 151, T2 41, T3 4" \
-  "$(src 'count_ok 0 151 && count_ok 1 41 && count_ok 2 4 && echo yes')" yes
+check "sentence windows: T1 151, T2 81, T3 4" \
+  "$(src 'count_ok 0 151 && count_ok 1 81 && count_ok 2 4 && echo yes')" yes
 check "the windows do not admit each other's counts" \
   "$(src 'count_ok 0 41 || count_ok 1 4 || count_ok 2 41 || count_ok 2 151 || count_ok 1 151 || echo none')" none
-check "T2's window is 40-42 (REA-55: long enough for the Reader checks)" \
-  "$(src 'count_ok 1 40 && count_ok 1 42 && echo yes'),$(src 'count_ok 1 39 || count_ok 1 43 || echo no')" "yes,no"
+check "T2's window is 80-82 (REA-55: long enough for the Reader checks)" \
+  "$(src 'count_ok 1 80 && count_ok 1 82 && echo yes'),$(src 'count_ok 1 79 || count_ok 1 83 || echo no')" "yes,no"
+L3='I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
+I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3'
+check "the item after T3 and the item after T2 are test items before next_test records them" \
+  "$(src 'TEST_IDS=12; ID3=12; ID2=11; next_seen "$1" "$ID3" 1; next_seen "$1" "$ID2" 0; foreign_ids "$1" "$TEST_IDS" | tr "\n" " "; echo "[$TEST_IDS]"' _ "$L3")" "[12 11 10]"
+printf '%s\n' "$L3" > "$STUB_LOG"
+check "guard: a run that dies on T2's checks does not call T1 a non-test item" \
+  "$(src 'CLEARED=1; TEST_IDS=12; ID3=12; ID2=11; guard && echo clean')" clean
+: > "$STUB_LOG"
+check "but not one with another count, from a later start, or newer" \
+  "$(src 'TEST_IDS=12; next_seen "$1" 12 1; next_seen "$1" 11 0; echo "[$TEST_IDS]"' _ 'I ReadMe  : playback continue from=12 item=11 sentences=60 start=0 ms=3
+I ReadMe  : playback continue from=11 item=10 sentences=151 start=9 ms=3')" "[12]"
 check "a two-sentence owner item matches no window" "$(src 'count_ok 0 2 || count_ok 1 2 || count_ok 2 2 || echo none')" none
 DUMP='<node content-desc="delete Kestrel test item three." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item two." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item one." bounds="[0,0][1,1]"/><node content-desc="delete Owner thing" bounds="[0,0][1,1]"/>'
 check "row titles come top to bottom" "$(src "row_titles \"\$1\" | head -3 | tr '\n' '|'" _ "$DUMP")" \
   "Kestrel test item three.|Kestrel test item two.|Kestrel test item one.|"
 check "the body text has no digits and the marker" \
   "$(src 'body_text 3' | grep -cE '[0-9]'),$(src 'body_text 3' | grep -c Kestrel)" "0,1"
-check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=41 start=0' item")" 11
+check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=81 start=0' item")" 11
 
 # --- REA-55: the Reader follows the handover ---
 RD() { # RD <title> <button> [highlight]: a Reader dump
@@ -100,7 +111,7 @@ check "the FAIL line names what the stale Reader shows (no item text)" "$(src 'r
   "title T3, highlighted paragraph no, button Play"
 L2='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback start cancelled item=9
-I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
 I ReadMe  : playback paused item=11 paragraph=3 offset=0'
 check "JS starts are counted, a cancelled start is not" "$(src 'js_starts "$1"' _ "$L2")" 1
 check "the item being read is the latest continue" "$(src 'reading_now "$1"' _ "$L2")" 11
@@ -113,7 +124,7 @@ I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0" | tr '\n' ' ')" 
 # returned_checks with a stub log, a stub dump and the service's answer to each tap.
 BTN='<node content-desc="pause" bounds="[10,10][20,20]"/><node content-desc="play" bounds="[30,30][40,40]"/>'
 T2_READING='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
-I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3'
+I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3'
 # rc <code>: runs code with the script loaded and short waits; prints its output, then rc=<n>.
 rc() { READER_WAIT=1 TAP_WAIT=2 src "$1"; echo "rc=$?"; }
 setup() { # setup <log> <dump> <tap answers, one per line>
@@ -149,7 +160,7 @@ setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 
 out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
 check "a tap that makes JS start another item stops Read Me and dies at once" \
   "$(grep -c 'started item 12 while item 11' <<<"$out"),$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS"),$(grep -c went-on <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,0,rc=1"
-setup 'I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3' "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+setup 'I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3' "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 '
 out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
 check "and so does one whose earlier start line the log no longer holds (counted from before the tap)" \

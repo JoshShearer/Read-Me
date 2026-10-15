@@ -56,10 +56,13 @@ TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "
 # Body sentences per item. Distinct counts identify each item in the service's log line; T1 is
 # long (about 7500 characters) so the switch can be turned off while it plays. The buffer is at
 # least as long: it only has to outlast the watcher's reaction (an estimated few seconds). T2
-# (about 2000 characters) outlasts REA-55's live-switch and transport checks on it: a few
-# uiautomator dumps and two taps, each dump seconds on the phone. A Pause landing after T2's end
-# would fall in the handover window, which ends the chain (ADR 0011).
-BODY=(150 40 3 160)
+# (about 4000 characters, about 80 s at 2x) outlasts REA-55's live-switch and transport checks on
+# it: a few uiautomator dumps and two taps. A dump takes about 4 s while the Reader reads, but for
+# the first 10-20 s after playback starts or a handover the UI never goes idle and each one waits
+# about 12 s and returns nothing (main and REA-55 alike, 2026-10-15); at 40 sentences T2 once
+# ended before the Pause tap. A Pause landing after T2's end would fall in the handover window,
+# which ends the chain (ADR 0011).
+BODY=(150 80 3 160)
 STATE_FILE="$PRIMARY/.claude/scratch/device-continuous.before"
 # The last capture a failed reader_check saw (test titles and controls only, no item text).
 READER_FAIL_DUMP=${READER_FAIL_DUMP:-$PRIMARY/.claude/scratch/device-continuous-reader-fail.xml}
@@ -71,6 +74,8 @@ CLEARED=0    # logcat was cleared before the shares: every playback line is this
 SHARED=0     # test items may exist on the phone
 TEST_IDS=""  # verified test item ids
 ID1=""       # T1's id, once known: the buffer is what follows it
+ID2=""       # T2's and T3's ids, once known: the next test item is what follows each
+ID3=""
 BUFFER_PLAYED=0 BUFFER_ID=""
 # REA-55: how long a Reader check waits for the Reader to show the item being read, and a
 # transport tap for the service's line (the off-phone tests shorten both).
@@ -146,6 +151,22 @@ buffer_seen() {
     case " $TEST_IDS " in *" $id "*) ;; *) TEST_IDS+=" $id" ;; esac
     BUFFER_PLAYED=1
     BUFFER_ID=$id
+  fi
+  return 0
+}
+
+# next_seen <log> <from id> <BODY index>: when a test item's continue line names an item with
+# the next test item's count, read from its start and older, that item is the next test item and
+# joins TEST_IDS. A run that dies before next_test records it (a failed Reader check on T2) must
+# not report T1 as a non-test item. Cleanup deletes by title, never by id.
+next_seen() {
+  local line id
+  [ -n "$2" ] || return 0
+  line=$(grep -oE "playback continue from=$2 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" <<<"$1" | head -1 || true)
+  [ -n "$line" ] || return 0
+  id=$(field "$line" item)
+  if count_ok "$3" "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -lt "$2" ]; then
+    case " $TEST_IDS " in *" $id "*) ;; *) TEST_IDS+=" $id" ;; esac
   fi
   return 0
 }
@@ -296,6 +317,8 @@ guard() {
   [ "$CLEARED" = 1 ] || return 0
   log=$(logs)
   buffer_seen "$log"
+  next_seen "$log" "$ID3" 1
+  next_seen "$log" "$ID2" 0
   bad=$(foreign_ids "$log" "$TEST_IDS")
   [ -z "$bad" ] && return 0
   stop_readme
@@ -543,6 +566,7 @@ line=$(wait_log 'playback start item=[0-9]+ sentences=[0-9]+' 20) || die "playba
 id3=$(field "$line" item)
 count_ok 2 "$(field "$line" sentences)" || die "the started item ($id3) does not have T3's sentence count"
 TEST_IDS="$id3"
+ID3=$id3
 if [ "$SCREEN_OFF" = 1 ]; then
   adb shell input keyevent KEYCODE_SLEEP
 else
@@ -567,6 +591,7 @@ next_test() {
 next_test "$id3" 1
 id2=$NEXT_ID
 TEST_IDS+=" $id2"
+ID2=$id2
 if [ "$SCREEN_OFF" = 0 ]; then
   live_switch_checks "$id2"
   adb shell input keyevent KEYCODE_HOME
