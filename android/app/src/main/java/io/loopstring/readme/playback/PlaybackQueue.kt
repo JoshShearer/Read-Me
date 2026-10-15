@@ -359,6 +359,14 @@ class PlaybackQueue(
 
   fun snapshot(): PlaybackSnapshot = synchronized(lock) { snapshotLocked() }
 
+  /**
+   * Runs [publish] with the current snapshot while holding the queue's lock, the lock under
+   * which the queue publishes its own changes. A publisher on another thread (the service's
+   * main-thread publishState) then cannot read a snapshot, lose the lock, and publish it after a
+   * newer one: JS would see A, B, A and follow a handover backwards (REA-55 fix round 1).
+   */
+  fun publishWith(publish: (PlaybackSnapshot) -> Unit) = synchronized(lock) { publish(snapshotLocked()) }
+
   fun takeStats(): QueueStats = synchronized(lock) {
     val synth = synthMs.sorted()
     val s = QueueStats(

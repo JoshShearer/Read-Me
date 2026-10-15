@@ -214,7 +214,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
    */
   private fun withWaiting(s: PlaybackSnapshot) = s.copy(waitingItemId = waiting?.itemId ?: PlaybackHub.pendingItemId())
 
-  private fun publishState() = PlaybackHub.publish(withWaiting(queue.snapshot()))
+  // Under the queue's lock, as the queue's own changed() is: an unlocked read-then-publish could
+  // land after a handover's snapshot and move the Reader back to the finished item (REA-55).
+  private fun publishState() = queue.publishWith { PlaybackHub.publish(withWaiting(it)) }
 
   private fun hold(r: PlaybackHub.Request) {
     waiting = r

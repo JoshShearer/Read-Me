@@ -10,6 +10,8 @@ const TITLES: Record<number, string> = { 1: 'Item one', 2: 'Item two', 3: 'Item 
 const mockState = {
   // The service's state as getPlayback reports it.
   playback: { itemId: null as number | null, playing: false, waitingItemId: null as number | null },
+  // Items never opened by the user (continuous play keeps opened_at NULL): their open shows Trim.
+  unopened: [] as number[],
 };
 const mockSnapshot = (itemId: number | null, playing: boolean, waitingItemId: number | null = null) => ({
   itemId,
@@ -23,7 +25,7 @@ const mockSnapshot = (itemId: number | null, playing: boolean, waitingItemId: nu
 });
 const mockItem = (id: number) => ({
   id, kind: 'text', url: null, title: TITLES[id], site: null, byline: null, createdAt: 10 - id,
-  state: 'ready', failReason: null, openedAt: 5, archivedAt: null, words: 4, progress: 0,
+  state: 'ready', failReason: null, openedAt: mockState.unopened.includes(id) ? null : 5, archivedAt: null, words: 4, progress: 0,
 });
 
 jest.mock('../src/native/NativeReadMeSpeech', () => ({
@@ -81,6 +83,7 @@ const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
 beforeEach(() => {
   jest.clearAllMocks();
   mockState.playback = { itemId: null, playing: false, waitingItemId: null };
+  mockState.unopened = [];
   backHandlers = [];
   appStateHandler = null;
   jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_e, h) => {
@@ -216,12 +219,69 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     expect(readerOf(r).title).toBe(1);
   });
 
-  test('Play on a Reader opened while another item plays keeps that Reader', async () => {
+  test('Play on a Reader opened while another item plays plays that item and keeps that Reader', async () => {
     mockState.playback = { itemId: 2, playing: true, waitingItemId: null };
     const r = await render();
     await openRow(r, 1);
+    await pressLabel(r, 'play');
+    expect(Native.play).toHaveBeenCalledTimes(1);
+    expect((Native.play as jest.Mock).mock.calls[0][0]).toBe(1);
     await service(1, true);
     expect(readerOf(r).title).toBe(1);
+  });
+
+  // Fix round 1 (critic 2 F3): a continuous-played item's first open shows Trim; a handover
+  // while it is open must not leave Done on a Reader of the finished item.
+  test('a handover during the first-open Trim of the item being read: Done opens the item being read', async () => {
+    mockState.unopened = [1];
+    mockState.playback = { itemId: 1, playing: true, waitingItemId: null };
+    const r = await render();
+    await openRow(r, 1);
+    expect(shown(r)).toContain('"trim done"');
+    await service(2, true);
+    expect(shown(r)).toContain('"trim done"'); // Trim stays on the item being trimmed
+    await pressLabel(r, 'trim done');
+    const { title, s: seen } = readerOf(r);
+    expect(title).toBe(2);
+    expect(seen).toContain('"pause"');
+    await pressLabel(r, 'pause');
+    expect(Native.play).not.toHaveBeenCalled();
+    expect(Native.pause).toHaveBeenCalledTimes(1);
+  });
+
+  test('a first-open Trim of an item not being read opens its own Reader after a handover elsewhere', async () => {
+    mockState.unopened = [3];
+    mockState.playback = { itemId: 1, playing: true, waitingItemId: null };
+    const r = await render();
+    await openRow(r, 3);
+    await service(2, true);
+    await pressLabel(r, 'trim done');
+    expect(readerOf(r).title).toBe(3);
+  });
+
+  // Critic F3/F4: the mount refresh and the seq guard are pinned.
+  test('a handover is followed even when the app mounted while the item was already playing', async () => {
+    mockState.playback = { itemId: 1, playing: true, waitingItemId: null };
+    const r = await render();
+    await openRow(r, 1);
+    await service(2, true); // the first event after mount is already the handover
+    expect(readerOf(r).title).toBe(2);
+  });
+
+  test('a getPlayback answer older than a handover event does not move the Reader back', async () => {
+    const r = await render();
+    await openRow(r, 1);
+    await service(1, true);
+    let answer!: (v: unknown) => void;
+    (Native.getPlayback as jest.Mock).mockImplementationOnce(() => new Promise(res => { answer = res; }));
+    await ReactTestRenderer.act(async () => appStateHandler!('active'));
+    await service(2, true);
+    expect(readerOf(r).title).toBe(2);
+    await ReactTestRenderer.act(async () => answer(mockSnapshot(1, true)));
+    await flush();
+    expect(readerOf(r).title).toBe(2);
+    await service(2, true); // B's next sentence: no handover from a stale A
+    expect(readerOf(r).title).toBe(2);
   });
 
   test('an item ending with no next item leaves the Reader where it is', async () => {

@@ -158,6 +158,28 @@ describe('toggle', () => {
     expect(mockPlays).toHaveLength(0);
   });
 
+  // Fix round 1 (critic F2/F6): a tap on Pause never starts or resumes anything.
+  test('a Pause on a view whose item already ended starts nothing', async () => {
+    mockState.playback = { itemId: null, playing: false };
+    await toggle(1, at(1, true));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.resume).not.toHaveBeenCalled();
+  });
+
+  test('a Pause after the service moved to another item, paused, starts nothing', async () => {
+    mockState.playback = { itemId: 2, playing: false };
+    await toggle(1, at(1, true));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.resume).not.toHaveBeenCalled();
+  });
+
+  test('a Pause on an item the service already paused does not resume it', async () => {
+    mockState.playback = { itemId: 1, playing: false };
+    await toggle(1, at(1, true));
+    expect(Native.resume).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+
   test('pauses on the service state when the copy has not caught up', async () => {
     mockState.playback = { itemId: 1, playing: true };
     await toggle(1, at(1, false));

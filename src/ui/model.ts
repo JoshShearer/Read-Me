@@ -5,7 +5,9 @@ import type { Paragraph } from '../types';
 
 export type Route =
   | { name: 'list' }
-  | { name: 'trim'; id: number }
+  // `reading`: the item the service handed over to while this Trim was open on the item being
+  // read (REA-55 fix round 1); Done opens its Reader.
+  | { name: 'trim'; id: number; reading?: number }
   | { name: 'reader'; id: number }
   | { name: 'settings' }
   | { name: 'licenses' };
@@ -19,24 +21,35 @@ export const back = (stack: readonly Route[]): Route[] | null =>
 /**
  * Trim's Done: back to the Reader below it, else (a first open) replace Trim with one. The
  * Reader below may show another item: it followed a continuous-play handover while Trim was
- * open (REA-55), and it stays on the item being read. A trim route only ever sits on its own
- * Reader or on the List.
+ * open (REA-55), and it stays on the item being read. On a first open, the Reader is Trim's own
+ * item, unless the service handed over away from it while Trim was open: then it is the item now
+ * being read (`reading`, set by followHandover), so its Play acts on that item, never replaces it
+ * with the finished one. A trim route only ever sits on its own Reader or on the List.
  */
 export function trimDone(stack: readonly Route[], id: number): Route[] {
   const below = stack[stack.length - 2];
   if (below?.name === 'reader') return stack.slice(0, -1);
-  return [...stack.slice(0, -1), { name: 'reader', id }];
+  const top = stack[stack.length - 1];
+  const to = top?.name === 'trim' && top.reading !== undefined ? top.reading : id;
+  return [...stack.slice(0, -1), { name: 'reader', id: to }];
 }
 
 /**
  * R-S05, REA-55 (ADR 0011): the service handed over from item `from` to item `to`, so a Reader
- * showing `from` becomes the Reader of `to`. Back still pops to what was below it; a Trim route
- * is left alone (the user is editing that item). Not an open: nothing is marked opened. The same
- * stack when no Reader shows `from`, so nothing re-renders.
+ * showing `from` becomes the Reader of `to`. Back still pops to what was below it. A Trim of the
+ * item being read stays on that item (the user is editing it; cuts are saved to it) and only
+ * records `to` for its Done; a Trim of any other item is left alone. Not an open: nothing is
+ * marked opened. The same stack when nothing matches, so nothing re-renders.
  */
 export function followHandover(stack: Route[], from: number, to: number): Route[] {
-  if (!stack.some(r => r.name === 'reader' && r.id === from)) return stack;
-  return stack.map(r => (r.name === 'reader' && r.id === from ? { name: 'reader', id: to } : r));
+  const reader = (r: Route) => r.name === 'reader' && r.id === from;
+  const trim = (r: Route) => r.name === 'trim' && (r.reading ?? r.id) === from;
+  if (!stack.some(r => reader(r) || trim(r))) return stack;
+  return stack.map(r => {
+    if (reader(r)) return { name: 'reader', id: to };
+    if (trim(r)) return { name: 'trim', id: (r as { id: number }).id, reading: to };
+    return r;
+  });
 }
 
 /** R-M05: Trim opens automatically the first time an item is opened. */

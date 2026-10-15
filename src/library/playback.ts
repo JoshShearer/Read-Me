@@ -56,21 +56,30 @@ export async function playItem(id: number): Promise<boolean> {
 }
 
 /**
- * The Reader's Play/Pause for item `id`: pause it if it plays, resume it if paused, otherwise
- * play it. Decided on the service's state read now, not on the screen's copy (`current`), which
- * can be one event behind (REA-55): a tap that saw this item while the service has since handed
- * over to another must never play this (finished, archived) item over the one being read. A Play
- * from that stale view is dropped (the event that follows moves the Reader to the new item); a
- * Pause still pauses, since pause acts on whatever the service is reading.
+ * The Reader's Play/Pause for item `id`, where `current` is the screen's copy of the service's
+ * state (the button showed Pause when it says this item plays). Decided on the service's state
+ * read now as well (REA-55), since the copy can be one event behind, and never so that a stale
+ * view replaces the item being read with an earlier (finished, archived) one:
+ * - A tap on Pause is a Pause, whatever happened since: it pauses what plays, and does nothing
+ *   if nothing plays (the item ended, Stop, or a pause from elsewhere); the event that follows
+ *   refreshes the view. It never starts or resumes anything (fix round 1: an idle service once
+ *   made it play the finished item again).
+ * - A tap on Play when the view showed this item but the service has moved to another is
+ *   dropped; the event that follows moves the Reader to the new item.
+ * - Otherwise: pause this item if the service is playing it (the copy had not caught up),
+ *   resume it if the service holds it paused, else play it (false from resume: the service is
+ *   gone, so play again from the saved position).
+ * If the service's state cannot be read, the screen's copy decides alone.
  */
 export async function toggle(id: number, current: Playback | null): Promise<boolean> {
-  const fresh = await getPlayback().catch(() => current);
-  if (current?.itemId === id && fresh?.itemId != null && fresh.itemId !== id) {
-    return current.playing ? Native.pause() : false;
+  const fresh = await getPlayback().catch(() => null);
+  if (current?.itemId === id && current.playing) {
+    return fresh === null || fresh.playing ? Native.pause() : false;
   }
-  if (fresh?.itemId === id) {
-    if (fresh.playing) return Native.pause();
-    // False when the service is gone (process restarted): play again from the saved position.
+  const now = fresh ?? current;
+  if (current?.itemId === id && now?.itemId != null && now.itemId !== id) return false;
+  if (now?.itemId === id) {
+    if (now.playing) return Native.pause();
     if (await Native.resume()) return true;
   }
   return playItem(id);
