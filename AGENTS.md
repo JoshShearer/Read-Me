@@ -414,13 +414,21 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   an `Error` included, ends the chain as if there were none (REA-46, PR #38). Verified 2026-10-09
   on the reference device, build 77a8d15: `npm run device:continuous` (three test items read in
   List order with the screen off, handovers 35 and 20 ms, each archived; Trim on the first open
-  from Archive). Open: REA-47. Since REA-31 (ADR 0012) the handover loads the next item as a
+  from Archive). REA-47 (PR #53, cc638cb, 2026-10-15) made the handover two steps (archive under
+  the queue lock, the next item built outside it and loaded only if nothing changed; a pause in
+  that window ends the chain, ADR 0011) and made `device:continuous` unable to reach the owner's
+  items (a long buffer item, a watcher, a refusal while an earlier run's switch state is
+  pending). On the reference device, d421741 (the merged head before its squash), 2026-10-14,
+  the owner ran `SCREEN_OFF=0 npm run device:continuous` (handovers 2019 and 1893 ms, the buffer
+  never played) and the stale-state refusal and `CLEANUP_ONLY=1`; the buffer actually playing,
+  the watcher's force-stop and `SCREEN_OFF=1` were not observed on a device. Since REA-31 (ADR 0012) the handover loads the next item as a
   new generation: the finished item's files are deleted and the next item's synthesis starts
   only then (nothing is synthesized across the boundary), so its first sentence waits for the
   engine; the 35 and 20 ms above were `speak()`'s. On 69b3db1 (2026-10-13, GrapheneOS Speech
   Services) `device:continuous` passed with handovers 731 and 818 ms (772 and 1048 ms on
-  93ba8e0); the owner accepted that for REA-31, and REA-49 prepares the next item's first audio
-  before the end.
+  93ba8e0); the owner accepted that for REA-31. REA-49 (PR #57, open, not merged) prepares the
+  next item's first audio before the end; its device acceptance (handovers under 100 ms) has not
+  been run.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
