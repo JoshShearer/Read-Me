@@ -22,6 +22,9 @@ case "$*" in
   shell) cat >> "$STUB_CALLS" ;;
   # REA-47: STUB_UI names a file served as the uiautomator dump.
   "shell cat /sdcard/readme-ui.xml") [ -n "${STUB_UI:-}" ] && cat "$STUB_UI" 2>/dev/null ;;
+  # REA-55: each tap appends the next line of STUB_TAPQ (the service's answer) to the log.
+  "shell input tap"*) if [ -n "${STUB_TAPQ:-}" ] && [ -s "$STUB_TAPQ" ]; then
+      head -1 "$STUB_TAPQ" >> "$STUB_LOG"; sed -i 1d "$STUB_TAPQ"; fi ;;
   *) : ;;
 esac
 STUB
@@ -98,8 +101,81 @@ check "the item being read is the latest continue" "$(src 'reading_now "$1"' _ "
 check "a second JS start is counted and becomes the item being read" \
   "$(src 'js_starts "$1"; reading_now "$1"' _ "$L2
 I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0" | tr '\n' ' ')" "2 12 "
-check "the Reader checks report NOT REACHED, never PASS, for an item that already ended" \
-  "$(grep -c 'NOT REACHED' "$S"),$(grep -cE 'playback continue from=\$1 .*(PASS)' "$S")" "3,0"
+
+# --- REA-55 fix round 1: the Reader checks themselves, run against the stub ---
+# Each case runs the real reader_check / transport_tap / transport_check / live_switch_checks /
+# returned_checks with a stub log, a stub dump and the service's answer to each tap.
+BTN='<node content-desc="pause" bounds="[10,10][20,20]"/><node content-desc="play" bounds="[30,30][40,40]"/>'
+T2_READING='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3'
+# rc <code>: runs code with the script loaded and short waits; prints its output, then rc=<n>.
+rc() { READER_WAIT=1 TAP_WAIT=2 src "$1"; echo "rc=$?"; }
+setup() { # setup <log> <dump> <tap answers, one per line>
+  printf '%s\n' "$1" > "$STUB_LOG"; printf '%s' "$2" > "$T/ui"; printf '%s' "$3" > "$T/tapq"; : > "$STUB_CALLS"
+}
+export STUB_UI="$T/ui" STUB_TAPQ="$T/tapq"
+
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+I ReadMe  : playback resumed item=11
+'
+out=$(rc 'transport_check 11 "T2 transport"')
+check "transport_check passes when Pause and Play act on the item being read" \
+  "$(grep -c '^PASS T2 transport' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS")" "1,rc=0,2"
+
+setup "$T2_READING
+I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
+out=$(rc 'transport_check 11 "T2 transport"')
+check "transport_check on an item that already ended: NOT REACHED, a failure, never PASS, no tap" \
+  "$(grep -c '^NOT REACHED T2 transport' <<<"$out"),$(grep -c PASS <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS")" "1,0,rc=1,0"
+
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3
+'
+out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"')
+check "transport_tap whose item ends before its line: NOT REACHED and a failure" \
+  "$(grep -c '^NOT REACHED T2 transport' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=1"
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3
+'
+out=$(rc 'transport_check 11 "T2 transport"')
+check "and transport_check then fails without PASS" "$(grep -c PASS <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,rc=1"
+
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+'
+out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
+check "a tap that makes JS start another item stops Read Me and dies at once" \
+  "$(grep -c 'started item 12 while item 11' <<<"$out"),$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS"),$(grep -c went-on <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,0,rc=1"
+setup 'I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3' "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+'
+out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
+check "and so does one whose earlier start line the log no longer holds (counted from before the tap)" \
+  "$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS"),$(grep -c went-on <<<"$out")" "1,0"
+
+setup "$T2_READING" "$R_STALE" ''
+s0=$(date +%s); out=$(rc 'reader_check 1 "live" 2'); s1=$(date +%s)
+check "reader_check on a Reader that did not follow fails within its wait, naming what it shows" \
+  "$(grep -c '^FAIL live: the service is reading item 11; the Reader shows title T3' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ $((s1 - s0)) -le 10 ] && echo bounded)" "1,rc=1,bounded"
+
+for fn in live_switch_checks:11 returned_checks:11; do
+  setup "$T2_READING" "$R_STALE$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+I ReadMe  : playback resumed item=11
+'
+  out=$(rc "${fn%%:*} ${fn#*:}; echo FAIL=\$FAIL")
+  check "${fn%%:*}: a Reader that did not follow fails the run although its transport passed" \
+    "$(grep -o 'FAIL=[0-9]' <<<"$out" | tail -1),$(grep -o 'rc=[0-9]*' <<<"$out")" "FAIL=1,rc=0"
+done
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+I ReadMe  : playback resumed item=11
+'
+out=$(rc 'live_switch_checks 11; echo FAIL=$FAIL')
+check "live_switch_checks: a followed Reader and a working transport pass" \
+  "$(grep -o 'FAIL=[0-9]' <<<"$out" | tail -1),$(grep -c '^PASS' <<<"$out")" "FAIL=0,2"
+setup "$T2_READING
+I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
+out=$(rc 'live_switch_checks 11; echo went-on')
+check "live_switch_checks: a transport check NOT REACHED ends the run as a failure" \
+  "$(grep -c went-on <<<"$out"),$(grep -c 'FAIL: the transport check on T2 did not pass' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
+check "the main path runs these functions, not its own copies" \
+  "$(grep -cE '^\s*live_switch_checks "\$id2"$' <<<"$code"),$(grep -cE '^returned_checks "\$id1"$' <<<"$code"),$(grep -cE '(reader|transport)_check "?\$id[12]' <<<"$code")" "1,1,0"
+unset STUB_UI STUB_TAPQ; : > "$STUB_LOG"
 
 # --- guard: a non-test id stops Read Me and fails loudly ---
 printf '%s\n' "$LOG" > "$STUB_LOG"; : > "$STUB_CALLS"

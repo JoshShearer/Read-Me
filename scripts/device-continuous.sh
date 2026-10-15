@@ -70,6 +70,10 @@ SHARED=0     # test items may exist on the phone
 TEST_IDS=""  # verified test item ids
 ID1=""       # T1's id, once known: the buffer is what follows it
 BUFFER_PLAYED=0 BUFFER_ID=""
+# REA-55: how long a Reader check waits for the Reader to show the item being read, and a
+# transport tap for the service's line (the off-phone tests shorten both).
+READER_WAIT=${READER_WAIT:-15}
+TAP_WAIT=${TAP_WAIT:-10}
 WATCH_PID="" WATCH_MARK=""  # the chain watcher (REA-47) and its informational marker file
 
 # --- pure helpers (tested off the phone by scripts/tests/device-continuous.test.sh) ---
@@ -282,24 +286,26 @@ reader_check() {
   return 1
 }
 # transport_tap <id> <label> <log ERE> <what>: taps the Reader's Play/Pause button labelled
-# <label> and waits for the service's line. A JS start of any item in the meantime is a tap that
-# replaced the item being read: Read Me is stopped and the run dies.
+# <label> and waits for the service's line. A JS start of any item after the tap (counted from
+# the log just before it, so lines the ring buffer dropped earlier cannot hide one) is a tap that
+# replaced the item being read: Read Me is stopped and the run dies. Returns 1 (NOT REACHED or
+# FAIL) when the line never came; NOT REACHED is never a pass.
 transport_tap() {
-  local log n=0
+  local log base
+  base=$(js_starts "$(logs)")
   tap_node content-desc "$2" || { echo "FAIL $4: no $2 button in the Reader"; return 1; }
-  for _ in $(seq 10); do
+  for _ in $(seq "$TAP_WAIT"); do
     log=$(logs)
-    if [ "$(js_starts "$log")" -gt 1 ]; then
+    if [ "$(js_starts "$log")" -gt "$base" ]; then
       echo "FAIL $4: the $(tr -d '()' <<<"$2" | tr '|' '/') tap in the Reader started item $(grep -oE 'playback start item=[0-9]+' <<<"$log" | tail -1 | grep -oE '[0-9]+$') while item $1 was being read"
       stop_readme
       die "the Reader's transport acted on another item"
     fi
     device_has "$log" "$3" && return 0
-    n=$((n + 1))
     sleep 1
   done
   if device_has "$log" "playback continue from=$1 "; then echo "NOT REACHED $4: item $1 ended before its $2 line"; return 1; fi
-  echo "FAIL $4: no '$3' within 10 s of the $2 tap"; return 1
+  echo "FAIL $4: no '$3' within $TAP_WAIT s of the $2 tap"; return 1
 }
 # transport_check <id> <what>: Pause then Play in the Reader act on item <id>, the one being read.
 transport_check() {
@@ -308,6 +314,19 @@ transport_check() {
   transport_tap "$1" '(pause|play)' "playback paused item=$1 " "$2" || return 1
   transport_tap "$1" play "playback resumed item=$1\b" "$2" || return 1
   echo "PASS $2"
+}
+# live_switch_checks <T2 id> (SCREEN_OFF=0): the visible Reader follows T3's handover to T2, and
+# its transport acts on T2. A Reader that did not follow fails the run (FAIL=1, the run goes on
+# to its cleanup checks); a transport check that did not pass, NOT REACHED included, dies.
+live_switch_checks() {
+  reader_check 1 "live switch: the visible Reader follows the handover to T2 ($1)" "$READER_WAIT" || FAIL=1
+  transport_check "$1" "Pause and Play in the Reader act on T2 ($1)" || die "the transport check on T2 did not pass"
+}
+# returned_checks <T1 id>: back in Read Me after T2 handed over to T1 while away, the Reader
+# followed to T1 and its transport acts on T1; the same FAIL and die rules.
+returned_checks() {
+  reader_check 0 "returned to: the Reader followed to T1 ($1)" "$READER_WAIT" || FAIL=1
+  transport_check "$1" "Pause and Play in the Reader act on T1 ($1)" || die "the transport check on T1 did not pass"
 }
 
 # watch_chain <T1 id> <marker file> [max polls]: runs in the background from T1's start. Each
@@ -509,8 +528,7 @@ next_test "$id3" 1
 id2=$NEXT_ID
 TEST_IDS+=" $id2"
 if [ "$SCREEN_OFF" = 0 ]; then
-  reader_check 1 "live switch: the visible Reader follows the handover to T2 ($id2)" 15 || FAIL=1
-  transport_check "$id2" "Pause and Play in the Reader act on T2 ($id2)" || die "the transport check on T2 did not pass"
+  live_switch_checks "$id2"
   adb shell input keyevent KEYCODE_HOME
 else
   echo "live switch and T2 transport: not run (SCREEN_OFF=1: the screen is off)"
@@ -542,8 +560,7 @@ check_watch
 # REA-55: back to Read Me after T2 handed over to T1 while away (or with the screen off): the
 # Reader followed to T1, its transport acts on T1, and Back goes to the List.
 home
-reader_check 0 "returned to: the Reader followed to T1 ($id1)" 15 || FAIL=1
-transport_check "$id1" "Pause and Play in the Reader act on T1 ($id1)" || die "the transport check on T1 did not pass"
+returned_checks "$id1"
 check_watch
 adb shell input keyevent KEYCODE_BACK
 if on_screen 'content-desc="settings"'; then echo "PASS Back from the followed Reader goes to the List"; else FAIL=1; fi
