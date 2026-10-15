@@ -55,11 +55,31 @@ export async function playItem(id: number): Promise<boolean> {
   return Native.play(id, p.title, p.plan.sentences, p.plan.startIndex);
 }
 
-/** A row tap: pause what plays, resume what is paused, otherwise play this item. */
+/**
+ * The Reader's Play/Pause for item `id`, where `current` is the screen's copy of the service's
+ * state (the button showed Pause when it says this item plays). Decided on the service's state
+ * read now as well (REA-55), since the copy can be one event behind, and never so that a stale
+ * view replaces the item being read with an earlier (finished, archived) one:
+ * - A tap on Pause is a Pause, whatever happened since: it pauses what plays, and does nothing
+ *   if nothing plays (the item ended, Stop, or a pause from elsewhere); the event that follows
+ *   refreshes the view. It never starts or resumes anything (fix round 1: an idle service once
+ *   made it play the finished item again).
+ * - A tap on Play when the view showed this item but the service has moved to another is
+ *   dropped; the event that follows moves the Reader to the new item.
+ * - Otherwise: pause this item if the service is playing it (the copy had not caught up),
+ *   resume it if the service holds it paused, else play it (false from resume: the service is
+ *   gone, so play again from the saved position).
+ * If the service's state cannot be read, the screen's copy decides alone.
+ */
 export async function toggle(id: number, current: Playback | null): Promise<boolean> {
-  if (current?.itemId === id) {
-    if (current.playing) return Native.pause();
-    // False when the service is gone (process restarted): play again from the saved position.
+  const fresh = await getPlayback().catch(() => null);
+  if (current?.itemId === id && current.playing) {
+    return fresh === null || fresh.playing ? Native.pause() : false;
+  }
+  const now = fresh ?? current;
+  if (current?.itemId === id && now?.itemId != null && now.itemId !== id) return false;
+  if (now?.itemId === id) {
+    if (now.playing) return Native.pause();
     if (await Native.resume()) return true;
   }
   return playItem(id);
@@ -96,6 +116,20 @@ export function onPlayback(cb: (p: Playback) => void): () => void {
     (n: unknown) => cb(toPlayback(n as NativePlayback)),
   );
   return () => sub.remove();
+}
+
+/**
+ * R-S05, REA-55: the service moved from one item straight to another, which only a
+ * continuous-play handover does without a Play from this Reader. ADR 0011's handover never
+ * publishes "no item" between the two (a pause or Stop in its window does, and ends the chain),
+ * and every JS start is for the Reader's or Trim's own item. A Play that was waiting for the
+ * engine (REA-35) is not a handover. A future control that starts another item while a Reader
+ * is open must revisit this.
+ */
+export function handedOver(prev: Playback | null, now: Playback): { from: number; to: number } | null {
+  if (prev?.itemId == null || now.itemId == null || prev.itemId === now.itemId) return null;
+  if (now.itemId === prev.waitingItemId) return null;
+  return { from: prev.itemId, to: now.itemId };
 }
 
 export function marker(item: Item, p: Playback | null): string {

@@ -1,15 +1,16 @@
 // R-M01: four screens, opening on the list. A route stack plus the hardware back button;
 // four routes do not need a navigation library (AGENTS.md 14 keeps dependencies minimal).
-import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, StatusBar, useColorScheme, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, BackHandler, StatusBar, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { markOpened, type Item } from './src/library/library';
+import { getPlayback, handedOver, onPlayback, type Playback } from './src/library/playback';
 import { LicensesScreen } from './src/ui/LicensesScreen';
 import { ListScreen } from './src/ui/ListScreen';
 import { ReaderScreen } from './src/ui/ReaderScreen';
 import { SettingsScreen } from './src/ui/SettingsScreen';
 import { TrimScreen } from './src/ui/TrimScreen';
-import { back, openRoute, push, trimDone, type Route } from './src/ui/model';
+import { back, followHandover, openRoute, push, trimDone, type Route } from './src/ui/model';
 import { palette, statusBarStyle } from './src/ui/theme';
 import { ui } from './src/ui/ui';
 
@@ -38,6 +39,45 @@ function Main() {
     },
     [go],
   );
+
+  // R-S05, REA-55 (ADR 0011): when the service hands over to the next item, a Reader showing the
+  // finished one follows it. This lives here, not in the Reader, because the Reader unmounts
+  // under Trim, and a handover then must still move it. It only changes a route: no play,
+  // pause or resume (AGENTS.md 11), and no markOpened (following is not an open).
+  const lastSeen = useRef<Playback | null>(null);
+  useEffect(() => {
+    let live = true;
+    let seq = 0; // events seen; a getPlayback answer older than an event is dropped
+    const see = (p: Playback) => {
+      const h = handedOver(lastSeen.current, p);
+      lastSeen.current = p;
+      if (h) setStack(s => followHandover(s, h.from, h.to));
+    };
+    // On mount and on return to the foreground: handovers whose events never arrived are
+    // followed from the service's state (A then C follows A to C).
+    const refresh = () => {
+      const at = seq;
+      getPlayback().then(
+        p => {
+          if (live && at === seq) see(p);
+        },
+        () => undefined,
+      );
+    };
+    const off = onPlayback(p => {
+      seq++;
+      see(p);
+    });
+    refresh();
+    const app = AppState.addEventListener('change', s => {
+      if (s === 'active') refresh();
+    });
+    return () => {
+      live = false;
+      off();
+      app.remove();
+    };
+  }, []);
 
   let screen: React.ReactElement;
   switch (top.name) {

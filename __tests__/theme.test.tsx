@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text as RNText } from 'react-native';
 import * as RN from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
+import '../jest/loadReactNative';
 import { blend, contrast, FAINT, palette, statusBarStyle, type } from '../src/ui/theme';
 import { Text } from '../src/ui/Text';
 

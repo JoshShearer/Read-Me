@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -125,6 +126,30 @@ class PlaybackQueueTest {
   private fun start(i: Int) = queue.onPlayerStart("${g()}:$i")
   private fun done(i: Int) = queue.onPlayerDone("${g()}:$i")
   private fun leftover() = dir.listFiles().orEmpty().map { it.name }.sorted()
+
+  // REA-55 fix round 1 (critic 1 F4): the service's own publisher holds the queue's lock, so a
+  // change the queue publishes on another thread waits for it and cannot be overtaken.
+  @Test fun publishWithHoldsTheLockTheQueuePublishesUnder() {
+    assertTrue(queue.load(7, rows, 0, 2.0f))
+    synthDone(0)
+    val inside = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    var published: Long? = null
+    val a = Thread { queue.publishWith { s -> inside.countDown(); release.await(); published = s.itemId } }
+    a.start()
+    inside.await()
+    val before = sink.snapshots.size
+    val b = Thread { queue.pause() }
+    b.start()
+    b.join(300)
+    assertTrue("pause published while publishWith held the snapshot", b.isAlive)
+    assertEquals(before, sink.snapshots.size)
+    release.countDown()
+    a.join()
+    b.join()
+    assertEquals(7L, published)
+    assertEquals(false, sink.snapshots.last().playing)
+  }
 
   @Test fun loadAppliesTheRateOnceAndPrefetchesThreeAhead() {
     assertTrue(queue.load(7, rows, 0, 2.0f))

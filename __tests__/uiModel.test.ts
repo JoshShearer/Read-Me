@@ -13,6 +13,7 @@ import {
   stepRate,
   subtitle,
   trimDone,
+  followHandover,
   visibleItems,
   type Route,
   bridgeStatus,
@@ -46,6 +47,44 @@ describe('routes (Review Focus 5)', () => {
 
   test('Trim Done after a first open replaces Trim with the Reader', () => {
     expect(trimDone([list, { name: 'trim', id: 1 }], 1)).toEqual([list, { name: 'reader', id: 1 }]);
+  });
+
+  // REA-55: after a continuous-play handover the Reader route follows the item being read.
+  test('followHandover moves the Reader of the finished item; its Trim stays on it and notes the new one', () => {
+    const s: Route[] = [list, { name: 'reader', id: 1 }, { name: 'trim', id: 1 }];
+    expect(followHandover(s, 1, 2)).toEqual([list, { name: 'reader', id: 2 }, { name: 'trim', id: 1, reading: 2 }]);
+  });
+
+  // Fix round 1 (critic 2 F3): a first-open Trim of the item being read, handed over while open.
+  test('Done of a first-open Trim handed over while open opens the item being read', () => {
+    const s = followHandover([list, { name: 'trim', id: 1 }], 1, 2);
+    expect(s).toEqual([list, { name: 'trim', id: 1, reading: 2 }]);
+    expect(trimDone(s, 1)).toEqual([list, { name: 'reader', id: 2 }]);
+  });
+
+  test('two handovers while Trim is open: Done opens the last item', () => {
+    const s = followHandover(followHandover([list, { name: 'trim', id: 1 }], 1, 2), 2, 3);
+    expect(trimDone(s, 1)).toEqual([list, { name: 'reader', id: 3 }]);
+  });
+
+  test('a Trim of an item not being read is left alone by a handover', () => {
+    const s: Route[] = [list, { name: 'trim', id: 5 }];
+    expect(followHandover(s, 1, 2)).toBe(s);
+    expect(trimDone(s, 5)).toEqual([list, { name: 'reader', id: 5 }]);
+  });
+
+  test('followHandover returns the same stack when no Reader shows the finished item', () => {
+    const s: Route[] = [list, { name: 'reader', id: 3 }];
+    expect(followHandover(s, 1, 2)).toBe(s);
+    const l: Route[] = [list];
+    expect(followHandover(l, 1, 2)).toBe(l);
+  });
+
+  test('Trim Done over a followed Reader returns to that Reader (REA-55)', () => {
+    expect(trimDone([list, { name: 'reader', id: 2 }, { name: 'trim', id: 1 }], 1)).toEqual([
+      list,
+      { name: 'reader', id: 2 },
+    ]);
   });
 
   test('the first open goes to Trim, later opens to the Reader (R-M05)', () => {
