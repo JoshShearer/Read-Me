@@ -83,20 +83,26 @@ const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
 // Every act() the helpers start, until it settles. A test that times out leaves its act and the
 // rest of its body running: afterEach closes the helpers to it (an act it starts later throws)
 // and waits for what it has started, so the next test never runs inside it ("overlapping act()
-// calls", ci run 38776437438) and its tree is unmounted.
+// calls", ci run 38776437438) and its tree is unmounted. That holds for an act that settles
+// within afterEach's own 5 s; one that never settles fails every later test at afterEach, loudly.
+// A rejected act fails its test in afterEach even if nothing awaited it.
 const pending = new Set<Promise<unknown>>();
+let rejected: unknown[] = [];
 let closed = false;
 function act(fn: () => unknown): Promise<unknown> {
   if (closed) return Promise.reject(new Error('act() after the test ended'));
   const p = Promise.resolve(ReactTestRenderer.act(async () => { await fn(); }));
   pending.add(p);
-  const settled = () => { pending.delete(p); };
-  p.then(settled, settled);
+  p.then(
+    () => { pending.delete(p); },
+    e => { pending.delete(p); rejected.push(e); },
+  );
   return p;
 }
 
 beforeEach(() => {
   closed = false;
+  rejected = [];
   jest.clearAllMocks();
   mockState.playback = { itemId: null, playing: false, waitingItemId: null };
   mockState.unopened = [];
@@ -119,6 +125,7 @@ afterEach(async () => {
     while (mounted.length) mounted.pop()!.unmount();
   });
   jest.restoreAllMocks();
+  if (rejected.length) throw rejected[0];
 });
 
 const flush = () => act(async () => { await new Promise(r => setTimeout(r, 0)); });

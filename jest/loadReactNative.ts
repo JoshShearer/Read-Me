@@ -44,9 +44,5 @@ const names = new Set(
   ),
 );
 const exported = ReactNative as unknown as Record<string, unknown>;
-for (const name of names) {
-  // Reading the getter is what requires the module.
-  void exported[name];
-}
-
-export const loaded = [...names].sort();
+// Reading the getter is what requires the module; `loaded` is what that read returned.
+export const loaded = [...names].filter(name => exported[name] !== undefined).sort();

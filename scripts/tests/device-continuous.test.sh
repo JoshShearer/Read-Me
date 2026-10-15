@@ -174,11 +174,13 @@ I ReadMe  : playback resumed item=11
 out=$(rc 'live_switch_checks 11; echo FAIL=$FAIL')
 check "live_switch_checks: a followed Reader and a working transport pass" \
   "$(grep -o 'FAIL=[0-9]' <<<"$out" | tail -1),$(grep -c '^PASS' <<<"$out")" "FAIL=0,2"
-setup "$T2_READING
+for fn in live_switch_checks:T2 returned_checks:T1; do
+  setup "$T2_READING
 I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
-out=$(rc 'live_switch_checks 11; echo went-on')
-check "live_switch_checks: a transport check NOT REACHED ends the run as a failure" \
-  "$(grep -c went-on <<<"$out"),$(grep -c 'FAIL: the transport check on T2 did not pass' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
+  out=$(rc "${fn%%:*} 11; echo went-on")
+  check "${fn%%:*}: a transport check NOT REACHED ends the run as a failure" \
+    "$(grep -c went-on <<<"$out"),$(grep -c "FAIL: the transport check on ${fn#*:} did not pass" <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
+done
 check "the main path runs these functions, not its own copies" \
   "$(grep -cE '^\s*live_switch_checks "\$id2"$' <<<"$code"),$(grep -cE '^returned_checks "\$id1"$' <<<"$code"),$(grep -cE '(reader|transport)_check "?\$id[12]' <<<"$code")" "1,1,0"
 
