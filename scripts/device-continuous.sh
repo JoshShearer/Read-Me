@@ -102,10 +102,12 @@ count_ok() {
   [ "$2" -ge "$b" ] && [ "$2" -le $((b + 2)) ]
 }
 # playback_ids <log>: every item id named on a "playback ..." line: item=, a handover's from=
-# and after= (a start line's from= is a sentence index, not an id).
+# and after= (a start line's from= is a sentence index, not an id). A "playback prepare" line
+# (REA-49) is not a play: it names the item that would come next, whose first audio is
+# synthesized ahead and deleted unless the handover confirms it, so its ids are left out.
 playback_ids() {
   {
-    grep -oE 'playback .*' <<<"$1" | grep -oE ' item=[0-9]+' || true
+    grep -oE 'playback .*' <<<"$1" | grep -v 'playback prepare' | grep -oE ' item=[0-9]+' || true
     grep -oE 'playback (continue|handover) from=[0-9]+' <<<"$1" || true
     grep -oE 'playback continue none after=[0-9]+' <<<"$1" || true
   } | grep -oE '[0-9]+$' | sort -un || true
@@ -655,7 +657,8 @@ for id in $id2 $id1; do
   device_has "$log" "playback start item=$id " && { echo "FAIL: item $id was started from JS"; FAIL=1; }
 done
 grep -E 'playback (start|finished|continue|handover|paused|resume refused|engine)' <<<"$log" | sed 's/^/  /' || true
-grep -oE 'playback handover from=[0-9]+ item=[0-9]+ ms=[0-9]+' <<<"$log" | sed 's/^/  information (not an R-M07 gap): /' || true
+grep -oE 'playback handover from=[0-9]+ item=[0-9]+ ms=[0-9]+( prepared=[01])?' <<<"$log" | sed 's/^/  information (not an R-M07 gap; REA-49 expects prepared=1 and ms < 100): /' || true
+grep -oE 'playback prepare (from=[0-9]+ item=[0-9]+ .*ms=[0-9]+|none after=[0-9]+ ms=[0-9]+)' <<<"$log" | sed 's/^/  information (next item prepared): /' || true
 grep -oE 'playback continue from=[0-9]+ item=[0-9]+ .*ms=[0-9]+' <<<"$log" | sed 's/^/  information (next item built): /' || true
 all=$(adb logcat -d)
 device_has "$all" "$MARK|hovers over the field|long grass" && { echo "FAIL: a log line carries item text"; FAIL=1; }

@@ -35,7 +35,8 @@ Two smaller facts shaped the handover itself:
   identical offsets and resume indices. A change on one side fails until the other follows.
 - **Next item.** The first item after the finished one under `Store.items()`'s order
   (`created_at DESC, id DESC`) with `archived_at IS NULL`, `state = 'ready'` and at least one
-  kept sentence, evaluated at the handover. No wrap to the top: items shared during the chain
+  kept sentence, evaluated at the handover (since REA-49 also evaluated early, to prepare its
+  first audio, and confirmed at the handover: see the amendment below). No wrap to the top: items shared during the chain
   (newer, above) are not picked up, and the bottom of the list stops playback. An item played
   from Archive uses the same key. Items stopped for deletion are skipped.
 - **Archive, then load, with no empty snapshot between.** Under its lock the queue archives
@@ -130,3 +131,39 @@ Two smaller facts shaped the handover itself:
   an earlier run's saved switch setting is still pending its cleanup. Residual risk: if the
   host loses adb or power mid-run, nothing stops the chain, and the buffer's length (at least the
   last item's) is all that stands before the owner's items.
+
+## Amendment 2026-10-15 (REA-49): decided early, confirmed at the handover
+
+The next item's first audio is prepared before the current item ends, so the handover no longer
+waits for its synthesis (ADR 0012 amended the same day).
+
+- **When.** Once the current item's last row is synthesized and nothing of it is with the engine
+  (playing, no engine error run, no handover open), the queue asks the sink which item would come
+  next (`PlaybackSink.peekNext`, the same rule as `nextItem`: `ContinuousPlay.next`, the switch
+  read then). It runs outside the queue lock on the service's own preparation thread
+  (`ReadMePrepare`, a single worker created in `onCreate` and shut down in `onDestroy`), never
+  on the main, JS, binder or player thread: `resume()`, which re-arms it after a pause, is called
+  from main and JS. No title is offered and nothing is written to the Store.
+- **What.** The next item's rows from its start, one engine request at a time, until 2 s of audio
+  (`START_MS`, the start buffer) is ready, at most `MAX_AHEAD` (8) rows or the item's end, at the
+  queue's rate (no `setRate`; AGENTS.md 9). The start buffer binds rather than a sentence count,
+  so the player can start at the handover on prepared audio alone. Files are
+  `play-<item>-p<seq>-<paragraph>-<offset>.wav` in the same directory, deleted with their item
+  (`deleteItem`) and by the start-up and destroy sweeps (AGENTS.md 1, 3).
+- **Confirmed at the handover.** `nextItem` is still asked at the handover, so the choice is ADR
+  0011's rule applied then (switch, deletions, the List). The prepared audio is played only if the
+  fresh answer has the same item, the same rows from the same start (paragraph, offset and text),
+  the same cuts and opened state, the queue's current rate and the same playback speaker. The
+  finished prefix of prepared rows is handed to the player as the new generation's first rows; a
+  prepared request still in flight is stopped and every prepared file not handed over is deleted.
+  Any mismatch discards it all and the next item is synthesized cold, as before. A discard never
+  ends the chain by itself.
+- **Discarded before the handover** by: a user pause (resume prepares again), Stop, playing
+  another item, a jump, a rate change, a voice or engine change or a rebind (`swapSynth`), a lost
+  or failed prepared request (counted against nothing: a dead engine is found as before), and
+  deletion of the prepared item. An item opened, trimmed, archived or moved, an item between
+  becoming eligible, or the switch turned off is caught by the confirmation.
+- **Logs.** `playback prepare from=<id> item=<id> sentences=<n> start=<i> ms=<n>` and `playback
+  prepare none after=<id> ms=<n>` (ms: the time to build it); the handover line gains
+  `prepared=<0|1>`, 1 only when the player started on prepared audio at the load. The
+  acceptance read is `playback handover ... ms=<n> prepared=1`.

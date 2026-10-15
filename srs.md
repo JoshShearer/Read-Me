@@ -411,6 +411,14 @@ being read; a Trim of an item that was not being read opens its own Reader as be
 Pause never plays or resumes anything: it pauses what plays, and when nothing plays it does
 nothing and the view refreshes.
 
+Amended 2026-10-15 (REA-49, ADR 0011, ADR 0012): the next item is also chosen early, once the
+current item's last sentence is synthesized, and its first audio (at least 2 s, at most 8
+sentence pieces) is synthesized before the current item ends. At the handover it is chosen
+again by the same rule; the prepared audio plays only if the item, its start, cuts, opened
+state, the rate and the speaker are unchanged, and is otherwise discarded and the next item
+synthesized as before. A pause, Stop, jump, rate, voice or engine change, or deletion of the
+prepared item discards it; prepared audio is deleted with its item.
+
 ## Could Have
 
 ### R-C01 - Save to Obsidian
@@ -524,8 +532,9 @@ it only if nothing happened meanwhile (a pause, Stop, user play or speaker chang
 handover; a next item deleted meanwhile is refused and ends the chain). The foreground, focus,
 the wake lock and the media session are kept throughout. This is the one case where the service
 builds a sentence list itself. Loading it is a new generation (ADR 0012): the finished item's
-remaining files are deleted, and the next item's synthesis starts only then, so its first
-sentence is heard once it is synthesized (nothing is synthesized across the item boundary).
+remaining files are deleted. Since REA-49 the next item's first audio is synthesized before the
+end and confirmed at the handover (ADR 0011's amendment); when the confirmation fails, the next
+item's synthesis starts only then, so its first sentence is heard once it is synthesized.
 
 Pause is a true pause: the player stops mid-sentence and resumes from the same frame, with the
 synthesized files kept. A rate change, a voice or engine change, a jump, new cuts, a lost

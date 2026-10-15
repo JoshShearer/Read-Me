@@ -34,6 +34,8 @@ import io.loopstring.readme.store.Settings
 import io.loopstring.readme.store.Store
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * R-M07 and R-M12: the `mediaPlayback` foreground service that owns playback and, when
@@ -83,6 +85,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     syncForeground(queue.snapshot())
   }
   @Volatile private var rebinds = 0
+  private lateinit var prepareWorker: ExecutorService
   private val stallTick = object : Runnable {
     override fun run() {
       if (destroyed) return
@@ -131,7 +134,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     player.start()
     speaker = TtsSpeaker(this, this, Settings(this).voice)
     speakerFor = choice()
-    queue = PlaybackQueue(speaker, player, files, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars())
+    // REA-49: the next item is built for preparation on this one thread, never on the main, JS,
+    // binder or player thread (resume() is called from main and JS).
+    prepareWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "ReadMePrepare").apply { isDaemon = true } }
+    val worker = prepareWorker
+    queue = PlaybackQueue(
+      speaker, player, files, this, { SystemClock.elapsedRealtime() }, TtsSpeaker.maxChars(),
+      prepareOn = { worker.execute(it) },
+    )
     PlaybackHub.queue = queue
     PlaybackHub.controller = ::handle
     PlaybackHub.engine = speaker.status.wire
@@ -185,6 +195,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     // Paused above; the item stays (JS shows it paused), its audio files do not (AGENTS.md 3).
     queue.dropPrefetch()
     player.release()
+    // A preparation still building is dropped (its execute is refused from here on); the sweep
+    // below removes any prepared file.
+    prepareWorker.shutdownNow()
     files.sweep()
     stopForeground(STOP_FOREGROUND_REMOVE)
     getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -498,8 +511,27 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     return n
   }
 
-  override fun handedOver(fromId: Long, toId: Long, ms: Long) {
-    Log.i(TAG, "playback handover from=$fromId item=$toId ms=$ms")
+  /**
+   * REA-49: the item [nextItem] would offer if [currentId] ended now, for preparing its first
+   * audio. On the queue's preparation thread. No title is offered (the handover's [nextItem] does
+   * that). Ids, counts and ms only in the log (AGENTS.md 1).
+   */
+  override fun peekNext(currentId: Long, skip: Set<Long>): NextItem? {
+    if (!Settings(this).continuousPlay) return null
+    val began = SystemClock.elapsedRealtime()
+    val found = ContinuousPlay.next(store, currentId, skip)
+    val ms = SystemClock.elapsedRealtime() - began
+    if (found == null) {
+      Log.i(TAG, "playback prepare none after=$currentId ms=$ms")
+      return null
+    }
+    val n = found.next
+    Log.i(TAG, "playback prepare from=$currentId item=${n.itemId} sentences=${n.sentences.size} start=${n.startIndex} ms=$ms")
+    return n
+  }
+
+  override fun handedOver(fromId: Long, toId: Long, ms: Long, prepared: Boolean) {
+    Log.i(TAG, "playback handover from=$fromId item=$toId ms=$ms prepared=${if (prepared) 1 else 0}")
   }
 
   override fun engineLost() {

@@ -16,9 +16,10 @@ object ContinuousPlay {
     for (id in store.unreadAfter(afterId)) {
       if (id in skip) continue
       val item = store.item(id) ?: continue // deleted since the query
-      val plan = Segmenter.plan(store.paragraphs(id).map { it.text }, store.cuts(id).toSet(), store.position(id))
+      val cuts = store.cuts(id).toSet()
+      val plan = Segmenter.plan(store.paragraphs(id).map { it.text }, cuts, store.position(id))
         ?: continue // nothing kept: nothing to read
-      return Next(item, NextItem(id, plan.sentences, plan.startIndex))
+      return Next(item, NextItem(id, plan.sentences, plan.startIndex, cuts, item.openedAt))
     }
     return null
   }

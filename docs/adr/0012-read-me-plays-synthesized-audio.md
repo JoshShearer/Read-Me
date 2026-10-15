@@ -125,9 +125,14 @@ them on its own output.
   ADR 0011 says, on the thread that reported the end (usually the player's writer thread, which
   has nothing to write meanwhile), and loaded as a new generation like any `load`: its
   synthesis starts only then, and the player starts once the start buffer (2 s of audio, or the
-  item's last sentence) is ready. Nothing is synthesized across the item boundary, because
-  ADR 0011 picks the next item at the handover (the switch, deletions and the List as they are
-  then). A pause during the handover ends the chain as ADR 0011 says. A pause just before the
+  item's last sentence) is ready. Amended 2026-10-15 (REA-49): once the finished item's last
+  row is synthesized and nothing of it is with the engine, the next item's first rows (at least
+  the 2 s start buffer, at most 8 rows) are synthesized ahead, one request at a time, under
+  `play-<item>-p<seq>-...` names; at the handover they are played only if ADR 0011's rule, applied
+  again then, gives the same item, start rows, cuts, opened state, rate and speaker, and are
+  otherwise deleted and the next item synthesized cold as before (ADR 0011's amendment has the
+  discard cases). Preparation never competes with the current item's prefetch: it starts only
+  after that is complete, and every restart of the current item discards it first. A pause during the handover ends the chain as ADR 0011 says. A pause just before the
   end keeps the generation (D1), so the player can still report the last frames heard before
   it; the item is then read to the end and archived, and the pause ends the chain. A failure
   building the next item (REA-46, an `Error` included) ends the chain with the pipeline
@@ -226,7 +231,10 @@ decision on REA-31 was files; it would also tie playback to an optional callback
   Measured on 69b3db1 (`device:continuous`, 2026-10-13, GrapheneOS Speech Services): handovers
   731 and 818 ms, next-item builds 9 and 12 ms. Accepted by the owner for this change.
   Synthesizing the next item's start before the end would hide it, at the cost of deciding the
-  next item before the handover (ADR 0011 decides at it); that is REA-49.
+  next item before the handover (ADR 0011 decides at it); that is REA-49. Amended 2026-10-15
+  (REA-49): done, decided early and confirmed at the handover; `playback handover ... prepared=1`
+  marks a start on prepared audio. Not yet measured on the phone (the acceptance is under
+  100 ms on `device:continuous` with GrapheneOS Speech Services).
 - The figures above without a build named were measured on 2026-10-04 builds (c77cd94 or
   8e4af79, plus this change, uncommitted). After the rebase onto continuous play,
   `device:playback` (Supertonic, f40e264, 2026-10-11) and `device:playback`,

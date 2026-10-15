@@ -19,8 +19,18 @@ data class PlaybackSnapshot(
   val waitingItemId: Long? = null,
 )
 
-/** R-S05: an item continuous play reads next, segmented in Kotlin (ADR 0011). Carries item text. */
-data class NextItem(val itemId: Long, val sentences: List<SentenceRow>, val startIndex: Int)
+/**
+ * R-S05: an item continuous play reads next, segmented in Kotlin (ADR 0011). Carries item text.
+ * [cuts] and [openedAt] are what the item was when it was read: REA-49 keys audio prepared ahead
+ * on them, so a trim or a first open between the preparation and the handover discards it.
+ */
+data class NextItem(
+  val itemId: Long,
+  val sentences: List<SentenceRow>,
+  val startIndex: Int,
+  val cuts: Set<Int> = emptySet(),
+  val openedAt: Long? = null,
+)
 
 /**
  * The engine side of the queue (REA-31, ADR 0012): playback's own TextToSpeech writes each
@@ -54,8 +64,20 @@ interface PlaybackSink {
    */
   fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? = null
 
-  /** R-S05: the next item's first sentence started [ms] after the last one ended (a log line). */
-  fun handedOver(fromId: Long, toId: Long, ms: Long) {}
+  /**
+   * REA-49: the item [nextItem] would offer after [currentId] if it ended now, so its first
+   * audio can be synthesized before the handover. Called WITHOUT the queue's lock, on the
+   * queue's preparation thread (never the main, JS or player thread). It only builds: no title
+   * is offered, nothing is written. The handover asks [nextItem] again and uses the prepared
+   * audio only if that answer is the same item, start, cuts and opened state.
+   */
+  fun peekNext(currentId: Long, skip: Set<Long>): NextItem? = null
+
+  /**
+   * R-S05: the next item's first sentence started [ms] after its load (a log line). [prepared]:
+   * the player started on audio prepared before the handover (REA-49).
+   */
+  fun handedOver(fromId: Long, toId: Long, ms: Long, prepared: Boolean) {}
   fun changed(snapshot: PlaybackSnapshot)
   /**
    * The engine refused work or died while the queue played; the queue has paused. An engine that
