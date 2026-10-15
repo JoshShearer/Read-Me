@@ -15,7 +15,13 @@ case "$*" in
   devices) printf 'List of devices attached\nX\tdevice\n\n' ;;
   "shell dumpsys power") if [ "${STUB_LOCKED:-0}" = 1 ]; then echo "  mWakefulness=Asleep"; else echo "  mWakefulness=Awake"; fi ;;
   "shell dumpsys window") if [ "${STUB_LOCKED:-0}" = 1 ]; then echo "    isKeyguardShowing=true"; else echo "    isKeyguardShowing=false"; fi ;;
-  "logcat -d"*) cat "$STUB_LOG" 2>/dev/null ;;
+  # REA-47: STUB_LOGCAT_FAIL names a file; while it exists, one logcat read fails and removes it.
+  "logcat -d"*) if [ -n "${STUB_LOGCAT_FAIL:-}" ] && [ -f "$STUB_LOGCAT_FAIL" ]; then rm -f "$STUB_LOGCAT_FAIL"; exit 1; fi
+    cat "$STUB_LOG" 2>/dev/null ;;
+  # REA-47: a bare `adb shell` gets its command on stdin (the shares); record it so checks see it.
+  shell) cat >> "$STUB_CALLS" ;;
+  # REA-47: STUB_UI names a file served as the uiautomator dump.
+  "shell cat /sdcard/readme-ui.xml") [ -n "${STUB_UI:-}" ] && cat "$STUB_UI" 2>/dev/null ;;
   *) : ;;
 esac
 STUB
@@ -100,4 +106,114 @@ check "and releases the device lock" "$([ -d .claude/device.lock ] && echo held 
 check "and never played, shared or stopped anything" \
   "$(grep -cE 'ShareActivity|force-stop|input tap|logcat -c' "$STUB_CALLS")" 0
 check "and never cleared the app" "$(grep -c 'pm clear' "$STUB_CALLS")" 0
+
+# ===================== REA-47: the buffer item, the chain watcher, a stale state file =====================
+# T1's continue line naming a buffer-like item (161 sentences: the buffer's window), and one
+# naming an owner-like item.
+BUF='I ReadMe  : playback continue from=10 item=9 sentences=161 start=0 ms=3'
+OWN='I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
+
+# --- a fourth test item: the buffer, shared first, so it sits directly below T1 ---
+check "four test items" "$(src 'echo ${#TITLES[@]} ${#BODY[@]}')" "4 4"
+check "the buffer's window takes 160-162 sentences" \
+  "$(src 'count_ok 3 160 && count_ok 3 162 && echo yes'),$(src 'count_ok 3 159 || count_ok 3 163 || echo no')" "yes,no"
+check "the buffer's window admits no other item's count, nor they its" \
+  "$(src 'count_ok 3 151 || count_ok 3 6 || count_ok 3 4 || count_ok 0 161 || echo none')" none
+: > "$STUB_CALLS"
+src share_all >"$T/out" 2>&1
+check "the shares go buffer, T1, T2, T3 (List order: T3, T2, T1, buffer)" \
+  "$(grep -oE 'test item (buffer|one|two|three)' "$STUB_CALLS" | tr '\n' '|')" \
+  "test item buffer|test item one|test item two|test item three|"
+check "every share's text goes on stdin, never in the adb argv" \
+  "$(grep -c '^shell .*Kestrel' "$STUB_CALLS")" 0
+
+# --- the List check: exactly T3, T2, T1, buffer on top, each one ready ---
+row() { printf '<node text="%s" bounds="[0,0][1,1]"/><node text="Shared text · 20 words" bounds="[0,0][1,1]"/><node text="%s" bounds="[0,0][1,1]"/><node content-desc="open %s" bounds="[0,0][1,1]"/><node content-desc="delete %s" bounds="[0,0][1,1]"/>' "$1" "$2" "$1" "$1"; }
+HEAD='<node content-desc="settings" bounds="[0,0][1,1]"/>'
+D_OK="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)$(row 'Owner thing' ready)"
+D_OWNER4="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Owner thing' ready)$(row 'Kestrel test item buffer.' ready)"
+D_NOTREADY="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' fetching)$(row 'Owner thing' ready)"
+rows_verdict() { src 'if rows_ok "$1" && rows_ready "$1"; then echo accepted; else echo refused; fi' _ "$1"; }
+check "T3, T2, T1, buffer, all ready, is accepted" "$(rows_verdict "$D_OK")" accepted
+check "an owner item as the fourth row is refused (the chain would reach it after T1)" "$(rows_verdict "$D_OWNER4")" refused
+check "the old three-row dump (owner item fourth, no buffer) is refused" "$(rows_verdict "$DUMP")" refused
+check "a buffer not ready is refused, even with a ready owner row below it" "$(rows_verdict "$D_NOTREADY")" refused
+
+# --- the watcher: stops Read Me as soon as the chain goes past T1 ---
+printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+src "watch_chain 10 '$T/mark' 3" >"$T/out" 2>&1
+check "the watcher force-stops Read Me on T1's continue line" "$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS")" 1
+check "and notes the item, its count and start" "$(cut -d' ' -f1-3 "$T/mark" 2>/dev/null)" "9 161 0"
+check "its output carries ids and counts only" "$(grep -cE 'Kestrel|hovers|grass' "$T/out" "$T/mark" | awk -F: '{s+=$2} END {print s}')" 0
+printf '%s\n' "$LOG" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+src "watch_chain 10 '$T/mark' 2" >"$T/out" 2>&1
+check "with no continue line from T1 it stops nothing" "$(grep -c 'force-stop' "$STUB_CALLS"),$([ -e "$T/mark" ] && echo marked || echo none)" "0,none"
+printf '%s\n' "$BUF" > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"; : > "$T/logcat-fail"
+STUB_LOGCAT_FAIL="$T/logcat-fail" src "watch_chain 10 '$T/mark' 3" >"$T/out" 2>&1
+check "a failed logcat read leaves the watcher polling (errexit off in it)" \
+  "$([ -e "$T/logcat-fail" ] && echo unread || echo read),$(grep -c 'force-stop' "$STUB_CALLS")" "read,1"
+
+# --- the buffer is recognised from the log itself, not from the watcher's marker ---
+printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r ids=\$TEST_IDS played=\$BUFFER_PLAYED")
+check "a played buffer is a test item for guard, with no marker file" "$(grep -oE 'rc=[0-9]+ ids=.* played=[0-9]+' <<<"$out")" "rc=0 ids=12 11 10 9 played=1"
+check "and no NON-TEST alarm, no stop by guard" "$(grep -c 'NON-TEST' <<<"$out"),$(grep -c force-stop "$STUB_CALLS")" "0,0"
+printf '%s\n' "$LOG" > "$STUB_LOG"; : > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+check "an owner-like item after T1 stays foreign: guard fails loudly" "$(grep -oE 'rc=[0-9]+' <<<"$out"),$(grep -c 'NON-TEST ITEM PLAYED: id(s) 4' <<<"$out")" "rc=1,1"
+printf '%s\n' 'I ReadMe  : playback continue from=10 item=11 sentences=161 start=0 ms=3' > "$STUB_LOG"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+check "a buffer-sized item newer than T1 is not the buffer" "$(grep -oE 'rc=[0-9]+' <<<"$out")" "rc=1"
+printf '%s\n' 'I ReadMe  : playback continue from=10 item=9 sentences=161 start=40 ms=3' > "$STUB_LOG"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+check "a buffer-sized item read from a saved position is not the buffer" "$(grep -oE 'rc=[0-9]+' <<<"$out")" "rc=1"
+printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; mkdir .claude/device.lock
+STUB_LOCKED=1 UNLOCK_WAIT=1 src "DEVICE_LOCK_OURS=1; trap finish EXIT; PLAYED=1; CLEARED=1; ID1=10; TEST_IDS='12 11 10'; exit 0" >"$T/out" 2>&1
+check "a run where the buffer played fails as NOT COMPLETED, not as a non-test play" \
+  "$?,$(grep -c 'NOT COMPLETED' "$T/out"),$(grep -c 'NON-TEST' "$T/out")" "1,1,0"
+
+# --- the parent checks the watcher is alive, and stops Read Me when it is not ---
+printf '%s\n' "$LOG" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; (exit 0) & d=\$!; wait \$d; WATCH_PID=\$d; check_watch; echo survived" 2>&1)
+check "a dead watcher stops Read Me and fails the run" \
+  "$(grep -c survived <<<"$out"),$(grep -c 'shell am force-stop' "$STUB_CALLS"),$(grep -c 'watcher is not running' <<<"$out")" "0,1,1"
+: > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived; kill \$WATCH_PID" 2>&1)
+check "a live watcher and a clean log go on" "$(grep -c survived <<<"$out"),$(grep -c force-stop "$STUB_CALLS")" "1,0"
+printf '%s\n' "$BUF" > "$STUB_LOG"; : > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived" 2>&1)
+check "the buffer started before the switch-off: stopped, NOT COMPLETED" \
+  "$(grep -c survived <<<"$out"),$(grep -c 'shell am force-stop' "$STUB_CALLS"),$(grep -c 'NOT COMPLETED' <<<"$out")" "0,1,1"
+
+# --- finish ends the watcher; a signal still stops Read Me, fails the run and frees the slot ---
+: > "$STUB_LOG"; : > "$STUB_CALLS"; mkdir .claude/device.lock
+src "DEVICE_LOCK_OURS=1; trap finish EXIT; sleep 30 & WATCH_PID=\$!; echo \$WATCH_PID > '$T/wpid'; exit 0" >"$T/out" 2>&1
+check "the trap ends the watcher" "$(kill -0 "$(cat "$T/wpid")" 2>/dev/null && echo alive || echo gone)" gone
+check "the signal trap is set right after the EXIT trap" \
+  "$(grep -A1 -E '^trap finish EXIT$' <<<"$code" | tail -1)" "trap on_signal INT TERM HUP"
+: > "$STUB_CALLS"; mkdir .claude/device.lock
+bash -c "DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; DEVICE_LOCK_OURS=1; trap finish EXIT; trap on_signal INT TERM HUP; PLAYED=1; CLEARED=1; TEST_IDS=''; while :; do sleep 0.2; done" >"$T/out" 2>&1 &
+p=$!; sleep 1; kill -TERM "$p"; wait "$p"; rc=$?
+check "TERM mid-play: Read Me force-stopped, the run fails, the slot is free" \
+  "$([ "$rc" != 0 ] && echo nonzero),$(grep -c 'shell am force-stop' "$STUB_CALLS"),$(grep -c 'device:continuous FAIL' "$T/out"),$([ -d .claude/device.lock ] && echo held || echo free)" \
+  "nonzero,1,1,free"
+
+# --- a stale state file (an earlier run's cleanup did not finish) refuses a full run ---
+mkdir -p android/app/build/outputs/readme .claude/scratch
+APKF=android/app/build/outputs/readme/app-arm64-v8a-release.apk
+: > "$APKF"; printf '%s\nclean\n' "$(git rev-parse HEAD)" > "$APKF.stamp"
+printf '%s' "$HEAD"'<node content-desc="Continuous play" checked="true" bounds="[0,0][1,1]"/><node content-desc="archive" bounds="[0,0][1,1]"/><node content-desc="unread" bounds="[0,0][1,1]"/>' > "$T/ui"
+echo false > .claude/scratch/device-continuous.before
+rm -rf .claude/device.lock; : > "$STUB_CALLS"; : > "$STUB_LOG"
+STUB_UI="$T/ui" bash scripts/device-continuous.sh >"$T/out" 2>&1; rc=$?
+check "a full run with a previous run's state file pending is refused" "$rc,$(grep -c 'REFUSED' "$T/out")" "1,1"
+check "and says to run the cleanup first" "$(grep -c 'CLEANUP_ONLY=1 npm run device:continuous' "$T/out")" 1
+check "the owner's original setting is kept" "$(cat .claude/scratch/device-continuous.before 2>/dev/null || echo missing)" false
+check "nothing reached the phone: no adb call at all" "$(wc -l < "$STUB_CALLS" | tr -d ' ')" 0
+check "the slot was never taken" "$([ -d .claude/device.lock ] && echo held || echo free)" free
+echo true > .claude/scratch/device-continuous.before; : > "$STUB_CALLS"
+CLEANUP_ONLY=1 STUB_UI="$T/ui" bash scripts/device-continuous.sh >"$T/out" 2>&1; rc=$?
+check "CLEANUP_ONLY=1 is not refused, and restores and clears the state" \
+  "$rc,$(grep -c REFUSED "$T/out"),$(grep -c 'cleanup: done' "$T/out"),$([ -e .claude/scratch/device-continuous.before ] && echo kept || echo gone)" "0,0,1,gone"
+rm -f "$APKF" "$APKF.stamp"
 exit $fail
