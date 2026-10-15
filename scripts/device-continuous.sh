@@ -61,6 +61,8 @@ TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "
 # would fall in the handover window, which ends the chain (ADR 0011).
 BODY=(150 40 3 160)
 STATE_FILE="$PRIMARY/.claude/scratch/device-continuous.before"
+# The last capture a failed reader_check saw (test titles and controls only, no item text).
+READER_FAIL_DUMP=${READER_FAIL_DUMP:-$PRIMARY/.claude/scratch/device-continuous-reader-fail.xml}
 
 FAIL=0       # any check failed
 PLAYED=0     # playback of a test item was requested; Read Me may be reading
@@ -305,16 +307,21 @@ die() { echo "FAIL: $*"; FAIL=1; exit 1; }
 
 # reader_check <TITLES index> <what> <seconds>: RUN/PASS or RUN/FAIL; the Reader must show that
 # test item being read within the time (each dump takes seconds on the phone).
+# An empty capture (uiautomator returned nothing, seen right after an unlock) is counted, so a FAIL
+# says whether the Reader was seen wrong or not seen at all.
 reader_check() {
-  local d="" until=$(($(date +%s) + $3))
+  local d="" seen="" n=0 empty=0 until=$(($(date +%s) + $3))
   echo "RUN  $2"
   while :; do
     d=$(ui)
+    n=$((n + 1))
+    if [ -n "$d" ]; then seen=$d; else empty=$((empty + 1)); fi
     reader_shows "$d" "$1" && { echo "PASS $2"; return 0; }
     [ "$(date +%s)" -ge "$until" ] && break
     sleep 1
   done
-  echo "FAIL $2: the service is reading item $(reading_now "$(logs)"); the Reader shows $(reader_state "$d")"
+  if [ -n "$seen" ]; then { printf '%s' "$seen" > "$READER_FAIL_DUMP"; } 2>/dev/null || true; fi
+  echo "FAIL $2: the service is reading item $(reading_now "$(logs)"); the Reader shows $(reader_state "$seen") ($empty of $n captures empty)"
   return 1
 }
 # transport_tap <id> <label> <log ERE> <what>: taps the Reader's Play/Pause button labelled

@@ -160,6 +160,15 @@ s0=$(date +%s); out=$(rc 'reader_check 1 "live" 2'); s1=$(date +%s)
 check "reader_check on a Reader that did not follow fails within its wait, naming what it shows" \
   "$(grep -c '^FAIL live: the service is reading item 11; the Reader shows title T3' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ $((s1 - s0)) -le 10 ] && echo bounded)" "1,rc=1,bounded"
 
+setup "$T2_READING" '' ''
+out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 1 "live" 2')
+check "reader_check whose captures are all empty says so and saves none" \
+  "$(grep -cE '^FAIL live: .*title none, .*\(([0-9]+) of \1 captures empty\)' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ -e "$T/fail.xml" ] && echo saved || echo none)" "1,rc=1,none"
+setup "$T2_READING" "$R_STALE" ''
+out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 1 "live" 2')
+check "a failed reader_check saves the last capture it saw and counts no empty one" \
+  "$(grep -c '(0 of [0-9]* captures empty)' <<<"$out"),$(cmp -s "$T/fail.xml" "$T/ui" && echo same)" "1,same"
+
 for fn in live_switch_checks:11 returned_checks:11; do
   setup "$T2_READING" "$R_STALE$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
 I ReadMe  : playback resumed item=11
