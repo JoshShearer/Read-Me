@@ -59,6 +59,7 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
+import '../jest/loadReactNative';
 import Native from '../src/native/NativeReadMeSpeech';
 import { ListScreen } from '../src/ui/ListScreen';
 import { TrimScreen } from '../src/ui/TrimScreen';

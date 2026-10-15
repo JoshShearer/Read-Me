@@ -3,6 +3,7 @@
 import React from 'react';
 import * as RN from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
+import '../jest/loadReactNative';
 import { Button, IconButton, look, type Appearance } from '../src/ui/Button';
 import { Select } from '../src/ui/Select';
 import { Stepper } from '../src/ui/Stepper';

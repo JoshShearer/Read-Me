@@ -60,6 +60,7 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: unknown }) => children,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
+import '../jest/loadReactNative';
 import Native from '../src/native/NativeReadMeSpeech';
 import App from '../App';
 
@@ -79,8 +80,23 @@ function strings(node: Node, out: string[] = []): string[] {
 let backHandlers: (() => unknown)[] = [];
 let appStateHandler: ((s: string) => void) | null = null;
 const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+// Every act() the helpers start, until it settles. A test that times out leaves its act and the
+// rest of its body running: afterEach closes the helpers to it (an act it starts later throws)
+// and waits for what it has started, so the next test never runs inside it ("overlapping act()
+// calls", ci run 38776437438) and its tree is unmounted.
+const pending = new Set<Promise<unknown>>();
+let closed = false;
+function act(fn: () => unknown): Promise<unknown> {
+  if (closed) return Promise.reject(new Error('act() after the test ended'));
+  const p = Promise.resolve(ReactTestRenderer.act(async () => { await fn(); }));
+  pending.add(p);
+  const settled = () => { pending.delete(p); };
+  p.then(settled, settled);
+  return p;
+}
 
 beforeEach(() => {
+  closed = false;
   jest.clearAllMocks();
   mockState.playback = { itemId: null, playing: false, waitingItemId: null };
   mockState.unopened = [];
@@ -97,20 +113,22 @@ beforeEach(() => {
   });
 });
 afterEach(async () => {
+  closed = true;
+  while (pending.size) await Promise.allSettled([...pending]);
   await ReactTestRenderer.act(async () => {
     while (mounted.length) mounted.pop()!.unmount();
   });
   jest.restoreAllMocks();
 });
 
-const flush = () => ReactTestRenderer.act(async () => { await new Promise(r => setTimeout(r, 0)); });
+const flush = () => act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
 async function render(): Promise<ReactTestRenderer.ReactTestRenderer> {
   let r!: ReactTestRenderer.ReactTestRenderer;
-  await ReactTestRenderer.act(async () => {
+  await act(() => {
     r = ReactTestRenderer.create(<App />);
+    mounted.push(r);
   });
-  mounted.push(r);
   await flush();
   return r;
 }
@@ -118,7 +136,8 @@ const shown = (r: ReactTestRenderer.ReactTestRenderer) => strings(r.toJSON());
 
 async function press(r: ReactTestRenderer.ReactTestRenderer, find: (n: ReactTestRenderer.ReactTestInstance) => boolean) {
   const node = r.root.findAll(n => typeof n.props.onPress === 'function' && find(n))[0];
-  await ReactTestRenderer.act(async () => node.props.onPress());
+  if (!node) throw new Error('nothing on screen to press');
+  await act(async () => node.props.onPress());
   await flush();
 }
 const openRow = (r: ReactTestRenderer.ReactTestRenderer, id: number) =>
@@ -129,13 +148,13 @@ const pressLabel = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
 /** The service emits a snapshot (and getPlayback reports it from then on). */
 async function service(itemId: number | null, playing: boolean, waitingItemId: number | null = null) {
   mockState.playback = { itemId, playing, waitingItemId };
-  await ReactTestRenderer.act(async () => {
+  await act(async () => {
     DeviceEventEmitter.emit('ReadMePlayback', mockSnapshot(itemId, playing, waitingItemId));
   });
   await flush();
 }
 async function back() {
-  await ReactTestRenderer.act(async () => {
+  await act(async () => {
     backHandlers[backHandlers.length - 1]();
   });
   await flush();
@@ -196,7 +215,7 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await openRow(r, 1);
     await service(1, true);
     mockState.playback = { itemId: 3, playing: true, waitingItemId: null };
-    await ReactTestRenderer.act(async () => appStateHandler!('active'));
+    await act(async () => appStateHandler!('active'));
     await flush();
     expect(readerOf(r).title).toBe(3);
   });
@@ -274,10 +293,10 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await service(1, true);
     let answer!: (v: unknown) => void;
     (Native.getPlayback as jest.Mock).mockImplementationOnce(() => new Promise(res => { answer = res; }));
-    await ReactTestRenderer.act(async () => appStateHandler!('active'));
+    await act(async () => appStateHandler!('active'));
     await service(2, true);
     expect(readerOf(r).title).toBe(2);
-    await ReactTestRenderer.act(async () => answer(mockSnapshot(1, true)));
+    await act(async () => answer(mockSnapshot(1, true)));
     await flush();
     expect(readerOf(r).title).toBe(2);
     await service(2, true); // B's next sentence: no handover from a stale A
