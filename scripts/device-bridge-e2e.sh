@@ -7,26 +7,69 @@
 # playback ends. With Obsidian installed, calls the bridge from inside its WebView with Read Me
 # in the background. Turns the bridge off and checks it is gone. Checks logcat for the token
 # and the test text.
+#
+# REA-44: the while-playing WebView check needs playback to outlast Obsidian's start, whatever
+# the engine's speed, so the test text is 40 sentences and the CDP call reports /health's busy
+# flag: busy=false there is a failed precondition (timing), reported apart from a bridge fault.
+# Runs on the phone's default engine; READ_ME_ENGINE=<package> pins that engine instead (it must
+# be installed for the current user) and puts the default back on every exit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 PORT=8787
 HDR=$(mktemp)          # the Authorization header lives in a 0600 file, not in curl's argv
 chmod 600 "$HDR"
+prev_engine=""
+engine_pinned=0
+restore_engine() {
+  [ "$engine_pinned" = 1 ] || return 0
+  if [ -z "$prev_engine" ] || [ "$prev_engine" = null ]; then
+    adb shell settings delete secure tts_default_synth >/dev/null 2>&1 || true
+  else
+    adb shell settings put secure tts_default_synth "$prev_engine" >/dev/null 2>&1 || true
+  fi
+  echo "engine: restored tts_default_synth to $(adb shell settings get secure tts_default_synth | tr -d '\r')"
+}
 cleanup() {
+  restore_engine
   rm -f "$HDR"
   adb forward --remove tcp:$PORT >/dev/null 2>&1 || true
   adb shell rm -f /sdcard/readme-ui.xml >/dev/null 2>&1 || true
 }
 DEVICE_ON_EXIT=cleanup
+fail=0
+PRECOND=0
+check() { if eval "$2"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
+
+# The Obsidian WebView half of the contention check. $TOK is the pairing token (stdin to node,
+# never argv). /health's busy flag over CDP right before the POST says whether Read Me was still
+# playing: busy=false means the run was too slow, which is not a bridge fault and not a pass.
+obsidian_playing_check() {
+  local P
+  P=$(printf '%s' "$TOK" | node scripts/obsidian-cdp-bridge.mjs playing) || P=""
+  echo "$P"
+  if grep -q '"health":"200 busy=false"' <<<"$P"; then
+    echo "FAIL (precondition, timing): playback ended before the WebView check, not a bridge fault; the 64 KiB POST was not judged"
+    fail=1; PRECOND=1
+  else
+    check "WebView: 64 KiB POST while playing reads 503 busy" "grep -q '\"bigBusy\":\"503 ' <<<\"\$P\""
+  fi
+}
+[ -n "${DEVICE_BRIDGE_SOURCE_ONLY:-}" ] && return 0
+
 device_take interactive
 device_require_unlocked
+prev_engine=$(adb shell settings get secure tts_default_synth | tr -d '\r')
+if [ -n "${READ_ME_ENGINE:-}" ]; then
+  engine=$(device_pick_engine) || { echo "FAIL: $READ_ME_ENGINE is not installed for this user"; exit 1; }
+  engine_pinned=1
+  adb shell settings put secure tts_default_synth "$engine"
+fi
+echo "engine: $(adb shell settings get secure tts_default_synth | tr -d '\r')"
 device_install_release
 
 device_clear_app
 adb logcat -c
-fail=0
-check() { if eval "$2"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
 
 # The screen as XML on stdout, without a file on /sdcard (the token is on screen).
 ui() { adb exec-out uiautomator dump /dev/tty 2>/dev/null | sed 's/UI hierchary dumped to.*//' || true; }
@@ -69,9 +112,10 @@ bridge_is() { on_screen "content-desc=\"$BRIDGE\"[^>]*checked=\"$1\""; }
 logs() { adb logcat -d -s ReadMe:I; }
 wait_log() { for _ in $(seq "$2"); do grep -qE "$1" <<<"$(logs)" && return 0; sleep 1; done; return 1; }
 
-# A ten-sentence text to play during the contention check.
-TEXT=""
-for w in one two three four five six seven eight nine ten; do TEXT+="Bridge test $w is spoken now. "; done
+# A 40-sentence text to play during the contention check: ten sentences at 2.0x lasted 8.6 s on
+# Marmalade, shorter than Obsidian's start (REA-44). Synthetic, no owner content.
+TEXT="Bridge test one is spoken now. "
+for i in $(seq 2 40); do TEXT+="Bridge test $i is spoken now. "; done
 printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$TEXT")" \
   | timeout 30 adb shell >/dev/null || { echo "FAIL: the share did not return within 30 s"; exit 1; }
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
@@ -147,12 +191,11 @@ check "/health says busy" "grep -q '\"busy\":true' <<<\"\$(curl -s $B/health)\""
 if adb shell pm path md.obsidian >/dev/null 2>&1; then
   echo "== Obsidian, Read Me in the background, while it plays"
   adb shell am start -n md.obsidian/.MainActivity >/dev/null; sleep 8
-  P=$(printf '%s' "$TOK" | node scripts/obsidian-cdp-bridge.mjs playing); echo "$P"
-  check "WebView: 64 KiB POST while playing reads 503 busy" "grep -q '\"bigBusy\":\"503 ' <<<\"\$P\""
+  obsidian_playing_check
 fi
 
 echo "== playback ends; the bridge stays"
-wait_log 'playback finished item=1' 90 || { echo "FAIL: playback did not finish"; fail=1; }
+wait_log 'playback finished item=1' 180 || { echo "FAIL: playback did not finish"; fail=1; }
 sleep 2
 check "/health 200 and not busy after playback" "grep -q '\"busy\":false' <<<\"\$(curl -s --max-time 5 $B/health)\""
 check "the notification still says the bridge is on" \
@@ -190,4 +233,6 @@ check "the test text is not in logcat" "! grep -q 'Bridge test\\|Hello from the 
 check "no crash" "! adb logcat -d | device_crash_seen"
 logs | grep -E 'bridge ' | sed -E 's/.*(bridge .*)/\1/' | sort | uniq -c | sort -rn | head -20
 
-if [ "$fail" = 0 ]; then echo "device:bridge PASS (Obsidian: $OBSIDIAN)"; else echo "device:bridge FAIL"; exit 1; fi
+if [ "$fail" = 0 ]; then echo "device:bridge PASS (Obsidian: $OBSIDIAN)"
+elif [ "$PRECOND" = 1 ]; then echo "device:bridge FAIL (precondition: playback ended before the WebView check; rerun)"; exit 1
+else echo "device:bridge FAIL"; exit 1; fi
