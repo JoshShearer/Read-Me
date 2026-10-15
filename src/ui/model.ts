@@ -16,11 +16,27 @@ export const push = (stack: readonly Route[], r: Route): Route[] => [...stack, r
 export const back = (stack: readonly Route[]): Route[] | null =>
   stack.length > 1 ? stack.slice(0, -1) : null;
 
-/** Trim's Done: back to the Reader below it, else (a first open) replace Trim with one. */
+/**
+ * Trim's Done: back to the Reader below it, else (a first open) replace Trim with one. The
+ * Reader below may show another item: it followed a continuous-play handover while Trim was
+ * open (REA-55), and it stays on the item being read. A trim route only ever sits on its own
+ * Reader or on the List.
+ */
 export function trimDone(stack: readonly Route[], id: number): Route[] {
   const below = stack[stack.length - 2];
-  if (below?.name === 'reader' && below.id === id) return stack.slice(0, -1);
+  if (below?.name === 'reader') return stack.slice(0, -1);
   return [...stack.slice(0, -1), { name: 'reader', id }];
+}
+
+/**
+ * R-S05, REA-55 (ADR 0011): the service handed over from item `from` to item `to`, so a Reader
+ * showing `from` becomes the Reader of `to`. Back still pops to what was below it; a Trim route
+ * is left alone (the user is editing that item). Not an open: nothing is marked opened. The same
+ * stack when no Reader shows `from`, so nothing re-renders.
+ */
+export function followHandover(stack: Route[], from: number, to: number): Route[] {
+  if (!stack.some(r => r.name === 'reader' && r.id === from)) return stack;
+  return stack.map(r => (r.name === 'reader' && r.id === from ? { name: 'reader', id: to } : r));
 }
 
 /** R-M05: Trim opens automatically the first time an item is opened. */

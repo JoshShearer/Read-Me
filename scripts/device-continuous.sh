@@ -2,12 +2,21 @@
 # npm run device:continuous - R-S05 on the phone, WITHOUT clearing Read Me's data (it runs on the
 # owner's own library). Installs over the current build (adb install -r, data kept), notes
 # Settings' Continuous play switch and turns it on, shares four synthetic texts (a long buffer
-# first, then T1 long, T2 short, T3 newest and short), checks they are the top four unread rows
+# first, then T1 long, T2 medium, T3 newest and short), checks they are the top four unread rows
 # (T3, T2, T1, buffer) and all ready, opens T3 (Trim,
 # then the Reader), plays it and turns the screen off. From the service's log lines (ids and
 # counts only) it checks that T3 hands over to T2 and T2 to T1 with the screen off, each archived
 # at its end and the next two started by the service (no JS start), then that the user's first
 # open of T2 from Archive still shows Trim (R-M05, ADR 0011).
+#
+# The Reader follows the handover (REA-55, ADR 0011). With SCREEN_OFF=0 the Reader stays visible
+# after T3's Play: when T3 hands over to T2 it must switch to T2 by itself (live switch: T2's
+# title, a highlighted paragraph, Pause), and Pause then Play in it must pause and resume T2 (by
+# logcat id; a second JS "playback start" means a tap replaced the item being read, and stops
+# Read Me at once). Then HOME; after T2 hands over to T1, Read Me is brought back and the Reader
+# must show T1 (returned to later), with the same transport check on T1, and Back must go to the
+# List. With SCREEN_OFF=1 the T1 checks run after the owner's unlock (screen off, then on). T2
+# lasts long enough for its checks; a check whose item ended first is NOT REACHED, never PASS.
 #
 # Safety on the owner's library. The owner's unread items sort below the test items, so the chain
 # must never go past them (REA-47):
@@ -46,8 +55,11 @@ MARK=Kestrel
 TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "$MARK test item buffer.")
 # Body sentences per item. Distinct counts identify each item in the service's log line; T1 is
 # long (about 7500 characters) so the switch can be turned off while it plays. The buffer is at
-# least as long: it only has to outlast the watcher's reaction (an estimated few seconds).
-BODY=(150 5 3 160)
+# least as long: it only has to outlast the watcher's reaction (an estimated few seconds). T2
+# (about 2000 characters) outlasts REA-55's live-switch and transport checks on it: a few
+# uiautomator dumps and two taps, each dump seconds on the phone. A Pause landing after T2's end
+# would fall in the handover window, which ends the chain (ADR 0011).
+BODY=(150 40 3 160)
 STATE_FILE="$PRIMARY/.claude/scratch/device-continuous.before"
 
 FAIL=0       # any check failed
@@ -128,6 +140,39 @@ buffer_seen() {
     BUFFER_ID=$id
   fi
   return 0
+}
+
+# --- REA-55: the Reader follows the handover (pure helpers, tested off the phone) ---
+
+# reader_shows <ui dump> <TITLES index>: Read Me's Reader is the view of that test item being
+# read: its title, a highlighted (current) paragraph and Pause, and no other test item's title.
+reader_shows() {
+  local k
+  device_has "$1" 'content-desc="trim"' || return 1
+  device_has "$1" 'content-desc="current paragraph"' || return 1
+  device_has "$1" 'content-desc="pause"' || return 1
+  device_has "$1" "text=\"$(escape "${TITLES[$2]}")\"" || return 1
+  for k in 0 1 2 3; do
+    [ "$k" = "$2" ] && continue
+    device_has "$1" "text=\"$(escape "${TITLES[$k]}")" && return 1
+  done
+  return 0
+}
+# reader_state <ui dump>: what a Reader dump shows, for a FAIL line: the test item named by its
+# title (T1, T2, T3, buffer or none), whether a paragraph is highlighted, and the button.
+reader_state() {
+  local k shown=none names=(T1 T2 T3 buffer) hl=no button=none
+  for k in 0 1 2 3; do device_has "$1" "text=\"$(escape "${TITLES[$k]}")" && shown=${names[$k]}; done
+  device_has "$1" 'content-desc="current paragraph"' && hl=yes
+  device_has "$1" 'content-desc="pause"' && button=Pause
+  device_has "$1" 'content-desc="play"' && button=Play
+  echo "title $shown, highlighted paragraph $hl, button $button"
+}
+# js_starts <log>: how many items JS started ("playback start item=" is logged for a JS start only).
+js_starts() { grep -cE 'playback start item=[0-9]+' <<<"$1" || true; }
+# reading_now <log>: the item the service took up last, from its latest start or continue line.
+reading_now() {
+  grep -oE 'playback (start|continue from=[0-9]+) item=[0-9]+' <<<"$1" | tail -1 | grep -oE '[0-9]+$' || true
 }
 
 # --- phone ---
@@ -221,6 +266,49 @@ guard() {
   return 1
 }
 die() { echo "FAIL: $*"; FAIL=1; exit 1; }
+
+# reader_check <TITLES index> <what> <seconds>: RUN/PASS or RUN/FAIL; the Reader must show that
+# test item being read within the time (each dump takes seconds on the phone).
+reader_check() {
+  local d="" until=$(($(date +%s) + $3))
+  echo "RUN  $2"
+  while :; do
+    d=$(ui)
+    reader_shows "$d" "$1" && { echo "PASS $2"; return 0; }
+    [ "$(date +%s)" -ge "$until" ] && break
+    sleep 1
+  done
+  echo "FAIL $2: the service is reading item $(reading_now "$(logs)"); the Reader shows $(reader_state "$d")"
+  return 1
+}
+# transport_tap <id> <label> <log ERE> <what>: taps the Reader's Play/Pause button labelled
+# <label> and waits for the service's line. A JS start of any item in the meantime is a tap that
+# replaced the item being read: Read Me is stopped and the run dies.
+transport_tap() {
+  local log n=0
+  tap_node content-desc "$2" || { echo "FAIL $4: no $2 button in the Reader"; return 1; }
+  for _ in $(seq 10); do
+    log=$(logs)
+    if [ "$(js_starts "$log")" -gt 1 ]; then
+      echo "FAIL $4: the $(tr -d '()' <<<"$2" | tr '|' '/') tap in the Reader started item $(grep -oE 'playback start item=[0-9]+' <<<"$log" | tail -1 | grep -oE '[0-9]+$') while item $1 was being read"
+      stop_readme
+      die "the Reader's transport acted on another item"
+    fi
+    device_has "$log" "$3" && return 0
+    n=$((n + 1))
+    sleep 1
+  done
+  if device_has "$log" "playback continue from=$1 "; then echo "NOT REACHED $4: item $1 ended before its $2 line"; return 1; fi
+  echo "FAIL $4: no '$3' within 10 s of the $2 tap"; return 1
+}
+# transport_check <id> <what>: Pause then Play in the Reader act on item <id>, the one being read.
+transport_check() {
+  echo "RUN  $2"
+  if device_has "$(logs)" "playback continue from=$1 "; then echo "NOT REACHED $2: item $1 ended before the check"; return 1; fi
+  transport_tap "$1" '(pause|play)' "playback paused item=$1 " "$2" || return 1
+  transport_tap "$1" play "playback resumed item=$1\b" "$2" || return 1
+  echo "PASS $2"
+}
 
 # watch_chain <T1 id> <marker file> [max polls]: runs in the background from T1's start. Each
 # second it reads the log; on T1's continue line (the chain went past T1, into the buffer) it
@@ -396,7 +484,12 @@ line=$(wait_log 'playback start item=[0-9]+ sentences=[0-9]+' 20) || die "playba
 id3=$(field "$line" item)
 count_ok 2 "$(field "$line" sentences)" || die "the started item ($id3) does not have T3's sentence count"
 TEST_IDS="$id3"
-if [ "$SCREEN_OFF" = 1 ]; then adb shell input keyevent KEYCODE_SLEEP; else adb shell input keyevent KEYCODE_HOME; fi
+if [ "$SCREEN_OFF" = 1 ]; then
+  adb shell input keyevent KEYCODE_SLEEP
+else
+  # REA-55: the Reader stays visible for the live switch.
+  reader_check 2 "the Reader shows T3 being read" 20 || die "the Reader does not show T3 being read"
+fi
 
 # next_test <from id> <BODY index>: the service's continue line from <from> must name the
 # expected test item, or Read Me is stopped before it reads further. Sets NEXT_ID (no subshell, so
@@ -415,6 +508,13 @@ next_test() {
 next_test "$id3" 1
 id2=$NEXT_ID
 TEST_IDS+=" $id2"
+if [ "$SCREEN_OFF" = 0 ]; then
+  reader_check 1 "live switch: the visible Reader follows the handover to T2 ($id2)" 15 || FAIL=1
+  transport_check "$id2" "Pause and Play in the Reader act on T2 ($id2)" || die "the transport check on T2 did not pass"
+  adb shell input keyevent KEYCODE_HOME
+else
+  echo "live switch and T2 transport: not run (SCREEN_OFF=1: the screen is off)"
+fi
 next_test "$id2" 0
 id1=$NEXT_ID
 TEST_IDS+=" $id1"
@@ -439,6 +539,14 @@ until unlocked; do
   sleep 1
 done
 check_watch
+# REA-55: back to Read Me after T2 handed over to T1 while away (or with the screen off): the
+# Reader followed to T1, its transport acts on T1, and Back goes to the List.
+home
+reader_check 0 "returned to: the Reader followed to T1 ($id1)" 15 || FAIL=1
+transport_check "$id1" "Pause and Play in the Reader act on T1 ($id1)" || die "the transport check on T1 did not pass"
+check_watch
+adb shell input keyevent KEYCODE_BACK
+if on_screen 'content-desc="settings"'; then echo "PASS Back from the followed Reader goes to the List"; else FAIL=1; fi
 to_list
 set_switch false || { stop_readme; die "could not turn Continuous play off; stopped Read Me"; }
 guard || exit 1

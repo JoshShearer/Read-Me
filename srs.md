@@ -395,6 +395,16 @@ loaded only if nothing (pause, Stop, play, voice or engine change, deletion) hap
 A pause in that window ends the chain and is not held as ADR 0009 holds a pause: no item is left
 to resume. A pause after the next item has loaded is an ordinary held pause.
 
+Amended 2026-10-15 (REA-55, ADR 0011): an open Reader follows the handover. When the item it
+shows was the one being read and the service hands over to the next item with no user action,
+the Reader switches to that item by itself (no prompt), whether it is visible then or returned to
+later (also from under Trim): it shows the new item's title, highlights its current sentence
+(R-M07), and its transport acts on it. Back still goes to the List. Following is not an open:
+the item keeps `opened_at` unset and Trim does not appear mid-read; the user's own later open
+still shows Trim first. A Reader opened on an item that is not being read never switches. A
+Play/Pause tap decided on a stale view never plays an earlier item over the one being read (a
+Play is dropped, a Pause pauses what plays).
+
 ## Could Have
 
 ### R-C01 - Save to Obsidian

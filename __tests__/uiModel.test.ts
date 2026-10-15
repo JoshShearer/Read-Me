@@ -13,6 +13,7 @@ import {
   stepRate,
   subtitle,
   trimDone,
+  followHandover,
   visibleItems,
   type Route,
   bridgeStatus,
@@ -46,6 +47,26 @@ describe('routes (Review Focus 5)', () => {
 
   test('Trim Done after a first open replaces Trim with the Reader', () => {
     expect(trimDone([list, { name: 'trim', id: 1 }], 1)).toEqual([list, { name: 'reader', id: 1 }]);
+  });
+
+  // REA-55: after a continuous-play handover the Reader route follows the item being read.
+  test('followHandover rewrites only the Reader of the finished item', () => {
+    const s: Route[] = [list, { name: 'reader', id: 1 }, { name: 'trim', id: 1 }];
+    expect(followHandover(s, 1, 2)).toEqual([list, { name: 'reader', id: 2 }, { name: 'trim', id: 1 }]);
+  });
+
+  test('followHandover returns the same stack when no Reader shows the finished item', () => {
+    const s: Route[] = [list, { name: 'reader', id: 3 }];
+    expect(followHandover(s, 1, 2)).toBe(s);
+    const l: Route[] = [list];
+    expect(followHandover(l, 1, 2)).toBe(l);
+  });
+
+  test('Trim Done over a followed Reader returns to that Reader (REA-55)', () => {
+    expect(trimDone([list, { name: 'reader', id: 2 }, { name: 'trim', id: 1 }], 1)).toEqual([
+      list,
+      { name: 'reader', id: 2 },
+    ]);
   });
 
   test('the first open goes to Trim, later opens to the Reader (R-M05)', () => {

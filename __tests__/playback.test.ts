@@ -51,7 +51,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
 }));
 
 import Native from '../src/native/NativeReadMeSpeech';
-import { applyCuts, engineBlocked, engineProblem, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
+import { applyCuts, engineBlocked, engineProblem, handedOver, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
 import type { Item } from '../src/library/library';
 
 const paragraphs = [
@@ -117,12 +117,14 @@ describe('toggle', () => {
   });
 
   test('pauses the item that is playing', async () => {
+    mockState.playback = { itemId: 1, playing: true };
     await toggle(1, at(1, true));
     expect(Native.pause).toHaveBeenCalled();
     expect(mockPlays).toHaveLength(0);
   });
 
   test('resumes the paused item', async () => {
+    mockState.playback = { itemId: 1, playing: false };
     await toggle(1, at(1, false));
     expect(Native.resume).toHaveBeenCalled();
     expect(mockPlays).toHaveLength(0);
@@ -135,8 +137,61 @@ describe('toggle', () => {
   });
 
   test('plays another item', async () => {
+    mockState.playback = { itemId: 1, playing: true };
     await toggle(3, at(1, true));
     expect(mockPlays[0].id).toBe(3);
+  });
+
+  // REA-55: the service's state decides, not the screen's copy, which can be one event behind.
+  test('a Play on a stale view never replaces the item being read with an earlier one', async () => {
+    mockState.playback = { itemId: 2, playing: true };
+    await toggle(1, at(1, false));
+    expect(mockPlays).toHaveLength(0);
+    expect(Native.pause).not.toHaveBeenCalled();
+    expect(Native.resume).not.toHaveBeenCalled();
+  });
+
+  test('a Pause on a stale view pauses what is playing, never plays its own item', async () => {
+    mockState.playback = { itemId: 2, playing: true };
+    await toggle(1, at(1, true));
+    expect(Native.pause).toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+
+  test('pauses on the service state when the copy has not caught up', async () => {
+    mockState.playback = { itemId: 1, playing: true };
+    await toggle(1, at(1, false));
+    expect(Native.pause).toHaveBeenCalled();
+    expect(Native.resume).not.toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+
+  test('resumes on the service state when the screen had no copy yet', async () => {
+    mockState.playback = { itemId: 1, playing: false };
+    await toggle(1, null);
+    expect(Native.resume).toHaveBeenCalled();
+    expect(mockPlays).toHaveLength(0);
+  });
+});
+
+describe('handedOver (REA-55)', () => {
+  const at = (itemId: number | null, playing = true, waitingItemId: number | null = null): Playback => ({
+    itemId, waitingItemId, playing, sentence: null, rate: 2, engine: 'ready',
+  });
+
+  test('the service moving from one item to another is a handover', () => {
+    expect(handedOver(at(1), at(2))).toEqual({ from: 1, to: 2 });
+  });
+
+  test('an item ending, nothing yet, or the same item is not', () => {
+    expect(handedOver(at(1), at(null, false))).toBeNull();
+    expect(handedOver(at(null, false), at(2))).toBeNull();
+    expect(handedOver(null, at(2))).toBeNull();
+    expect(handedOver(at(1), at(1, false))).toBeNull();
+  });
+
+  test('a Play that was waiting for the engine is not', () => {
+    expect(handedOver(at(1, true, 2), at(2))).toBeNull();
   });
 });
 

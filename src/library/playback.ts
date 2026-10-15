@@ -55,10 +55,21 @@ export async function playItem(id: number): Promise<boolean> {
   return Native.play(id, p.title, p.plan.sentences, p.plan.startIndex);
 }
 
-/** A row tap: pause what plays, resume what is paused, otherwise play this item. */
+/**
+ * The Reader's Play/Pause for item `id`: pause it if it plays, resume it if paused, otherwise
+ * play it. Decided on the service's state read now, not on the screen's copy (`current`), which
+ * can be one event behind (REA-55): a tap that saw this item while the service has since handed
+ * over to another must never play this (finished, archived) item over the one being read. A Play
+ * from that stale view is dropped (the event that follows moves the Reader to the new item); a
+ * Pause still pauses, since pause acts on whatever the service is reading.
+ */
 export async function toggle(id: number, current: Playback | null): Promise<boolean> {
-  if (current?.itemId === id) {
-    if (current.playing) return Native.pause();
+  const fresh = await getPlayback().catch(() => current);
+  if (current?.itemId === id && fresh?.itemId != null && fresh.itemId !== id) {
+    return current.playing ? Native.pause() : false;
+  }
+  if (fresh?.itemId === id) {
+    if (fresh.playing) return Native.pause();
     // False when the service is gone (process restarted): play again from the saved position.
     if (await Native.resume()) return true;
   }
@@ -96,6 +107,20 @@ export function onPlayback(cb: (p: Playback) => void): () => void {
     (n: unknown) => cb(toPlayback(n as NativePlayback)),
   );
   return () => sub.remove();
+}
+
+/**
+ * R-S05, REA-55: the service moved from one item straight to another, which only a
+ * continuous-play handover does without a Play from this Reader. ADR 0011's handover never
+ * publishes "no item" between the two (a pause or Stop in its window does, and ends the chain),
+ * and every JS start is for the Reader's or Trim's own item. A Play that was waiting for the
+ * engine (REA-35) is not a handover. A future control that starts another item while a Reader
+ * is open must revisit this.
+ */
+export function handedOver(prev: Playback | null, now: Playback): { from: number; to: number } | null {
+  if (prev?.itemId == null || now.itemId == null || prev.itemId === now.itemId) return null;
+  if (now.itemId === prev.waitingItemId) return null;
+  return { from: prev.itemId, to: now.itemId };
 }
 
 export function marker(item: Item, p: Playback | null): string {

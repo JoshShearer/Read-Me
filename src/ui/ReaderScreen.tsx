@@ -68,6 +68,8 @@ export function ReaderScreen({
     });
   }, []);
 
+  // After a continuous-play handover App moves this route to the new item (REA-55), so a Reader
+  // whose item was being read shows the item being read; one opened on another item stays put.
   const mine = playback?.itemId === id ? playback : null;
   const paragraphs = detail ? readerParagraphs(detail.paragraphs, detail.cuts, mine?.sentence ?? null) : [];
   const currentAt = paragraphs.findIndex(p => p.current !== null);

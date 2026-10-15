@@ -72,6 +72,23 @@ Two smaller facts shaped the handover itself:
 - **Trim state is left alone.** An item read by continuous play keeps `opened_at` NULL and gets
   no cuts (AGENTS.md 12), so the user's own first open still shows Trim. Its saved position is
   kept and remapped as for any play.
+- **The Reader follows (REA-55, 2026-10-15; owner decision: "continuous means keep moving").**
+  App, which stays mounted while screens come and go, watches the service's state; when it moves
+  straight from item A to item B (`handedOver`: both non-null, different, and B not a Play that
+  was waiting for the engine), a Reader route for A becomes one for B (`followHandover`). No
+  Kotlin marker is needed: the handover never publishes "no item" between A and B (a pause or
+  Stop in its window does, and ends the chain), and every JS start is for the Reader's or Trim's
+  own item, so a Reader for A can only see A then B through a handover. A control that starts
+  another item while a Reader is open would have to revisit this. Missed events are caught by
+  reading the service's state when App mounts and when it is active again; an answer older than
+  an event is dropped. The follow only replaces a route (the keyed screen remounts, as List to
+  Reader does): no play, pause or resume. It is not an open: no `markOpened`, no Trim, so the
+  item keeps `opened_at` NULL as above. Trim open over a Reader that followed returns to the
+  followed Reader on Done (`trimDone` pops onto any Reader below); a first open's Trim still
+  becomes a Reader of its own item, which does not switch, since it never saw that item being
+  read. A Reader opened on an item that is not being read never switches. The Reader's
+  Play/Pause reads the service's state at the tap: a Play from a view one event behind (it saw
+  its item, the service is on another) is dropped, a Pause pauses what plays.
 - **Logs** carry ids and counts only (AGENTS.md 1): `playback continue from=<id> item=<id>
   sentences=<n> start=<i> ms=<n>` (ms: the time to build it), `playback continue none
   after=<id> ms=<n>`, and `playback handover

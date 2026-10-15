@@ -51,7 +51,7 @@ check "the trap is set right after the slot is taken" \
 # --- helpers ---
 LOG='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback finished item=12
-I ReadMe  : playback continue from=12 item=11 sentences=6 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3
 I ReadMe  : playback handover from=12 item=11 ms=180
 I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=9
 I ReadMe  : playback finished item=10
@@ -59,17 +59,47 @@ I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
 check "playback ids are read from every playback line" "$(src "playback_ids \"\$1\"" _ "$LOG" | tr '\n' ' ')" "4 10 11 12 "
 check "a non-test id is found" "$(src "foreign_ids \"\$1\" '12 11 10'" _ "$LOG" | tr '\n' ' ')" "4 "
 check "no foreign id when all are test ids" "$(src "foreign_ids \"\$1\" '12 11 10 4'" _ "$LOG")" ""
-check "sentence windows: T1 151, T2 6, T3 4" \
-  "$(src 'count_ok 0 151 && count_ok 1 6 && count_ok 2 4 && echo yes')" yes
+check "sentence windows: T1 151, T2 41, T3 4" \
+  "$(src 'count_ok 0 151 && count_ok 1 41 && count_ok 2 4 && echo yes')" yes
 check "the windows do not admit each other's counts" \
-  "$(src 'count_ok 0 6 || count_ok 1 4 || count_ok 2 6 || count_ok 2 151 || echo none')" none
+  "$(src 'count_ok 0 41 || count_ok 1 4 || count_ok 2 41 || count_ok 2 151 || count_ok 1 151 || echo none')" none
+check "T2's window is 40-42 (REA-55: long enough for the Reader checks)" \
+  "$(src 'count_ok 1 40 && count_ok 1 42 && echo yes'),$(src 'count_ok 1 39 || count_ok 1 43 || echo no')" "yes,no"
 check "a two-sentence owner item matches no window" "$(src 'count_ok 0 2 || count_ok 1 2 || count_ok 2 2 || echo none')" none
 DUMP='<node content-desc="delete Kestrel test item three." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item two." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item one." bounds="[0,0][1,1]"/><node content-desc="delete Owner thing" bounds="[0,0][1,1]"/>'
 check "row titles come top to bottom" "$(src "row_titles \"\$1\" | head -3 | tr '\n' '|'" _ "$DUMP")" \
   "Kestrel test item three.|Kestrel test item two.|Kestrel test item one.|"
 check "the body text has no digits and the marker" \
   "$(src 'body_text 3' | grep -cE '[0-9]'),$(src 'body_text 3' | grep -c Kestrel)" "0,1"
-check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=6 start=0' item")" 11
+check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=41 start=0' item")" 11
+
+# --- REA-55: the Reader follows the handover ---
+RD() { # RD <title> <button> [highlight]: a Reader dump
+  printf '<node text="%s" bounds="[0,0][1,1]"/><node content-desc="trim" bounds="[0,0][1,1]"/>%s<node content-desc="%s" bounds="[0,0][1,1]"/>' \
+    "$1" "${3:+<node content-desc=\"current paragraph\" bounds=\"[0,0][1,1]\"/>}" "$2"
+}
+R_T2=$(RD "Kestrel test item two." pause yes)
+R_STALE=$(RD "Kestrel test item three." play)
+R_BOTH="$(RD "Kestrel test item two." pause yes)"'<node text="Kestrel test item one." bounds="[0,0][1,1]"/>'
+check "a followed Reader on T2 (title, highlight, Pause) is accepted" "$(src 'reader_shows "$1" 1 && echo yes' _ "$R_T2")" yes
+check "a stale Reader (T3's title, Play, nothing highlighted) is not T2's" "$(src 'reader_shows "$1" 1 || echo no' _ "$R_STALE")" no
+check "T2's title and Play but no highlight is not accepted" \
+  "$(src 'reader_shows "$1" 1 || echo no' _ "$(RD "Kestrel test item two." play)")" no
+check "the List is not a Reader" "$(src 'reader_shows "$1" 1 || echo no' _ "$DUMP")" no
+check "a dump with two test titles is not accepted" "$(src 'reader_shows "$1" 1 || echo no' _ "$R_BOTH")" no
+check "the FAIL line names what the stale Reader shows (no item text)" "$(src 'reader_state "$1"' _ "$R_STALE")" \
+  "title T3, highlighted paragraph no, button Play"
+L2='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+I ReadMe  : playback start cancelled item=9
+I ReadMe  : playback continue from=12 item=11 sentences=41 start=0 ms=3
+I ReadMe  : playback paused item=11 paragraph=3 offset=0'
+check "JS starts are counted, a cancelled start is not" "$(src 'js_starts "$1"' _ "$L2")" 1
+check "the item being read is the latest continue" "$(src 'reading_now "$1"' _ "$L2")" 11
+check "a second JS start is counted and becomes the item being read" \
+  "$(src 'js_starts "$1"; reading_now "$1"' _ "$L2
+I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0" | tr '\n' ' ')" "2 12 "
+check "the Reader checks report NOT REACHED, never PASS, for an item that already ended" \
+  "$(grep -c 'NOT REACHED' "$S"),$(grep -cE 'playback continue from=\$1 .*(PASS)' "$S")" "3,0"
 
 # --- guard: a non-test id stops Read Me and fails loudly ---
 printf '%s\n' "$LOG" > "$STUB_LOG"; : > "$STUB_CALLS"
@@ -118,7 +148,7 @@ check "four test items" "$(src 'echo ${#TITLES[@]} ${#BODY[@]}')" "4 4"
 check "the buffer's window takes 160-162 sentences" \
   "$(src 'count_ok 3 160 && count_ok 3 162 && echo yes'),$(src 'count_ok 3 159 || count_ok 3 163 || echo no')" "yes,no"
 check "the buffer's window admits no other item's count, nor they its" \
-  "$(src 'count_ok 3 151 || count_ok 3 6 || count_ok 3 4 || count_ok 0 161 || echo none')" none
+  "$(src 'count_ok 3 151 || count_ok 3 41 || count_ok 3 4 || count_ok 0 161 || echo none')" none
 : > "$STUB_CALLS"
 src share_all >"$T/out" 2>&1
 check "the shares go buffer, T1, T2, T3 (List order: T3, T2, T1, buffer)" \
