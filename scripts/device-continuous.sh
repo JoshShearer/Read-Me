@@ -74,6 +74,8 @@ BUFFER_PLAYED=0 BUFFER_ID=""
 # transport tap for the service's line (the off-phone tests shorten both).
 READER_WAIT=${READER_WAIT:-15}
 TAP_WAIT=${TAP_WAIT:-10}
+# REA-55 fix round 2: how long a tap waits for SystemUI's clipboard overlay to go (see overlays).
+OVERLAY_WAIT=${OVERLAY_WAIT:-20}
 WATCH_PID="" WATCH_MARK=""  # the chain watcher (REA-47) and its informational marker file
 
 # --- pure helpers (tested off the phone by scripts/tests/device-continuous.test.sh) ---
@@ -172,6 +174,20 @@ reader_state() {
   device_has "$1" 'content-desc="play"' && button=Play
   echo "title $shown, highlighted paragraph $hl, button $button"
 }
+# windows_above_readme <dumpsys window windows>: the visible windows listed above Read Me's (top
+# first), by name; all visible windows when Read Me has none.
+windows_above_readme() {
+  awk '/^  Window #/ { n = $0; sub(/^  Window #[0-9]+ Window\{[^ ]+ u[0-9]+ /, "", n); sub(/\}:$/, "", n)
+                       if (n ~ /io\.loopstring\.readme/) exit }
+       /^    isVisible=true/ { print n }' <<<"$1"
+}
+# overlays <dumpsys window windows>: the windows above Read Me that take a tap meant for it.
+# SystemUI's clipboard overlay appears at the bottom of the screen whenever anything sets the
+# clipboard (here: nothing in the run; something outside it) and stays about 6 s, longer while
+# touched. On 2026-10-15 (d9c196c, verify run 1) it came up 5 s before the returned-to Reader's
+# Pause tap, the tap landed on it (it then went 6.4 s after the tap, not 6 s after it appeared)
+# and Read Me never saw the tap.
+overlays() { windows_above_readme "$1" | grep -E '^ClipboardOverlay' | sort -u || true; }
 # js_starts <log>: how many items JS started ("playback start item=" is logged for a JS start only).
 js_starts() { grep -cE 'playback start item=[0-9]+' <<<"$1" || true; }
 # reading_now <log>: the item the service took up last, from its latest start or continue line.
@@ -196,8 +212,24 @@ tap_node() {
     sleep 1
   done
   [ -n "$b" ] || { echo "FAIL: nothing on screen has $1 matching $2"; return 1; }
+  clear_of_overlays || return 1
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+}
+# clear_of_overlays: returns once no overlay (see overlays) covers Read Me, saying what it waited
+# for; after OVERLAY_WAIT seconds it fails and nothing is tapped. Never dismisses one: a tap or key
+# to do that could reach Read Me.
+clear_of_overlays() {
+  local o waited=0
+  while o=$(overlays "$(adb shell dumpsys window windows 2>/dev/null || true)"); [ -n "$o" ]; do
+    if [ "$waited" -ge "$OVERLAY_WAIT" ]; then
+      echo "FAIL: $(tr '\n' ' ' <<<"$o")still covers Read Me after ${waited} s; not tapped"; return 1
+    fi
+    [ "$waited" = 0 ] && echo "  information: $(tr '\n' ' ' <<<"$o")is over Read Me (something set the clipboard); waiting for it to go before the tap"
+    sleep 1
+    waited=$((waited + 1))
+  done
+  [ "$waited" = 0 ] || echo "  information: it went after about ${waited} s"
 }
 on_screen() {
   for _ in $(seq 10); do device_has "$(ui)" "$1" && return 0; sleep 1; done
@@ -293,7 +325,7 @@ reader_check() {
 transport_tap() {
   local log base
   base=$(js_starts "$(logs)")
-  tap_node content-desc "$2" || { echo "FAIL $4: no $2 button in the Reader"; return 1; }
+  tap_node content-desc "$2" || { echo "FAIL $4: the $2 button in the Reader was not tapped"; return 1; }
   for _ in $(seq "$TAP_WAIT"); do
     log=$(logs)
     if [ "$(js_starts "$log")" -gt "$base" ]; then
@@ -305,7 +337,8 @@ transport_tap() {
     sleep 1
   done
   if device_has "$log" "playback continue from=$1 "; then echo "NOT REACHED $4: item $1 ended before its $2 line"; return 1; fi
-  echo "FAIL $4: no '$3' within $TAP_WAIT s of the $2 tap"; return 1
+  echo "FAIL $4: no '$3' within $TAP_WAIT s of the $2 tap; now the Reader shows $(reader_state "$(ui)"), and the visible windows above Read Me are: $(windows_above_readme "$(adb shell dumpsys window windows 2>/dev/null || true)" | tr '\n' ' ')"
+  return 1
 }
 # transport_check <id> <what>: Pause then Play in the Reader act on item <id>, the one being read.
 transport_check() {

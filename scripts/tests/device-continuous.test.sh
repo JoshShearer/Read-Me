@@ -14,6 +14,11 @@ echo "$*" >> "$STUB_CALLS"
 case "$*" in
   devices) printf 'List of devices attached\nX\tdevice\n\n' ;;
   "shell dumpsys power") if [ "${STUB_LOCKED:-0}" = 1 ]; then echo "  mWakefulness=Asleep"; else echo "  mWakefulness=Awake"; fi ;;
+  # REA-55 fix round 2: STUB_OVERLAY names a file holding how many more window dumps show
+  # SystemUI's clipboard overlay over Read Me; while it shows, a tap lands on it (no answer).
+  "shell dumpsys window windows") if [ -n "${STUB_OVERLAY:-}" ] && [ "$(cat "$STUB_OVERLAY" 2>/dev/null || echo 0)" -gt 0 ]; then
+      printf '  Window #0 Window{1 u0 ClipboardOverlay}:\n    isVisible=true\n'; echo $(($(cat "$STUB_OVERLAY") - 1)) > "$STUB_OVERLAY"; fi
+    printf '  Window #1 Window{2 u0 StatusBar}:\n    isVisible=true\n  Window #2 Window{3 u0 io.loopstring.readme/io.loopstring.readme.MainActivity}:\n    isVisible=true\n' ;;
   "shell dumpsys window") if [ "${STUB_LOCKED:-0}" = 1 ]; then echo "    isKeyguardShowing=true"; else echo "    isKeyguardShowing=false"; fi ;;
   # REA-47: STUB_LOGCAT_FAIL names a file; while it exists, one logcat read fails and removes it.
   "logcat -d"*) if [ -n "${STUB_LOGCAT_FAIL:-}" ] && [ -f "$STUB_LOGCAT_FAIL" ]; then rm -f "$STUB_LOGCAT_FAIL"; exit 1; fi
@@ -23,7 +28,8 @@ case "$*" in
   # REA-47: STUB_UI names a file served as the uiautomator dump.
   "shell cat /sdcard/readme-ui.xml") [ -n "${STUB_UI:-}" ] && cat "$STUB_UI" 2>/dev/null ;;
   # REA-55: each tap appends the next line of STUB_TAPQ (the service's answer) to the log.
-  "shell input tap"*) if [ -n "${STUB_TAPQ:-}" ] && [ -s "$STUB_TAPQ" ]; then
+  "shell input tap"*) if [ -n "${STUB_OVERLAY:-}" ] && [ "$(cat "$STUB_OVERLAY" 2>/dev/null || echo 0)" -gt 0 ]; then :
+    elif [ -n "${STUB_TAPQ:-}" ] && [ -s "$STUB_TAPQ" ]; then
       head -1 "$STUB_TAPQ" >> "$STUB_LOG"; sed -i 1d "$STUB_TAPQ"; fi ;;
   *) : ;;
 esac
@@ -175,6 +181,33 @@ check "live_switch_checks: a transport check NOT REACHED ends the run as a failu
   "$(grep -c went-on <<<"$out"),$(grep -c 'FAIL: the transport check on T2 did not pass' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
 check "the main path runs these functions, not its own copies" \
   "$(grep -cE '^\s*live_switch_checks "\$id2"$' <<<"$code"),$(grep -cE '^returned_checks "\$id1"$' <<<"$code"),$(grep -cE '(reader|transport)_check "?\$id[12]' <<<"$code")" "1,1,0"
+
+# --- REA-55 fix round 2: SystemUI's clipboard overlay took the returned-to Reader's Pause tap ---
+WW=$(printf '  Window #0 Window{a u0 ScreenDecorHwcOverlay}:\n    isVisible=true\n  Window #1 Window{b u0 ClipboardOverlay}:\n    isVisible=true\n  Window #2 Window{c u0 NotificationShade}:\n    isVisible=false\n  Window #3 Window{d u0 io.loopstring.readme/io.loopstring.readme.MainActivity}:\n    isVisible=true\n  Window #4 Window{e u0 ClipboardOverlay}:\n    isVisible=true\n')
+check "windows above Read Me: visible ones listed before its window, by name" \
+  "$(src 'windows_above_readme "$1" | tr "\n" "|"' _ "$WW")" "ScreenDecorHwcOverlay|ClipboardOverlay|"
+check "the clipboard overlay above Read Me is an overlay; one below it is not" \
+  "$(src 'overlays "$1"' _ "$WW"),$(src 'overlays "$1"' _ "$(sed -n '1,2p;7,10p' <<<"$WW")")" "ClipboardOverlay,"
+export STUB_OVERLAY="$T/overlay"
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+I ReadMe  : playback resumed item=11
+'
+echo 2 > "$STUB_OVERLAY"
+out=$(OVERLAY_WAIT=5 rc 'transport_check 11 "T1 transport"')
+check "a tap waits for the clipboard overlay to go, then reaches Read Me (it was lost under it)" \
+  "$(grep -c '^PASS T1 transport' <<<"$out"),$(grep -c 'ClipboardOverlay is over Read Me' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,rc=0"
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+'
+echo 99 > "$STUB_OVERLAY"
+out=$(OVERLAY_WAIT=2 rc 'transport_check 11 "T1 transport"')
+check "an overlay that stays: FAIL naming it, and no tap under it" \
+  "$(grep -c 'ClipboardOverlay still covers Read Me after 2 s; not tapped' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS"),$(grep -c PASS <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,0,0,rc=1"
+echo 0 > "$STUB_OVERLAY"
+setup "$T2_READING" "$R_T2$BTN" ''
+out=$(rc 'transport_check 11 "T1 transport"')
+check "a tap with no answer says what the Reader and the windows above Read Me show" \
+  "$(grep -cF "tap; now the Reader shows title T2, highlighted paragraph yes, button " <<<"$out"),$(grep -cF "and the visible windows above Read Me are: StatusBar " <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,rc=1"
+unset STUB_OVERLAY
 unset STUB_UI STUB_TAPQ; : > "$STUB_LOG"
 
 # --- guard: a non-test id stops Read Me and fails loudly ---
