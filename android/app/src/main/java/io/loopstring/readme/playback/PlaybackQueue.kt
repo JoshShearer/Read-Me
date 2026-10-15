@@ -28,8 +28,16 @@ data class QueueStats(
  *
  * R-S05 (ADR 0011): when the player finishes an item's last sentence the queue archives it and,
  * outside its lock, asks the sink for the next item; loading it is a new generation like any
- * other, so the finished item's files are discarded and the next item's synthesis starts only
- * then. Nothing is synthesized across the item boundary (ADR 0012).
+ * other, so the finished item's files are discarded.
+ *
+ * REA-49 (ADR 0011, ADR 0012 amended): once the current item's last row is synthesized and the
+ * engine has nothing of it in flight, the queue asks the sink which item would come next
+ * ([PlaybackSink.peekNext], on [prepareOn]'s thread, outside the lock) and synthesizes that item's
+ * first rows, one request at a time, until [START_MS] of audio is ready (at most [MAX_AHEAD]
+ * rows). At the handover the choice is made again by ADR 0011's rule; the prepared files play
+ * only if the fresh choice has the same item, rows from the same start, cuts, opened state, rate
+ * and speaker. Anything else (a pause, stop, jump, rate, voice or engine change, deletion,
+ * failed preparation) discards them, and the handover synthesizes cold as before.
  *
  * Ids are "<generation>:<index>". Every discard starts a new generation, so an answer that
  * arrives late for discarded work is ignored.
@@ -49,6 +57,11 @@ class PlaybackQueue(
   private val aheadMs: Long = AHEAD_MS,
   private val chunkChars: Int = CHUNK_CHARS,
   private val audioMs: (File) -> Long = WavPcm::durationMs,
+  // REA-49: where the next item is built for preparation (Store reads, whole-item segmentation).
+  // The service passes its own single worker thread: the triggers include resume(), whose callers
+  // are the main and JS threads, and the binder and player threads must not wait on it either.
+  // Tests run it inline, after the lock is released.
+  private val prepareOn: (Runnable) -> Unit = { it.run() },
 ) {
   private val lock = Any()
   private var itemId: Long? = null
@@ -108,8 +121,40 @@ class PlaybackQueue(
   // REA-51: the engine died (ERROR_SERVICE) while paused. Reported to the sink at the next start,
   // so the rebind follows a user action and Read Me never starts speaking by itself.
   private var engineLostWhilePaused = false
+  // REA-49: the next item's first audio, prepared during the current item's tail. Engine ids are
+  // "p<seq>:<k>" (k counted from the prepared start), never a generation's, so no prepared answer
+  // can reach the current item's pipeline; a discarded preparation's answers fail the seq check.
+  private var prep: Prep? = null
+  private var prepSeq = 0L
+  // Counts speakers (swapSynth): audio made by another speaker is never adopted.
+  private var synthEpoch = 0
+  // Whether the handover's next item started on prepared audio (the handover log line).
+  private var handoverPrepared = false
 
   private class Pending(val token: Long, val finishedId: Long, val skip: Set<Long>)
+
+  /** Captured under the lock when a preparation is armed (critique F7): read outside it. */
+  private class PrepToken(val seq: Long, val currentId: Long, val skip: Set<Long>)
+
+  /** What prepared audio was made for; the handover adopts it only on an equal key. */
+  private data class PrepKey(
+    val itemId: Long,
+    val rows: List<SentenceRow>, // the fitted rows from the start: start offset and text
+    val cuts: Set<Int>,
+    val openedAt: Long?,
+    val rate: Float,
+    val epoch: Int,
+  )
+
+  private class Prep(val seq: Long) {
+    var key: PrepKey? = null // null: still building, or nothing to prepare
+    var itemId = -1L
+    val files = HashMap<Int, File>()
+    val durOf = HashMap<Int, Long>()
+    var ms = 0L
+    var inFlight = -1 // the k asked of the engine and not yet answered
+    var requested = 0
+  }
 
   fun load(itemId: Long, sentences: List<SentenceRow>, startIndex: Int, rate: Float): Boolean =
     synchronized(lock) {
@@ -142,24 +187,34 @@ class PlaybackQueue(
     playing = false
     lastDoneAt = -1
     player.pause()
+    // REA-49: a user pause discards the next item's prepared audio; resume prepares again.
+    discardPrepLocked()
     saveLocked()
     publishLocked()
     true
   }
 
-  fun resume(): Boolean = synchronized(lock) {
-    if (playing || itemId == null) return false
-    if (pipelined) {
-      playing = true
-      stallTicks = 0
-      lastDoneAt = -1
-      if (primed) player.play() else primeLocked()
-      topUpLocked()
-      publishLocked()
-    } else {
-      restartLocked(current)
+  fun resume(): Boolean {
+    val token = synchronized(lock) {
+      if (playing || itemId == null) return false
+      if (pipelined) {
+        playing = true
+        stallTicks = 0
+        lastDoneAt = -1
+        if (primed) player.play() else primeLocked()
+        topUpLocked()
+        publishLocked()
+        // The pause discarded any preparation, and the current item's synthesis may already be
+        // complete, so no engine answer would arm it again (REA-49). Only armed here: the build
+        // runs on [prepareOn], never on this caller's (main or JS) thread (critique F1).
+        maybePrepareLocked()
+      } else {
+        restartLocked(current)
+        null
+      }
     }
-    true
+    token?.let(::schedulePrepare)
+    return true
   }
 
   /** To the next sentence (past any further chunks of this one). */
@@ -215,6 +270,8 @@ class PlaybackQueue(
     // a play request waiting for the engine. load() takes the rate from Settings.
     // During a handover the next item is synthesized at this rate; the finished one is not
     // restarted, and nothing of it is left to discard.
+    // Audio prepared for the next item was made at the old rate (REA-49).
+    discardPrepLocked()
     if (itemId == null || handover != 0L) return
     if (playing) {
       restartLocked(current)
@@ -234,6 +291,8 @@ class PlaybackQueue(
   /** The item is being deleted: stop without saving into it, and never load it again. */
   fun stopItem(id: Long) = synchronized(lock) {
     deleted += id
+    // REA-49: the next item's prepared audio goes with it, even while another item plays.
+    if (prep?.itemId == id) discardPrepLocked()
     if (itemId != id) return
     flushLocked()
     clearLocked()
@@ -247,6 +306,11 @@ class PlaybackQueue(
   // --- the engine's answers (its binder thread) ---
 
   fun onSynthDone(id: String) {
+    if (id.startsWith(PREP)) {
+      onPrepAnswer(id, ok = true)
+      return
+    }
+    var token: PrepToken? = null
     val pending = synchronized(lock) {
       val i = indexOf(id) ?: return
       if (i !in fed until requested || outcome.containsKey(i)) return
@@ -267,9 +331,11 @@ class PlaybackQueue(
       val ended = feedLocked()
       // The engine is kept busy while the player plays: never wait for a sentence to end.
       topUpLocked()
+      if (ended == null) token = maybePrepareLocked()
       ended
     }
     if (pending != null) handOver(pending)
+    token?.let(::schedulePrepare)
   }
 
   /**
@@ -277,6 +343,11 @@ class PlaybackQueue(
    * While paused neither applies (REA-51): see [pausedAnswerLocked].
    */
   fun onSynthError(id: String, lost: Boolean) {
+    if (id.startsWith(PREP)) {
+      onPrepAnswer(id, ok = false)
+      return
+    }
+    var token: PrepToken? = null
     val pending = synchronized(lock) {
       val i = indexOf(id) ?: return
       if (i !in fed until requested || outcome.containsKey(i)) return
@@ -292,9 +363,12 @@ class PlaybackQueue(
       requestedAt.remove(i)
       fileOf.remove(i)?.delete()
       failedLocked(i)
-      if (pipelined) feedLocked() else null
+      val ended = if (pipelined) feedLocked() else null
+      if (ended == null) token = maybePrepareLocked()
+      ended
     }
     if (pending != null) handOver(pending)
+    token?.let(::schedulePrepare)
   }
 
   // --- the player's events (its thread) ---
@@ -315,7 +389,7 @@ class PlaybackQueue(
     }
     current = i
     if (handoverAt >= 0) {
-      sink.handedOver(handoverFrom, itemId!!, clock() - handoverAt)
+      sink.handedOver(handoverFrom, itemId!!, clock() - handoverAt, handoverPrepared)
       handoverAt = -1
     }
     topUpLocked()
@@ -429,6 +503,9 @@ class PlaybackQueue(
     try {
       synchronized(lock) {
         if (pipelined) flushLocked()
+        // REA-49: the old speaker's prepared audio; stopped on it, before it is replaced.
+        discardPrepLocked()
+        synthEpoch++
         synth = s
         engineLostWhilePaused = false
         if (playing) {
@@ -548,8 +625,9 @@ class PlaybackQueue(
       pauseAtLocked(firstErrorIndex)
       return null
     }
-    // The finished item's pipeline goes now: anything of it not yet deleted (AGENTS.md 3).
-    flushLocked()
+    // The finished item's pipeline goes now: anything of it not yet deleted (AGENTS.md 3). The
+    // next item's preparation stays for the handover to confirm (REA-49).
+    flushLocked(keepPrep = true)
     // A failed archive must still clear the queue, or the session shows "Reading" forever.
     // It also ends a continuous-play chain: an item that did not archive is not "read".
     try {
@@ -603,6 +681,7 @@ class PlaybackQueue(
         clearLocked()
         return
       }
+      val adopted = adoptPrepLocked(next, fitted)
       itemId = next.itemId
       rows = fitted.rows
       sentences = fitted.sentences
@@ -610,14 +689,148 @@ class PlaybackQueue(
       resetEstimateLocked()
       // The handover line reports this item's first audio; first-audio is a user play's.
       loadedAt = -1
-      restartLocked(fitted.startIndex)
+      restartLocked(fitted.startIndex, adopted)
       // After the restart: its flush clears a handover time in progress. A refused first
       // request has already paused it (engine lost): nothing to time then.
       if (playing) {
         handoverFrom = p.finishedId
         handoverAt = clock()
+        // "prepared" only when the player started on prepared audio (critique F2).
+        handoverPrepared = adopted.isNotEmpty() && primed
       }
     }
+  }
+
+  // --- REA-49: the next item's first audio, prepared during the current item's tail ---
+
+  /**
+   * Arms a preparation when the current item asks the engine for nothing more: its last row is
+   * synthesized, nothing of it is in flight, it is playing with no error run (an item that will
+   * pause at a failing end is not archived) and no handover is open. The caller runs the
+   * returned token through [schedulePrepare] after releasing the lock.
+   */
+  private fun maybePrepareLocked(): PrepToken? {
+    val id = itemId ?: return null
+    if (!playing || !pipelined || handover != 0L || prep != null) return null
+    if (requested < rows.size || requestedAt.isNotEmpty() || consecutiveErrors > 0) return null
+    val p = Prep(++prepSeq)
+    prep = p
+    return PrepToken(p.seq, id, HashSet(deleted))
+  }
+
+  private fun schedulePrepare(t: PrepToken) {
+    try {
+      prepareOn(Runnable { prepare(t) })
+    } catch (e: RuntimeException) {
+      // The worker is shut down (the service is being destroyed): nothing is prepared, and the
+      // handover, if any, is cold.
+    }
+  }
+
+  /** On [prepareOn]'s thread: builds the next item outside the lock, then asks for its first row. */
+  private fun prepare(t: PrepToken) {
+    synchronized(lock) { if (prep?.seq != t.seq) return }
+    // Throwable, as handOver (REA-46): a failed build only means nothing is prepared.
+    val built = try {
+      sink.peekNext(t.currentId, t.skip)
+        ?.takeIf { it.startIndex in it.sentences.indices }
+        ?.let { it to Utterances.fit(it.sentences, it.startIndex, maxChars, chunkChars) }
+    } catch (e: Throwable) {
+      null
+    }
+    synchronized(lock) {
+      val p = prep ?: return
+      if (p.seq != t.seq) return
+      // Built too late to help (critique F5), or for an item that cannot be next.
+      if (handover != 0L || !playing || itemId != t.currentId) {
+        discardPrepLocked()
+        return
+      }
+      val (next, fitted) = built ?: return // nothing next: kept, so no new preparation is armed
+      if (next.itemId in deleted || next.itemId == itemId) return
+      p.itemId = next.itemId
+      p.key = PrepKey(next.itemId, headOf(fitted), next.cuts, next.openedAt, rate, synthEpoch)
+      requestPrepLocked(p)
+    }
+  }
+
+  /** The rows preparation may cover: from the start, at most [MAX_AHEAD]. */
+  private fun headOf(fitted: Utterances.Fitted): List<SentenceRow> =
+    fitted.rows.subList(fitted.startIndex, minOf(fitted.rows.size, fitted.startIndex + MAX_AHEAD)).toList()
+
+  private fun requestPrepLocked(p: Prep) {
+    val key = p.key ?: return
+    val k = p.requested
+    val row = key.rows[k]
+    val f = files.prepared(key.itemId, p.seq, row)
+    p.files[k] = f
+    p.inFlight = k
+    p.requested++
+    if (!synth.synthesize("$PREP${p.seq}:$k", row.text, f)) {
+      // A refused request is the engine's to report, by the current item's next request or the
+      // stall check: preparation only gives up.
+      if (prep === p) discardPrepLocked(stopEngine = false)
+    }
+  }
+
+  private fun onPrepAnswer(id: String, ok: Boolean) = synchronized(lock) {
+    val seq = id.substring(PREP.length).substringBefore(':').toLongOrNull() ?: return
+    val k = id.substringAfter(':').toIntOrNull() ?: return
+    val p = prep ?: return
+    if (p.seq != seq || p.inFlight != k) return
+    p.inFlight = -1
+    if (!ok) {
+      // A failed or lost prepared request touches nothing of the current item: no error count,
+      // no rebind. The handover is cold; a dead engine is found as before.
+      discardPrepLocked()
+      return
+    }
+    val f = p.files[k] ?: return
+    val ms = audioMs(f)
+    p.durOf[k] = ms
+    // As feedLocked: audio not read as WAV counts as enough.
+    p.ms += ms.takeIf { it >= 0 } ?: START_MS
+    val key = p.key ?: return
+    // Critique F2: the start buffer binds, not a sentence count, so the player can start at the
+    // handover on prepared audio alone; bounded by [MAX_AHEAD] rows and the item's end.
+    if (p.ms < START_MS && p.requested < key.rows.size && playing && handover == 0L) requestPrepLocked(p)
+  }
+
+  /**
+   * At the handover, under the lock: the prepared files to play as the next item's first rows, or
+   * none. Any difference from the fresh choice discards them. Either way every prepared file not
+   * handed over is deleted here (critique F3), and a request still in flight is stopped.
+   */
+  private fun adoptPrepLocked(next: NextItem, fitted: Utterances.Fitted): List<Pair<File, Long>> {
+    val p = prep ?: return emptyList()
+    val fresh = PrepKey(next.itemId, headOf(fitted), next.cuts, next.openedAt, rate, synthEpoch)
+    if (p.key != fresh) {
+      discardPrepLocked()
+      return emptyList()
+    }
+    val adopted = ArrayList<Pair<File, Long>>()
+    var k = 0
+    while (k != p.inFlight && p.durOf.containsKey(k)) {
+      adopted += p.files.getValue(k) to p.durOf.getValue(k)
+      k++
+    }
+    // The taken files belong to the new generation's pipeline now; the rest are deleted.
+    for (j in 0 until k) p.files.remove(j)
+    discardPrepLocked()
+    return adopted
+  }
+
+  /**
+   * Drops the preparation: stops its engine request if one is in flight ([stopEngine] false when
+   * the caller stops the engine anyway), deletes its files. Answers for it are then stale.
+   */
+  private fun discardPrepLocked(stopEngine: Boolean = true) {
+    val p = prep ?: return
+    prep = null
+    if (p.inFlight >= 0 && stopEngine) synth.stop()
+    p.inFlight = -1
+    p.files.values.forEach { it.delete() }
+    p.files.clear()
   }
 
   /** Stops at [index] and saves it, so the user resumes where the engine started failing. */
@@ -642,12 +855,13 @@ class PlaybackQueue(
     saveLocked()
   }
 
-  private fun restartLocked(index: Int) {
+  private fun restartLocked(index: Int, adopted: List<Pair<File, Long>> = emptyList()) {
     // A user play during a handover wins over it (ADR 0011).
     handover = 0L
     if (engineLostWhilePaused) {
       // REA-51: the engine died while paused; report it now that the user asked for audio.
       engineLostWhilePaused = false
+      adopted.forEach { it.first.delete() }
       current = index
       lostLocked()
       return
@@ -665,17 +879,39 @@ class PlaybackQueue(
     playing = true
     primed = false
     fedMs = 0
+    handoverPrepared = false
+    // REA-49: prepared rows enter as if synthesized in this generation, then go to the player.
+    for ((k, a) in adopted.withIndex()) {
+      val (f, ms) = a
+      val i = index + k
+      fileOf[i] = f
+      outcome[i] = true
+      if (ms >= 0) {
+        durMs[i] = ms
+        bytesOf[i] = f.length()
+        seenChars += rows[i].text.length
+        seenMs += ms
+        seenBytes += f.length()
+      }
+      requested = i + 1
+    }
+    if (adopted.isNotEmpty()) feedLocked()
     topUpLocked()
     publishLocked()
   }
 
   /** Discards the pipeline: the engine's work in flight, the player's, and their files. */
-  private fun flushLocked() {
+  private fun flushLocked(keepPrep: Boolean = false) {
     // A pause, jump or stop before the next item's first sentence: no handover time to report.
     handoverAt = -1
     generation++
+    // REA-49: every flush but an item's end discards the next item's preparation. At the end
+    // every request of the current item was answered (fed == rows.size), so the engine is not
+    // stopped while a prepared request is in flight: it is the only one.
+    val keep = keepPrep && prep != null
+    if (!keep) discardPrepLocked(stopEngine = !pipelined)
     if (pipelined) {
-      synth.stop()
+      if (!(keep && prep!!.inFlight >= 0)) synth.stop()
       player.flush()
     }
     // Deleting a file the engine is still writing is safe: TextToSpeech opened it here and the
@@ -781,6 +1017,7 @@ class PlaybackQueue(
   }
 
   private fun clearLocked() {
+    discardPrepLocked()
     handover = 0L
     engineLostWhilePaused = false
     itemId = null
@@ -825,6 +1062,8 @@ class PlaybackQueue(
     /** Audio queued in the player before it starts (after a load, jump or rate change). */
     const val START_MS = 2_000L
     const val MAX_CONSECUTIVE_ERRORS = 3
+    /** Engine ids of prepared requests start with this, never a digit (REA-49). */
+    private const val PREP = "p"
     const val STALL_TICKS = 3
     /** About two minutes at the service's 5 s tick: the bridge's own synthesis timeout. */
     const val HUNG_TICKS = 24

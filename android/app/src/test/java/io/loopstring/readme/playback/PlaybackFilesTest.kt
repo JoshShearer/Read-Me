@@ -52,4 +52,18 @@ class PlaybackFilesTest {
     assertTrue(note.exists())
     assertEquals(0, PlaybackFiles(File(dir, "absent")).deleteItem(1))
   }
+
+  @Test fun preparedNamesCarryIdsNeverTextAndAreSweptAndDeletedWithTheirItem() {
+    // REA-49: audio prepared for the next item before a handover; AGENTS.md 1, 3 and 10.
+    val f = files.prepared(1, 4, SentenceRow(2, 41, 60, "Quietly the heron waited."))
+    assertEquals("play-1-p4-2-41.wav", f.name)
+    assertFalse(f.name.contains("heron"))
+    f.writeText("wav")
+    val other = files.prepared(12, 4, SentenceRow(0, 0, 3, "A.")).apply { writeText("wav") }
+    assertEquals(1, files.deleteItem(1))
+    assertFalse(f.exists())
+    assertTrue("item 1 must not match item 12's files", other.exists())
+    assertEquals(1, files.sweep())
+    assertFalse(other.exists())
+  }
 }

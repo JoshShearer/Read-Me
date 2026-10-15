@@ -95,7 +95,23 @@ class PlaybackQueueTest {
       return next.also { next = null }
     }
     val handovers = mutableListOf<Triple<Long, Long, Long>>()
-    override fun handedOver(fromId: Long, toId: Long, ms: Long) { handovers += Triple(fromId, toId, ms) }
+    // REA-49: whether each handover started on prepared audio.
+    val prepared = mutableListOf<Boolean>()
+    override fun handedOver(fromId: Long, toId: Long, ms: Long, prepared: Boolean) {
+      handovers += Triple(fromId, toId, ms)
+      this.prepared += prepared
+    }
+    // REA-49: what peekNext answers (kept, not consumed), and how it was asked.
+    var peek: NextItem? = null
+    val peekAsked = mutableListOf<Pair<Long, Set<Long>>>()
+    var duringPeek: (() -> Unit)? = null
+    var failPeek: Throwable? = null
+    override fun peekNext(currentId: Long, skip: Set<Long>): NextItem? {
+      peekAsked += currentId to skip.toSet()
+      duringPeek?.invoke()
+      failPeek?.let { throw it }
+      return peek
+    }
     override fun changed(snapshot: PlaybackSnapshot) {
       snapshots += snapshot
       events += "snapshot:${snapshot.itemId}:${snapshot.playing}"
@@ -120,7 +136,8 @@ class PlaybackQueueTest {
     SentenceRow(3, 0, 4, "D0."), SentenceRow(3, 5, 9, "D1."),
   )
 
-  private fun g() = synth.requested.last().substringBefore(':')
+  // The current generation: prepared requests (REA-49, "p<seq>:<k>") are not one.
+  private fun g() = synth.requested.last { !it.startsWith("p") }.substringBefore(':')
   private fun indices(ids: List<String>) = ids.map { it.substringAfter(':') }
   private fun synthDone(vararg i: Int) { val g = g(); i.forEach { queue.onSynthDone("$g:$it") } }
   private fun start(i: Int) = queue.onPlayerStart("${g()}:$i")
@@ -1623,5 +1640,422 @@ class PlaybackQueueTest {
     r.drive(40, 400)
     assertEquals(listOf(7L), sink.finished)
     assertTrue(r.outs.size > 3)
+  }
+
+  // --- REA-49: the next item's first audio, prepared during the current item's tail (ADR 0011
+  // and ADR 0012 amended): synthesized once the current item asks the engine for nothing more,
+  // adopted at the handover only if the fresh choice is the same, discarded otherwise ---
+
+  private val next8 = NextItem(8, rows8, 0)
+
+  /** Item 7's last two rows synthesized: the preparation of the next item is armed. */
+  private fun tailOfSeven(q: PlaybackQueue = queue, s: FakeSynth = synth): String {
+    q.load(7, rows, 4, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    q.onSynthDone("$g:4")
+    q.onSynthDone("$g:5")
+    return g
+  }
+
+  private fun playOut(g: String, q: PlaybackQueue = queue) {
+    for (i in 4..5) {
+      q.onPlayerStart("$g:$i")
+      q.onPlayerDone("$g:$i")
+    }
+  }
+
+  private fun prepFiles() = leftover().filter { Regex("play-\\d+-p.*").matches(it) }
+  private fun prepRequests(s: FakeSynth = synth) = s.requested.filter { it.startsWith("p") }
+  private fun deferredQueue(s: FakeSynth, deferred: MutableList<Runnable>) =
+    PlaybackQueue(s, player, PlaybackFiles(dir), sink, { now }, aheadMs = 0, chunkChars = 0, prepareOn = { deferred += it })
+
+  /**
+   * Prepares 8 as [next8]; [between] runs after its first row is synthesized; the handover then
+   * finds [fresh]. A different choice must be cold: its start synthesized anew, no prepared file
+   * left, and the log line says so.
+   */
+  private fun assertColdHandoverTo(fresh: NextItem?, between: () -> Unit = {}) {
+    sink.peek = next8
+    sink.next = fresh
+    val g = tailOfSeven()
+    queue.onSynthDone("p1:0")
+    assertEquals(listOf("play-8-p1-0-0.wav"), prepFiles())
+    between()
+    playOut(g)
+    assertTrue("no prepared file is left: ${leftover()}", prepFiles().isEmpty())
+    assertTrue(player.files.none { it.name.contains("-p1-") })
+    if (fresh == null) {
+      assertNull(queue.snapshot().itemId)
+      return
+    }
+    val g2 = g()
+    assertEquals(fresh.itemId, queue.snapshot().itemId)
+    assertTrue("$g2:${fresh.startIndex}" in synth.requested)
+    queue.onSynthDone("$g2:${fresh.startIndex}")
+    queue.onPlayerStart("$g2:${fresh.startIndex}")
+    assertEquals(listOf(false), sink.prepared)
+  }
+
+  @Test fun preparesOnlyAfterTheLastRowIsSynthesizedWithNothingInFlight() {
+    sink.peek = next8
+    queue.load(7, rows, 4, 2.0f)
+    val g = g()
+    queue.onSynthDone("$g:4")
+    assertTrue("row 5 is still with the engine", sink.peekAsked.isEmpty())
+    queue.onSynthDone("$g:5")
+    assertEquals(listOf(7L to emptySet<Long>()), sink.peekAsked)
+    assertEquals(listOf("p1:0"), prepRequests())
+    assertEquals(listOf("play-8-p1-0-0.wav"), prepFiles())
+  }
+
+  @Test fun thePreparedFilesPlayAtTheHandoverAndTheLogSaysPrepared() {
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven()
+    queue.onSynthDone("p1:0")
+    val plays = player.plays
+    playOut(g)
+    val g2 = g()
+    assertTrue(g2 != g)
+    // Row 0 of 8 is not synthesized again: its prepared file goes to the player, which starts.
+    assertFalse("$g2:0" in synth.requested)
+    assertEquals("$g2:0", player.enqueued.last())
+    assertEquals("play-8-p1-0-0.wav", player.files.last().name)
+    assertEquals(plays + 1, player.plays)
+    assertEquals(listOf("1", "2"), indices(synth.requested.filter { it.startsWith("$g2:") }))
+    queue.onPlayerStart("$g2:0")
+    assertEquals(listOf(true), sink.prepared)
+    assertEquals(8L, queue.snapshot().itemId)
+    assertEquals(rows8[0], queue.snapshot().sentence)
+  }
+
+  @Test fun prepareWritesNoPositionPublishesNoSnapshotAndSetsNoRate() {
+    sink.peek = next8
+    tailOfSeven()
+    queue.onSynthDone("p1:0")
+    assertTrue(sink.saves.none { it.first == 8L })
+    assertTrue(sink.snapshots.none { it.itemId == 8L })
+    assertEquals(listOf(2.0f), synth.rates)
+    assertEquals(7L, queue.snapshot().itemId)
+  }
+
+  @Test fun theStartBufferBindsSoShortFirstSentencesArePreparedPastTwo() {
+    // Critique F2: two 600 ms sentences are not the 2 s start buffer; preparing only them left
+    // the player waiting for a cold synthesis while the log said prepared.
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    val eight = NextItem(8, many(6), 0)
+    sink.peek = eight
+    sink.next = eight
+    q.load(7, many(2), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0..1) {
+      durations[s.files.getValue("$g:$i").name] = 3_000
+      q.onSynthDone("$g:$i")
+    }
+    for (k in 0 until 6) {
+      val id = "p1:$k"
+      if (id !in s.requested) break
+      durations[s.files.getValue(id).name] = 600
+      q.onSynthDone(id)
+    }
+    assertEquals(listOf("p1:0", "p1:1", "p1:2", "p1:3"), prepRequests(s))
+    val plays = player.plays
+    for (i in 0..1) {
+      q.onPlayerStart("$g:$i")
+      q.onPlayerDone("$g:$i")
+    }
+    val g2 = s.requested.last { !it.startsWith("p") }.substringBefore(':')
+    assertEquals("started on prepared audio before any new synthesis answered", plays + 1, player.plays)
+    assertEquals(listOf("0", "1", "2", "3"), indices(player.enqueued.filter { it.startsWith("$g2:") }))
+    q.onPlayerStart("$g2:0")
+    assertEquals(listOf(true), sink.prepared)
+  }
+
+  @Test fun aTwoShortSentenceNextItemStartsOnItsPreparedAudioAlone() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    val eight = NextItem(8, many(2), 0)
+    sink.peek = eight
+    sink.next = eight
+    q.load(7, many(2), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0..1) {
+      durations[s.files.getValue("$g:$i").name] = 3_000
+      q.onSynthDone("$g:$i")
+    }
+    for (k in 0..1) {
+      durations[s.files.getValue("p1:$k").name] = 300
+      q.onSynthDone("p1:$k")
+    }
+    val requested = s.requested.size
+    val plays = player.plays
+    for (i in 0..1) {
+      q.onPlayerStart("$g:$i")
+      q.onPlayerDone("$g:$i")
+    }
+    assertEquals("nothing of 8 is synthesized again", requested, s.requested.size)
+    assertEquals(plays + 1, player.plays)
+    val g2 = player.enqueued.last().substringBefore(':')
+    q.onPlayerStart("$g2:0")
+    assertEquals(listOf(true), sink.prepared)
+  }
+
+  @Test fun aSlowPreparationIsCancelledAndOnlyFinishedRowsAreAdopted() {
+    val s = FakeSynth()
+    val q = audioQueue(s)
+    val eight = NextItem(8, many(6), 0)
+    sink.peek = eight
+    sink.next = eight
+    q.load(7, many(2), 0, 2.0f)
+    val g = s.requested.last().substringBefore(':')
+    for (i in 0..1) {
+      durations[s.files.getValue("$g:$i").name] = 3_000
+      q.onSynthDone("$g:$i")
+    }
+    durations[s.files.getValue("p1:0").name] = 600
+    q.onSynthDone("p1:0")
+    assertEquals("p1:1", s.requested.last())
+    val stops = s.stops
+    for (i in 0..1) {
+      q.onPlayerStart("$g:$i")
+      q.onPlayerDone("$g:$i")
+    }
+    assertEquals("the prepared request in flight is stopped, once", stops + 1, s.stops)
+    val g2 = s.requested.last { !it.startsWith("p") }.substringBefore(':')
+    assertEquals(listOf("$g2:0"), player.enqueued.filter { it.startsWith("$g2:") })
+    assertEquals("play-8-p1-0-0.wav", player.files.last().name)
+    // Critique F3: only the adopted file is left (the player's to delete); the in-flight one is gone.
+    assertEquals(listOf("play-8-p1-0-0.wav"), prepFiles())
+    assertTrue("$g2:1" in s.requested)
+    // 600 ms is under the start buffer: the player waits for row 1, so the log must not say prepared.
+    durations[s.files.getValue("$g2:1").name] = 3_000
+    q.onSynthDone("$g2:1")
+    q.onPlayerStart("$g2:0")
+    assertEquals(listOf(false), sink.prepared)
+  }
+
+  @Test fun withNoFinishedPreparedRowTheHandoverIsCold() {
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven()
+    playOut(g)
+    assertTrue(prepFiles().isEmpty())
+    assertTrue("${g()}:0" in synth.requested)
+  }
+
+  @Test fun anOpenedNextItemDiscardsThePreparedFiles() = assertColdHandoverTo(next8.copy(openedAt = 123L))
+
+  @Test fun trimmingTheNextItemDiscardsThePreparedFiles() = assertColdHandoverTo(next8.copy(cuts = setOf(2)))
+
+  @Test fun aMovedStartDiscardsThePreparedFiles() = assertColdHandoverTo(next8.copy(startIndex = 1))
+
+  @Test fun changedTextAtTheSameOffsetsDiscardsThePreparedFiles() =
+    assertColdHandoverTo(next8.copy(sentences = rows8.map { it.copy(text = "X" + it.text.drop(1)) }))
+
+  @Test fun anItemBetweenBecomingEligibleOrThePreparedOneArchivedWinsAndThePreparedFilesGo() =
+    assertColdHandoverTo(NextItem(9, rows8, 0))
+
+  @Test fun turningContinuousPlayOffDiscardsThePreparedFilesAndEndsTheChain() = assertColdHandoverTo(null)
+
+  @Test fun aRateChangeDuringTheHandoverFallsBackCold() {
+    sink.during = { queue.setRate(1.5f) }
+    assertColdHandoverTo(next8)
+  }
+
+  @Test fun aRateChangeWhilePlayingDiscardsThePreparedFilesAndPreparesAgainAtTheNewRate() {
+    sink.peek = next8
+    sink.next = next8
+    tailOfSeven()
+    queue.onSynthDone("p1:0")
+    queue.setRate(1.5f)
+    assertTrue(prepFiles().isEmpty())
+    val g = g()
+    queue.onSynthDone("$g:4")
+    queue.onSynthDone("$g:5")
+    assertEquals(listOf("p1:0", "p2:0"), prepRequests())
+    queue.onSynthDone("p2:0")
+    playOut(g)
+    queue.onPlayerStart("${g()}:0")
+    assertEquals(listOf(true), sink.prepared)
+    assertEquals(listOf(2.0f, 1.5f), synth.rates)
+  }
+
+  @Test fun aSwappedSpeakerDiscardsThePreparedFiles() {
+    sink.peek = next8
+    tailOfSeven()
+    val stops = synth.stops
+    queue.swapSynth(FakeSynth())
+    assertTrue("the old speaker's prepared request is stopped", synth.stops > stops)
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun aLostEngineDuringPreparationDiscardsItAndTheHandoverFindsItCold() {
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven()
+    queue.onSynthError("p1:0", lost = true)
+    assertEquals("the current item's engine is found lost as before, not by preparation", 0, sink.lost)
+    assertTrue(queue.snapshot().playing)
+    assertTrue(prepFiles().isEmpty())
+    playOut(g)
+    assertTrue("${g()}:0" in synth.requested)
+  }
+
+  @Test fun aFailedPreparedSynthesisFallsBackToTheColdPathAndCountsNothing() {
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven()
+    queue.onSynthError("p1:0", lost = false)
+    assertTrue(prepFiles().isEmpty())
+    assertEquals(0, queue.takeStats().errors)
+    playOut(g)
+    assertEquals(listOf(7L), sink.finished)
+    assertTrue("${g()}:0" in synth.requested)
+  }
+
+  @Test fun aPauseDiscardsThePreparationAndResumeOnlyArmsItForThePreparationThread() {
+    // Critique F1: resume()'s callers are the main and JS threads; the build runs on prepareOn.
+    val deferred = mutableListOf<Runnable>()
+    val s = FakeSynth()
+    val q = deferredQueue(s, deferred)
+    sink.peek = next8
+    tailOfSeven(q, s)
+    assertTrue("built on the preparation thread, not the engine's", sink.peekAsked.isEmpty())
+    deferred.removeAt(0).run()
+    assertEquals(listOf("p1:0"), prepRequests(s))
+    q.onSynthDone("p1:0")
+    q.pause()
+    assertTrue(prepFiles().isEmpty())
+    q.resume()
+    assertEquals("resume()'s caller never builds the next item", 1, sink.peekAsked.size)
+    assertEquals(1, deferred.size)
+    deferred.removeAt(0).run()
+    assertEquals(2, sink.peekAsked.size)
+    assertEquals(listOf("p1:0", "p2:0"), prepRequests(s))
+  }
+
+  @Test fun lateAnswersForADiscardedPreparationAreIgnored() {
+    sink.peek = next8
+    tailOfSeven()
+    val stops = synth.stops
+    queue.pause()
+    assertEquals("the prepared request in flight is stopped", stops + 1, synth.stops)
+    assertTrue(prepFiles().isEmpty())
+    queue.onSynthDone("p1:0")
+    queue.onSynthError("p1:0", lost = true)
+    assertEquals(0, sink.lost)
+    assertFalse(queue.snapshot().playing)
+    assertEquals(listOf("p1:0"), prepRequests())
+  }
+
+  @Test fun aPauseDuringTheHandoverDeletesThePreparedFiles() {
+    sink.peek = next8
+    sink.next = next8
+    sink.during = { queue.pause() }
+    val g = tailOfSeven()
+    queue.onSynthDone("p1:0")
+    playOut(g)
+    assertNull(queue.snapshot().itemId)
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun aStopDiscardsThePreparedFiles() {
+    sink.peek = next8
+    tailOfSeven()
+    queue.onSynthDone("p1:0")
+    queue.stop()
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun playingAnotherItemDiscardsThePreparedFiles() {
+    sink.peek = next8
+    tailOfSeven()
+    queue.onSynthDone("p1:0")
+    queue.load(9, rows, 0, 2.0f)
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun thePauseWindowsEndLeavesNoPreparedFiles() {
+    // Critique F6: the pause itself discards the preparation; this pins that nothing prepared
+    // survives to ADR 0009's window end (dropPrefetch), whichever of the two removes it.
+    sink.peek = next8
+    tailOfSeven()
+    queue.onSynthDone("p1:0")
+    queue.pause()
+    queue.dropPrefetch()
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun deletingThePreparedItemWhileTheCurrentPlaysDeletesItsFilesAndItIsNeverAdopted() {
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven()
+    queue.onSynthDone("p1:0")
+    queue.stopItem(8)
+    assertTrue(prepFiles().isEmpty())
+    assertEquals(7L, queue.snapshot().itemId)
+    assertTrue(queue.snapshot().playing)
+    playOut(g)
+    assertEquals(setOf(8L), sink.nextAsked.single().second)
+    assertNull(queue.snapshot().itemId)
+    assertTrue(player.files.none { it.name.startsWith("play-8-") })
+  }
+
+  @Test fun aPreparationBuiltWhileTheHandoverIsOpenAsksTheEngineForNothing() {
+    // Critique F5.
+    val deferred = mutableListOf<Runnable>()
+    val s = FakeSynth()
+    val q = deferredQueue(s, deferred)
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven(q, s)
+    sink.during = { deferred.removeAt(0).run() }
+    playOut(g, q)
+    assertEquals(1, sink.peekAsked.size)
+    assertTrue(prepRequests(s).isEmpty())
+    assertEquals(8L, q.snapshot().itemId)
+    assertTrue("${s.requested.last().substringBefore(':')}:0" in s.requested)
+  }
+
+  @Test fun aPreparationRunAfterTheItemEndedIsDropped() {
+    val deferred = mutableListOf<Runnable>()
+    val s = FakeSynth()
+    val q = deferredQueue(s, deferred)
+    sink.peek = next8
+    sink.next = next8
+    val g = tailOfSeven(q, s)
+    playOut(g, q)
+    deferred.removeAt(0).run()
+    assertTrue(sink.peekAsked.isEmpty())
+    assertTrue(prepRequests(s).isEmpty())
+    assertTrue(prepFiles().isEmpty())
+  }
+
+  @Test fun anErrorBuildingThePreparationIsIgnored() {
+    for (t in listOf<Throwable>(StackOverflowError(), IllegalStateException("segmenting"))) {
+      val s = FakeSynth()
+      val q = PlaybackQueue(s, player, PlaybackFiles(dir), sink, { now }, aheadMs = 0, chunkChars = 0)
+      sink.peek = next8
+      sink.failPeek = t
+      sink.next = next8
+      val g = tailOfSeven(q, s)
+      assertTrue(prepRequests(s).isEmpty())
+      assertTrue(q.snapshot().playing)
+      playOut(g, q)
+      assertEquals(8L, q.snapshot().itemId)
+    }
+  }
+
+  @Test fun thePreparationIsBuiltWithoutHoldingTheQueueLock() {
+    sink.peek = next8
+    var done = false
+    sink.duringPeek = {
+      val t = Thread { queue.snapshot(); done = true }
+      t.start()
+      t.join(2_000)
+    }
+    tailOfSeven()
+    assertTrue("another thread waited on the lock while the next item was built", done)
   }
 }

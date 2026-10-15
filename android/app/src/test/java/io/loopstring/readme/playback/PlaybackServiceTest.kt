@@ -11,6 +11,7 @@ import io.loopstring.readme.store.Store
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -623,6 +624,25 @@ class PlaybackServiceTest {
     PlaybackHub.queue!!.pause()
     idle()
     assertEquals(first, PlaybackHub.queue!!.snapshot().itemId)
+    assertEquals("First title", shownTitle(c))
+    c.destroy()
+  }
+
+  @Test fun peekNextFollowsTheSwitchAndOffersNoTitle() {
+    // REA-49: preparation asks which item would come next; only the handover's nextItem offers
+    // its title, and the switch is read at each ask.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val older = store.insertText("Second title", listOf("Never read."), 100L)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val c = playingItem(first)
+    assertNull(c.get().peekNext(first, emptySet()))
+    Settings(ctx).continuousPlay = true
+    val n = c.get().peekNext(first, emptySet())!!
+    assertEquals(older, n.itemId)
+    assertNull(n.openedAt)
+    assertNull(c.get().peekNext(first, setOf(older)))
+    idle()
     assertEquals("First title", shownTitle(c))
     c.destroy()
   }

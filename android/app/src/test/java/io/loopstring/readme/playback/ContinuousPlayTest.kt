@@ -111,4 +111,16 @@ class ContinuousPlayTest {
     val again = ContinuousPlay.next(store, finished, emptySet())!!.next
     assertEquals(0, again.startIndex)
   }
+
+  @Test fun theNextCarriesItsCutsAndOpenedAtForThePreparedKey() {
+    // REA-49: audio prepared for the next item is keyed on these, so a trim or an open discards it.
+    val target = text(100, "First. Two.", "Second.", "Third.")
+    val finished = text(200, "Finished.")
+    store.setCuts(target, listOf(1))
+    val n = ContinuousPlay.next(store, finished, emptySet())!!.next
+    assertEquals(setOf(1), n.cuts)
+    assertNull(n.openedAt)
+    store.markOpened(target, 555)
+    assertEquals(555L, ContinuousPlay.next(store, finished, emptySet())!!.next.openedAt)
+  }
 }

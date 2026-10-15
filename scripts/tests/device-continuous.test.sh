@@ -68,6 +68,10 @@ I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
 check "playback ids are read from every playback line" "$(src "playback_ids \"\$1\"" _ "$LOG" | tr '\n' ' ')" "4 10 11 12 "
 check "a non-test id is found" "$(src "foreign_ids \"\$1\" '12 11 10'" _ "$LOG" | tr '\n' ' ')" "4 "
 check "no foreign id when all are test ids" "$(src "foreign_ids \"\$1\" '12 11 10 4'" _ "$LOG")" ""
+PLOG="$LOG
+I ReadMe  : playback prepare from=10 item=3 sentences=9 start=0 ms=4
+I ReadMe  : playback handover from=12 item=11 ms=40 prepared=1"
+check "a prepare line is not a play (REA-49)" "$(src "foreign_ids \"\$1\" '12 11 10 4'" _ "$PLOG")" ""
 check "sentence windows: T1 151, T2 81, T3 4" \
   "$(src 'count_ok 0 151 && count_ok 1 81 && count_ok 2 4 && echo yes')" yes
 check "the windows do not admit each other's counts" \

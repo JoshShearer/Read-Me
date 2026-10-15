@@ -9,12 +9,20 @@ import java.io.File
  * A name carries the item id, the queue's generation and the sentence's paragraph and offset,
  * never text (AGENTS.md 1 and 10). The player deletes a file once it is in the output; the
  * queue deletes what it discards; the service sweeps the directory at start and at destroy.
+ * REA-49: audio prepared for the next item before a continuous-play handover is named
+ * play-<item>-p<seq>-<paragraph>-<offset>.wav, so [sweep] and [deleteItem] cover it too.
  */
 class PlaybackFiles(private val dir: File) {
   fun file(itemId: Long, generation: Int, row: SentenceRow): File {
     // synthesizeToFile opens the file in this process: a missing directory reads as a refusal.
     if (!dir.isDirectory) dir.mkdirs()
     return File(dir, "$PREFIX$itemId-$generation-${row.paragraphIndex}-${row.start}.wav")
+  }
+
+  /** REA-49: a sentence of the next item, synthesized before the handover by preparation [seq]. */
+  fun prepared(itemId: Long, seq: Long, row: SentenceRow): File {
+    if (!dir.isDirectory) dir.mkdirs()
+    return File(dir, "$PREFIX$itemId-p$seq-${row.paragraphIndex}-${row.start}.wav")
   }
 
   fun sweep(): Int =
