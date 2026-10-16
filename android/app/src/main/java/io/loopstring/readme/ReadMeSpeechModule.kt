@@ -66,6 +66,12 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     Arguments.createArray().apply { store.items().forEach { pushMap(it.toMap(stats[it.id])) } }
   }
 
+  // ADR 0007's drain: the fetched items only, with no stats (REA-50), so a drain on a change
+  // event costs one scan of the items table and no library-wide aggregate.
+  override fun listFetched(promise: Promise) = settle(promise) {
+    Arguments.createArray().apply { store.fetchedItems().forEach { pushMap(it.toMap(null)) } }
+  }
+
   override fun getItem(id: Double, promise: Promise) = settle(promise) {
     val item = store.item(id.toLong()) ?: return@settle null
     Arguments.createMap().apply {

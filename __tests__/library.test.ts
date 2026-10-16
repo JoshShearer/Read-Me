@@ -17,6 +17,9 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
   __esModule: true,
   default: {
     listItems: jest.fn(async () => mockRows.map(({ body: _b, ...r }) => ({ ...r }))),
+    listFetched: jest.fn(async () =>
+      mockRows.filter(r => r.state === 'fetched').map(({ body: _b, ...r }) => ({ ...r })),
+    ),
     getBody: jest.fn(async (id: number) => mockRows.find(r => r.id === id)?.body ?? null),
     completeExtraction: jest.fn(
       async (
@@ -127,4 +130,13 @@ test('items carry their word count and progress', async () => {
   const [item] = await listItems();
   expect(item.words).toBe(120);
   expect(item.progress).toBe(0.25);
+});
+
+test('the drain reads the fetched list, never the library with its stats (REA-50)', async () => {
+  const Native = jest.requireMock('../src/native/NativeReadMeSpeech').default;
+  Native.listItems.mockClear();
+  mockRows.push(row(1, 'fetched', 'page'), row(2, 'ready'));
+  expect(await drainFetched(fakeExtract)).toBe(1);
+  expect(Native.listFetched).toHaveBeenCalled();
+  expect(Native.listItems).not.toHaveBeenCalled();
 });

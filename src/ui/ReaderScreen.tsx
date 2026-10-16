@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Linking, useColorScheme, View } from 'react-native';
 import { Button, IconButton } from './Button';
+import { ItemUnavailable } from './ItemUnavailable';
 import { Stepper } from './Stepper';
 import { Text } from './Text';
 import { palette } from './theme';
@@ -48,9 +49,23 @@ export function ReaderScreen({
   // only to its first line (R-M07 "kept in view"; /critique run A F1).
   const [lines, setLines] = useState<{ index: number; lines: { text: string; y: number }[] } | null>(null);
 
+  // R-M10, REA-50: a rejection is not "deleted". It keeps whatever was loaded (a failed reload
+  // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
+  // its own state with Retry. No log: the rejection carries only an exception class anyway.
+  const [failed, setFailed] = useState(false);
   const load = useCallback(() => {
-    getItem(id).then(setDetail, () => setDetail(null));
+    getItem(id).then(
+      d => {
+        setDetail(d);
+        setFailed(false);
+      },
+      () => setFailed(true),
+    );
   }, [id]);
+  const retry = () => {
+    setFailed(false);
+    load();
+  };
 
   useEffect(() => {
     load();
@@ -89,15 +104,9 @@ export function ReaderScreen({
   // full screen inside App's former keyed wrapper view made Fabric add children to a view it had not
   // created ("Unable to find viewState ... for addViewAt"), leaving a blank screen on about
   // half of List-to-Trim taps (repro loop, 2026-10-02); with null it opened 10 of 10.
-  if (detail === undefined) return null;
-  if (detail === null) {
-    return (
-      <View collapsable={false} style={ui.screen}>
-        <Text style={ui.empty}>This item was deleted.</Text>
-        <Button label="Back to the list" style={ui.start} onPress={onGone} />
-      </View>
-    );
-  }
+  if (detail === undefined && !failed) return null;
+  if (detail === undefined) return <ItemUnavailable kind="failed" onRetry={retry} onBack={onGone} />;
+  if (detail === null) return <ItemUnavailable kind="deleted" onBack={onGone} />;
 
   const header = (
     <View collapsable={false} style={ui.header}>
@@ -163,8 +172,10 @@ export function ReaderScreen({
         }}
         renderItem={({ item: p }) =>
           p.current ? (
-            <View collapsable={false} accessibilityLabel="current paragraph">
+            // REA-50: read by its own text, marked selected; scripts find it by testID.
+            <View collapsable={false} testID="current paragraph">
               <Text
+                accessibilityState={{ selected: true }}
                 style={ui.paragraph}
                 onTextLayout={e =>
                   setLines({ index: p.index, lines: e.nativeEvent.lines.map(l => ({ text: l.text, y: l.y })) })

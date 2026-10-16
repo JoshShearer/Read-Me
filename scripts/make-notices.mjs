@@ -73,20 +73,30 @@ const OVERRIDES = {
   },
 };
 
+// REA-50: by UTF-16 code unit, the same on every machine; localeCompare follows the locale.
+const byUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+export function compareNotices(x, y) {
+  return byUnit(x.name, y.name) || byUnit(x.version, y.version);
+}
+
 export function parseCoordinates(tree) {
   const out = new Set();
   for (const line of tree.split('\n')) {
     // "g:a:v", "g:a:v -> v2", "g:a -> v" (a platform-managed version) and "g:a:+ -> g2:a2:v2" (a
     // substitution: react-native to react-android, hermes-android to com.facebook.hermes). What
     // follows the arrow is what Gradle resolved, so it wins.
-    const m = line.match(/--- ([\w.-]+):([\w.-]+)(?::(\{strictly [^}]+\}|\S+))?(?: -> (\S+))?/);
+    const m = line.match(/--- ([\w.-]+):([\w.-]+)(?::(\{[^}]+\}|\S+))?(?: -> (\S+))?/);
     if (!m) continue;
     let [, group, artifact, version] = m;
     const to = m[4]?.split(':');
     if (to?.length === 3) [group, artifact, version] = to;
     else if (to?.length === 1) version = to[0];
     if (!version) continue;
-    version = version.replace(/^\{strictly (.+)\}$/, '$1');
+    // REA-50: Gradle's rich versions {strictly X}, {require X} and {prefer X} name X; anything
+    // richer (a range, a reject) with no resolved version after an arrow cannot be named here,
+    // so it stops the run instead of silently dropping a notice.
+    version = version.replace(/^\{(?:strictly|require|prefer) ([^;}\s]+)\}$/, '$1');
+    if (version.startsWith('{')) throw new Error(`unresolved rich version for ${group}:${artifact}: ${version}`);
     if (!/^\d/.test(version)) continue;
     out.add(`${group}:${artifact}:${version}`);
   }
@@ -166,7 +176,7 @@ function npmNotices() {
       license,
       ...(text ? {text} : {}),
     };
-  }).sort((x, y) => x.name.localeCompare(y.name) || x.version.localeCompare(y.version));
+  }).sort(compareNotices);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -50,11 +50,10 @@ export function ListScreen({
 
   useEffect(() => {
     refresh();
+    // Change events are drained by App's watchFetched; a drain here on mount retries an item
+    // whose extraction failed when the user comes back to the List (REA-50).
     drainFetched().catch(() => undefined);
-    return onItemsChanged(() => {
-      refresh();
-      drainFetched().catch(() => undefined);
-    });
+    return onItemsChanged(refresh);
   }, [refresh]);
 
   useEffect(() => {

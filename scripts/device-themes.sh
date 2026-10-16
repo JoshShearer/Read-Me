@@ -33,12 +33,14 @@ demo -e command notifications -e visible false
 
 # Long enough that playback cannot reach the end before Pause: finishing archives the item
 # (R-M11), which took Pause off the screen and the item off the list for the dark pass (REA-28,
-# twice on 2026-10-03 once the Reader dumped more slowly).
+# twice on 2026-10-03 once the Reader dumped more slowly). On 2026-10-15 the five sentences
+# (about 9 s at 2x) ended 39 ms after Pause: a dump can wait about 12 s for the playing Reader to
+# go idle (REA-56), so the last paragraph now runs on for about a minute.
 FIRST='Light and dark both have to read well.
 
 This second paragraph gets cut in Trim, so its faint style is measured too.
 
-The last paragraph is plain text again, long enough to wrap onto a second line on the phone. It goes on for a while, because reading it to the end archives the item, and the dark pass opens it again. A few more sentences keep it playing while the screen is captured and Pause is pressed. The playback stops well before here.'
+The last paragraph is plain text again, long enough to wrap onto a second line on the phone. It goes on for a while, because reading it to the end archives the item, and the dark pass opens it again. A few more sentences keep it playing while the screen is captured and Pause is pressed. The playback stops well before here. Filler sentence one is here only to keep the reading going. Filler sentence two is here only to keep the reading going. Filler sentence three is here only to keep the reading going. Filler sentence four is here only to keep the reading going. Filler sentence five is here only to keep the reading going. Filler sentence six is here only to keep the reading going. Filler sentence seven is here only to keep the reading going. Filler sentence eight is here only to keep the reading going. Filler sentence nine is here only to keep the reading going. Filler sentence ten is here only to keep the reading going. Filler sentence eleven is here only to keep the reading going. Filler sentence twelve is here only to keep the reading going. Filler sentence thirteen is here only to keep the reading going. Filler sentence fourteen is here only to keep the reading going. Filler sentence fifteen is here only to keep the reading going. Filler sentence sixteen is here only to keep the reading going. Filler sentence seventeen is here only to keep the reading going. Filler sentence eighteen is here only to keep the reading going. Filler sentence nineteen is here only to keep the reading going. Filler sentence twenty is here only to keep the reading going.'
 SECOND='A second item keeps the list from looking empty. It has one paragraph.'
 
 device_clear_app
@@ -71,9 +73,19 @@ tap_node() {
 # Swipe up the middle of the screen, from 80% to 30% of its height, so the scroll works on the
 # reference phone and on a tablet alike (the last line of `wm size` is the size in use).
 read -r SCREEN_W SCREEN_H < <(adb shell wm size | tail -1 | grep -oE '[0-9]+x[0-9]+' | tr x ' ')
+# A node scrolled out of view is still in the dump, with bounds whose top is below its bottom
+# (Settings' Licenses, [0,2983][1344,2920], 2026-10-15): it counts only when it lies on screen,
+# above the bottom tenth (the gesture bar).
+desc_on_screen() {
+  local b
+  b=$(grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" <<<"$2" | head -1 \
+    | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ')
+  set -- $b
+  [ $# = 4 ] && [ "$2" -lt "$4" ] && [ "$4" -le $((SCREEN_H * 9 / 10)) ]
+}
 scroll_to_desc() {
   for _ in $(seq 6); do
-    grep -qE "content-desc=\"$1\"" <<<"$(ui)" && return 0
+    desc_on_screen "$1" "$(ui)" && return 0
     adb shell input swipe $((SCREEN_W / 2)) $((SCREEN_H * 8 / 10)) $((SCREEN_W / 2)) $((SCREEN_H * 3 / 10)) 300
     sleep 1
   done
@@ -106,8 +118,8 @@ for mode in light dark; do
     tap_node content-desc 'trim'
     wait_for 'content-desc="trim done"'
   fi
-  device_has "$(ui)" 'content-desc="paragraph 2 cut"' || tap_node content-desc 'paragraph 2'
-  wait_for 'content-desc="paragraph 2 cut"'
+  device_has "$(ui)" 'resource-id="paragraph 2 cut"' || tap_node resource-id 'paragraph 2'
+  wait_for 'resource-id="paragraph 2 cut"'
   shot "$mode-2-trim"
   tap_node content-desc 'trim done'
   wait_for 'content-desc="play"'

@@ -6,7 +6,10 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.VisibleForTesting
+import io.loopstring.readme.playback.Segmenter
 import java.io.File
 
 data class ItemRow(
@@ -43,7 +46,7 @@ object States {
  * The library (ADR 0001: Kotlin owns the database; JS goes through ReadMeSpeech). Item
  * lifecycle per ADR 0007. A fetched page's HTML is a file under files/bodies until JS extracts
  * it: a CursorWindow (2 MB) cannot hold a 5 MB body. Every write fires ItemEvents.changed().
- * Nothing here logs.
+ * Nothing here logs but [backfillAtStart], with counts, a duration and a class name only.
  */
 class Store private constructor(context: Context) :
   SQLiteOpenHelper(context, DB_NAME, null, VERSION) {
@@ -92,6 +95,78 @@ class Store private constructor(context: Context) :
         char_offset INTEGER NOT NULL,
         updated_at INTEGER NOT NULL)""",
     )
+    ensureWordsColumn(db)
+  }
+
+  /**
+   * ADR 0013: `paragraphs.words` was added without a version bump, so a store made by 1.0.x
+   * gets the column here. Only this cheap schema step runs inside the open (it holds the
+   * helper's lock); counting the old rows is [backfillWords]'s, on a worker, and until then
+   * COALESCE in [stats] counts them as 0.
+   */
+  override fun onOpen(db: SQLiteDatabase) {
+    if (!db.isReadOnly) ensureWordsColumn(db)
+  }
+
+  private fun ensureWordsColumn(db: SQLiteDatabase) {
+    val has = db.rawQuery("PRAGMA table_info(paragraphs)", null).use {
+      var found = false
+      while (it.moveToNext()) if (it.getString(1) == "words") found = true
+      found
+    }
+    if (!has) db.execSQL("ALTER TABLE paragraphs ADD COLUMN words INTEGER")
+    // The rows a backfill still has to count: every row a version-1 build wrote.
+    db.execSQL("CREATE INDEX IF NOT EXISTS paragraphs_uncounted ON paragraphs(item_id) WHERE words IS NULL")
+  }
+
+  /**
+   * ADR 0013: counts every paragraph with no stored count (a 1.0.x store, or rows a version-1
+   * build wrote over this one) and returns how many it counted. Paged by rowid, one short
+   * transaction per page, so a waiting writer (a share on the main thread) waits for one page
+   * at most. Each row's text is read by its own one-row query: a cursor over many 500K-char
+   * rows would refill its 2 MB window by re-running the query over every earlier row.
+   */
+  internal fun backfillWords(
+    count: (String) -> Int = ::countWords,
+    page: Int = BACKFILL_PAGE,
+    onPage: () -> Unit = {},
+  ): Int {
+    val db = writableDatabase
+    var total = 0
+    var after = -1L
+    while (true) {
+      db.beginTransaction()
+      try {
+        val ids = db.rawQuery(
+          "SELECT rowid FROM paragraphs WHERE words IS NULL AND rowid > ? ORDER BY rowid LIMIT ?",
+          arrayOf(after.toString(), page.toString()),
+        ).use {
+          val out = ArrayList<Long>(page)
+          while (it.moveToNext()) out.add(it.getLong(0))
+          out
+        }
+        if (ids.isEmpty()) {
+          db.setTransactionSuccessful()
+          return total
+        }
+        onPage()
+        val update = db.compileStatement("UPDATE paragraphs SET words = ? WHERE rowid = ?")
+        for (rowid in ids) {
+          val text = db.rawQuery("SELECT text FROM paragraphs WHERE rowid = ?", arrayOf(rowid.toString()))
+            .use { if (it.moveToFirst()) it.getString(0) else null } ?: continue
+          update.clearBindings()
+          update.bindLong(1, count(text).toLong())
+          update.bindLong(2, rowid)
+          update.executeUpdateDelete()
+          total++
+        }
+        update.close()
+        after = ids.last()
+        db.setTransactionSuccessful()
+      } finally {
+        db.endTransaction()
+      }
+    }
   }
 
   override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -144,6 +219,17 @@ class Store private constructor(context: Context) :
     return id
   }
 
+  /** ADR 0007's JS drain reads only these: no paragraph is read and no stats are computed. */
+  fun fetchedItems(): List<ItemRow> =
+    readableDatabase.rawQuery(
+      "SELECT * FROM items WHERE state = ? ORDER BY created_at DESC, id DESC",
+      arrayOf(States.FETCHED),
+    ).use {
+      val out = ArrayList<ItemRow>(it.count)
+      while (it.moveToNext()) out.add(it.toItem())
+      out
+    }
+
   fun item(id: Long): ItemRow? =
     readableDatabase.rawQuery("SELECT * FROM items WHERE id = ?", arrayOf(id.toString())).use {
       if (it.moveToFirst()) it.toItem() else null
@@ -195,25 +281,14 @@ class Store private constructor(context: Context) :
 
   /**
    * One aggregate query, so the list never loads item text (a paragraph can be 500K chars).
-   * Words are space-separated runs; read is every kept character before the saved position.
-   * SQLite counts characters, JS offsets count UTF-16 units: an emoji-heavy text's progress is
-   * off by a little, which an estimate tolerates.
+   * Words are each paragraph's stored count, the runs outside JS `\s` (ADR 0013; a row the
+   * backfill has not reached yet counts 0); read is every kept character before the saved
+   * position. SQLite counts characters, JS offsets count UTF-16 units: an emoji-heavy text's
+   * progress is off by a little, which an estimate tolerates.
    */
   fun stats(only: Long? = null): Map<Long, ItemStats> =
     readableDatabase.rawQuery(
-      """SELECT p.item_id,
-           SUM(CASE WHEN length(trim(p.text)) = 0 THEN 0
-                    ELSE length(trim(p.text)) - length(replace(trim(p.text), ' ', '')) + 1 END),
-           SUM(length(p.text)),
-           SUM(CASE WHEN pos.item_id IS NULL THEN 0
-                    WHEN p.idx < pos.paragraph_index THEN length(p.text)
-                    WHEN p.idx = pos.paragraph_index THEN MIN(pos.char_offset, length(p.text))
-                    ELSE 0 END)
-         FROM paragraphs p
-         LEFT JOIN cuts c ON c.item_id = p.item_id AND c.paragraph_index = p.idx
-         LEFT JOIN positions pos ON pos.item_id = p.item_id
-         WHERE c.item_id IS NULL${if (only == null) "" else " AND p.item_id = ?"}
-         GROUP BY p.item_id""",
+      STATS_SQL + (if (only == null) "" else " AND p.item_id = ?") + " GROUP BY p.item_id",
       if (only == null) null else arrayOf(only.toString()),
     ).use {
       val out = HashMap<Long, ItemStats>(it.count)
@@ -417,7 +492,7 @@ class Store private constructor(context: Context) :
   private fun writeParagraphs(db: SQLiteDatabase, id: Long, paragraphs: List<ParagraphRow>) {
     db.delete("paragraphs", "item_id = ?", arrayOf(id.toString()))
     val stmt = db.compileStatement(
-      "INSERT INTO paragraphs (item_id, idx, kind, text) VALUES (?, ?, ?, ?)",
+      "INSERT INTO paragraphs (item_id, idx, kind, text, words) VALUES (?, ?, ?, ?, ?)",
     )
     paragraphs.flatMap { p -> splitLong(p.text).map { ParagraphRow(p.kind, it) } }.forEachIndexed { i, p ->
       stmt.clearBindings()
@@ -425,6 +500,7 @@ class Store private constructor(context: Context) :
       stmt.bindLong(2, i.toLong())
       stmt.bindString(3, p.kind)
       stmt.bindString(4, p.text)
+      stmt.bindLong(5, countWords(p.text).toLong())
       stmt.executeInsert()
     }
   }
@@ -456,6 +532,60 @@ class Store private constructor(context: Context) :
     // the whole library behind one hostile page. Titles are capped; long paragraphs are split.
     const val MAX_FIELD_CHARS = 1_000
     const val MAX_PARAGRAPH_CHARS = 500_000 // at most 1.5 MB of UTF-8
+    private const val BACKFILL_PAGE = 64
+
+    // Kept flat: a deeply nested expression overflows SQLite's parser stack (REA-50's probe
+    // failed at 30 nested replace calls), and StoreWordsTest bounds its depth.
+    internal const val STATS_SQL =
+      """SELECT p.item_id,
+           SUM(COALESCE(p.words, 0)),
+           SUM(length(p.text)),
+           SUM(CASE WHEN pos.item_id IS NULL THEN 0
+                    WHEN p.idx < pos.paragraph_index THEN length(p.text)
+                    WHEN p.idx = pos.paragraph_index THEN MIN(pos.char_offset, length(p.text))
+                    ELSE 0 END)
+         FROM paragraphs p
+         LEFT JOIN cuts c ON c.item_id = p.item_id AND c.paragraph_index = p.idx
+         LEFT JOIN positions pos ON pos.item_id = p.item_id
+         WHERE c.item_id IS NULL"""
+
+    /**
+     * R-M01, ADR 0013: the words in [s] are its runs of characters outside JS `\s`, so the
+     * List's estimate matches the text pipeline's idea of a space. NUL and surrogate halves are
+     * word characters, as in JS.
+     */
+    internal fun countWords(s: String): Int {
+      var n = 0
+      var inWord = false
+      for (c in s) {
+        if (Segmenter.isSpace(c)) {
+          inWord = false
+        } else if (!inWord) {
+          inWord = true
+          n++
+        }
+      }
+      return n
+    }
+
+    /**
+     * ADR 0013: the one-time count of rows written before `words` existed, run by
+     * MainApplication on a worker at process start. A failure must never make the store
+     * unusable: it is logged by class only (AGENTS.md 1), the rows stay NULL (counted as 0) and
+     * the next process start tries again. True when it finished.
+     */
+    fun backfillAtStart(context: Context, count: (String) -> Int = ::countWords): Boolean =
+      try {
+        val started = SystemClock.elapsedRealtime()
+        val rows = get(context).backfillWords(count)
+        if (rows > 0) {
+          Log.i("ReadMe", "store words backfilled rows=$rows ms=${SystemClock.elapsedRealtime() - started}")
+        }
+        true
+      } catch (t: Throwable) {
+        Log.w("ReadMe", "store words backfill failed: ${t.javaClass.simpleName}")
+        false
+      }
 
     internal fun cap(s: String?, max: Int = MAX_FIELD_CHARS): String? =
       if (s == null || s.length <= max) s else s.substring(0, safeEnd(s, max))

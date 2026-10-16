@@ -261,6 +261,7 @@ toast:
 | `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, network, unsupported redirect, bad URL, interrupted) | Retry, "Share the text instead" guidance, Delete |
 | `extract-poor` | item badge, partial text visible | Read anyway, "Share the text instead" guidance, Delete |
 | no TTS engine / no offline voice | blocking card on Reader | Open TTS settings |
+| item cannot be read (a storage error, not a missing item) | "Could not open this item." on Reader and Trim; a missing item stays "This item was deleted." (REA-50) | Retry, Back to the list |
 | bridge port in use | Settings bridge row | Retry |
 | bridge request rejected | HTTP status to caller; counter in Settings | none |
 

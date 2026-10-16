@@ -83,6 +83,8 @@ export type NativeBridge = {
 
 export interface Spec extends TurboModule {
   listItems(): Promise<NativeItem[]>;
+  // The fetched items only, without stats: ADR 0007's drain (REA-50).
+  listFetched(): Promise<NativeItem[]>;
   getItem(id: number): Promise<NativeItemDetail | null>;
   getBody(id: number): Promise<string | null>;
   completeExtraction(

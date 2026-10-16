@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, View } from 'react-native';
 import { Button } from './Button';
+import { ItemUnavailable } from './ItemUnavailable';
 import { Text } from './Text';
 import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import { applyCuts } from '../library/playback';
@@ -26,9 +27,23 @@ export function TrimScreen({
   const latest = useRef<Set<number> | null>(null);
   const [cuts, setLocalCuts] = useState<Set<number> | null>(null);
 
+  // R-M10, REA-50: a rejection is not "deleted". It keeps whatever was loaded (a failed reload
+  // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
+  // its own state with Retry. No log: the rejection carries only an exception class anyway.
+  const [failed, setFailed] = useState(false);
   const load = useCallback(() => {
-    getItem(id).then(setDetail, () => setDetail(null));
+    getItem(id).then(
+      d => {
+        setDetail(d);
+        setFailed(false);
+      },
+      () => setFailed(true),
+    );
   }, [id]);
+  const retry = () => {
+    setFailed(false);
+    load();
+  };
 
   useEffect(() => {
     load();
@@ -39,15 +54,9 @@ export function TrimScreen({
   // full screen inside App's former keyed wrapper view made Fabric add children to a view it had not
   // created ("Unable to find viewState ... for addViewAt"), leaving a blank screen on about
   // half of List-to-Trim taps (repro loop, 2026-10-02); with null it opened 10 of 10.
-  if (detail === undefined) return null;
-  if (detail === null) {
-    return (
-      <View collapsable={false} style={ui.screen}>
-        <Text style={ui.empty}>This item was deleted.</Text>
-        <Button label="Back to the list" style={ui.start} onPress={onGone} />
-      </View>
-    );
-  }
+  if (detail === undefined && !failed) return null;
+  if (detail === undefined) return <ItemUnavailable kind="failed" onRetry={retry} onBack={onGone} />;
+  if (detail === null) return <ItemUnavailable kind="deleted" onBack={onGone} />;
 
   const count = detail.paragraphs.length;
   const shown = cuts ?? new Set(detail.cuts);
@@ -79,8 +88,12 @@ export function TrimScreen({
         renderItem={({ item: p }) => {
           const isCut = shown.has(p.index);
           return (
+            // REA-50: no accessibilityLabel, so TalkBack reads the paragraph's own text and the
+            // visible "cut". The device scripts find it by testID (resource-id), and the testID
+            // is also what installs RN's accessibility delegate that carries the hint.
             <Pressable
-              accessibilityLabel={`paragraph ${p.index + 1}${isCut ? ' cut' : ''}`}
+              testID={`paragraph ${p.index + 1}${isCut ? ' cut' : ''}`}
+              accessibilityHint={isCut ? 'Tap to restore. Hold for more.' : 'Tap to cut. Hold for more.'}
               onPress={() => apply(toggleCut(current(), p.index, count))}
               onLongPress={() => menu(p.index)}>
               <Text tone={isCut ? 'disabled' : 'body'} style={[ui.paragraph, isCut ? ui.cut : null]}>

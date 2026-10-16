@@ -42,7 +42,7 @@ for i in $(seq "$N"); do
   adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
   r=ok
   if p=$(centre_of text ready 30); then adb shell input tap $p; else r="no ready item"; fi
-  [ "$r" = ok ] && { p=$(centre_of content-desc 'paragraph 2') && adb shell input tap $p || r="Trim blank"; }
+  [ "$r" = ok ] && { p=$(centre_of resource-id 'paragraph 2') && adb shell input tap $p || r="Trim blank"; }
   [ "$r" = ok ] && { p=$(centre_of content-desc 'trim done') && adb shell input tap $p || r="Trim blank"; }
   [ "$r" = ok ] && { centre_of content-desc play 10 >/dev/null || r="Reader blank"; }
   lost=$(adb logcat -d | grep -c 'Unable to find viewState' || true)
