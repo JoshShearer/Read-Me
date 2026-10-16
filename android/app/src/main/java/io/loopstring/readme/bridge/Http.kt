@@ -100,6 +100,16 @@ object Http {
     return if (r.isFinite() && r >= Rate.MIN && r <= Rate.MAX) r else null
   }
 
+  /** The query's `name=value` pairs, first one wins; no decoding (REA-39's values are plain). */
+  fun params(query: String): Map<String, String> {
+    val out = LinkedHashMap<String, String>()
+    for (p in query.split('&')) {
+      val eq = p.indexOf('=')
+      if (eq > 0) out.putIfAbsent(p.substring(0, eq), p.substring(eq + 1))
+    }
+    return out
+  }
+
   /** Strict UTF-8: malformed input is an error, never replacement characters. */
   fun utf8(bytes: ByteArray): String? = try {
     Charsets.UTF_8.newDecoder()

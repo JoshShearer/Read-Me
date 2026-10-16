@@ -126,8 +126,15 @@ export function onPlayback(cb: (p: Playback) => void): () => void {
  * engine (REA-35) is not a handover. A future control that starts another item while a Reader
  * is open must revisit this.
  */
+/**
+ * REA-39: the service's item id while it reads a note for Obsidian (PlaybackService.BRIDGE_ITEM).
+ * It is not in the store: no screen opens it and nothing follows to or from it.
+ */
+export const BRIDGE_ITEM = -1;
+
 export function handedOver(prev: Playback | null, now: Playback): { from: number; to: number } | null {
   if (prev?.itemId == null || now.itemId == null || prev.itemId === now.itemId) return null;
+  if (prev.itemId === BRIDGE_ITEM || now.itemId === BRIDGE_ITEM) return null;
   if (now.itemId === prev.waitingItemId) return null;
   return { from: prev.itemId, to: now.itemId };
 }

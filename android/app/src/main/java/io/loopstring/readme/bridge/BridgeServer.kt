@@ -44,6 +44,8 @@ class BridgeServer(
   private val headDeadlineMs: Long = HEAD_DEADLINE_MS,
   private val maxQueued: Int = MAX_QUEUED,
   private val closeGraceMs: Long = CLOSE_GRACE_MS,
+  /** REA-39: Read Me reads the plugin's chunks itself; null serves contract v1's routes only. */
+  private val player: BridgePlayback? = null,
 ) : Closeable {
   // AGENTS.md 8: explicit IPv4 loopback; getLoopbackAddress() returned ::1 on Android 17.
   private val server = ServerSocket(requestedPort, BACKLOG, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
@@ -179,7 +181,10 @@ class BridgeServer(
       head.method == "OPTIONS" -> send(out, ex, 204, null, ByteArray(0))
       head.path == "/health" && head.method == "GET" -> send(out, ex, 200, JSON, health().toByteArray())
       head.path == "/synthesize" && head.method == "POST" -> synthesize(head, input, out, ex)
-      head.path in ROUTES -> error(out, ex, 405, "method-not-allowed")
+      head.path == "/play" && head.method == "POST" && player != null -> play(player, head, input, out, ex)
+      head.path == "/status" && head.method == "GET" && player != null -> status(player, head, out, ex)
+      head.path == "/control" && head.method == "POST" && player != null -> control(player, head, out, ex)
+      head.path in V1_ROUTES || (player != null && head.path in ROUTES) -> error(out, ex, 405, "method-not-allowed")
       else -> error(out, ex, 404, "not-found")
     }
   }
@@ -249,6 +254,52 @@ class BridgeServer(
     }
   }
 
+  /**
+   * REA-39, ADR 0014: the chunks, UTF-8, separated by U+001E (record separator), read aloud by
+   * Read Me's own playback. Token before body, as for /synthesize. No chunk may be blank, so the
+   * plugin's chunk n is always index n.
+   */
+  private fun play(player: BridgePlayback, head: Head, input: InputStream, out: OutputStream, ex: Exchange) {
+    if (!authorized(head.headers["authorization"])) return error(out, ex, 401, "unauthorized")
+    if (closed) return stoppingReply(out, ex)
+    if (head.headers.containsKey("transfer-encoding")) return error(out, ex, 400, "content-length-required")
+    val len = Http.contentLength(head.headers)
+    if (len < 0) return error(out, ex, 400, "bad-content-length")
+    if (len > MAX_PLAY_BODY) return error(out, ex, 413, "body-too-large")
+    val rate = Http.rate(head.query) ?: return error(out, ex, 400, "bad-rate")
+    val body = readBody(input, len.toInt()) ?: return error(out, ex, 400, "short-body")
+    ex.bodyBytes = body.size
+    val text = Http.utf8(body) ?: return error(out, ex, 400, "bad-utf8")
+    val chunks = text.split(SEPARATOR)
+    if (chunks.size > MAX_CHUNKS) return error(out, ex, 413, "too-many-chunks", "\"maxChunks\":$MAX_CHUNKS")
+    if (chunks.any { it.isBlank() }) return error(out, ex, 400, "empty")
+    val session = player.play(chunks, rate) ?: return busyReply(out, ex)
+    send(out, ex, 200, JSON, "{\"session\":$session,\"chunks\":${chunks.size}}".toByteArray())
+  }
+
+  private fun status(player: BridgePlayback, head: Head, out: OutputStream, ex: Exchange) {
+    if (!authorized(head.headers["authorization"])) return error(out, ex, 401, "unauthorized")
+    send(out, ex, 200, JSON, statusJson(player.status()).toByteArray())
+  }
+
+  private fun control(player: BridgePlayback, head: Head, out: OutputStream, ex: Exchange) {
+    if (!authorized(head.headers["authorization"])) return error(out, ex, 401, "unauthorized")
+    val params = Http.params(head.query)
+    val action = when (params["action"]) {
+      "pause" -> BridgePlayback.Action.PAUSE
+      "resume" -> BridgePlayback.Action.RESUME
+      "stop" -> BridgePlayback.Action.STOP
+      else -> return error(out, ex, 400, "bad-action")
+    }
+    val session = params["session"]?.takeIf { SESSION.matches(it) }?.toIntOrNull()
+      ?: return error(out, ex, 400, "bad-session")
+    val s = player.control(session, action) ?: return error(out, ex, 409, "stale-session", "\"session\":${player.status().session}")
+    send(out, ex, 200, JSON, statusJson(s).toByteArray())
+  }
+
+  private fun statusJson(s: BridgePlayback.Status) =
+    "{\"session\":${s.session},\"state\":\"${s.state.wire}\",\"index\":${s.index}}"
+
   private fun authorized(value: String?): Boolean {
     val t = token()
     if (t.length < 32 || value == null) return false
@@ -301,9 +352,14 @@ class BridgeServer(
     }
   }
 
-  private fun health(): String =
-    "{\"ok\":true,\"version\":1,\"ttsReady\":${synth.ready},\"engine\":${json(synth.engine)}," +
-      "\"voice\":${json(synth.voice)},\"port\":$port,\"busy\":${busy()},\"maxChars\":${synth.maxChars}}"
+  // REA-39: `play` says /play, /status and /control exist; `busy` is Read Me's own playback, so a
+  // session of the plugin's own does not read as busy to it.
+  private fun health(): String {
+    val reading = player?.status()?.state.let { it == BridgePlayback.State.PLAYING || it == BridgePlayback.State.STARTING }
+    return "{\"ok\":true,\"version\":1,\"ttsReady\":${synth.ready},\"engine\":${json(synth.engine)}," +
+      "\"voice\":${json(synth.voice)},\"port\":$port,\"busy\":${busy() && !reading},\"maxChars\":${synth.maxChars}," +
+      "\"play\":${player != null}}"
+  }
 
   private fun busyReply(out: OutputStream, ex: Exchange) =
     send(out, ex, 503, JSON, """{"error":"busy","reason":"playback"}""".toByteArray())
@@ -351,19 +407,25 @@ class BridgeServer(
     const val WORKERS = 8
     const val HEAD_DEADLINE_MS = 5_000L
     const val MAX_QUEUED = 2
+    /** REA-39: a whole note's remaining chunks. 1 MiB of text is several hours of speech. */
+    const val MAX_PLAY_BODY = 1024 * 1024
+    const val MAX_CHUNKS = 10_000
+    private const val SEPARATOR = '\u001e'
+    private val SESSION = Regex("[0-9]{1,9}")
     /** How long close() leaves open connections to finish their replies. */
     const val CLOSE_GRACE_MS = 1_000L
     private const val BACKLOG = 16
     private const val JSON = "application/json"
     private const val ALLOWED_ORIGIN = "http://localhost"
     private val METHODS = setOf("GET", "POST", "OPTIONS")
-    private val ROUTES = setOf("/health", "/synthesize")
+    private val V1_ROUTES = setOf("/health", "/synthesize")
+    private val ROUTES = V1_ROUTES + setOf("/play", "/status", "/control")
     private val ORIGIN_LINE = Regex("(?im)^origin:[ \\t]*http://localhost[ \\t]*\r?$")
     private val STOPPING = """{"error":"busy","reason":"stopping"}""".toByteArray()
     private val QUEUE_FULL = """{"error":"busy","reason":"queue"}""".toByteArray()
     private val REASONS = mapOf(
       200 to "OK", 204 to "No Content", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found",
-      405 to "Method Not Allowed", 413 to "Payload Too Large", 431 to "Request Header Fields Too Large",
+      405 to "Method Not Allowed", 409 to "Conflict", 413 to "Payload Too Large", 431 to "Request Header Fields Too Large",
       500 to "Internal Server Error", 503 to "Service Unavailable", 504 to "Gateway Timeout",
     )
 

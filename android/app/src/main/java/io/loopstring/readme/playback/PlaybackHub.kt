@@ -19,7 +19,8 @@ data class BridgeStatus(val state: String, val port: Int, val error: String?) {
  * publishes `bridge` for Settings.
  */
 object PlaybackHub {
-  data class Request(val itemId: Long, val title: String, val sentences: List<SentenceRow>, val startIndex: Int)
+  /** [rate] null: Settings' default rate. Only a bridge session (REA-39) brings its own. */
+  data class Request(val itemId: Long, val title: String, val sentences: List<SentenceRow>, val startIndex: Int, val rate: Float? = null)
 
   private val pending = AtomicReference<Request?>(null)
   // REA-35: the request the service has taken and not yet held in `waiting` or loaded. Guarded

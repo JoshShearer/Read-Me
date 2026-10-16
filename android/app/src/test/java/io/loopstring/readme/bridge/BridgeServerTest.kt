@@ -95,7 +95,7 @@ class BridgeServerTest {
     assertEquals(200, r.status)
     assertEquals("application/json", r.headers["content-type"])
     assertEquals(
-      """{"ok":true,"version":1,"ttsReady":true,"engine":"test.engine","voice":"test-voice","port":${s.port},"busy":false,"maxChars":100}""",
+      """{"ok":true,"version":1,"ttsReady":true,"engine":"test.engine","voice":"test-voice","port":${s.port},"busy":false,"maxChars":100,"play":false}""",
       r.text(),
     )
     busy = true

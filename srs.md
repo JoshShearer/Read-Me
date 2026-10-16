@@ -316,6 +316,11 @@ When the user enables it in Settings, the app MUST serve a loopback HTTP bridge 
 
 The bridge MUST run only while enabled, and its foreground notification MUST say so.
 
+Amended 2026-10-16 (REA-39, ADR 0014): Read Me also reads the plugin's text aloud itself, as a
+bridge session in its own playback service (`/play`, `/status`, `/control` below), because
+Android 17 mutes Obsidian's own audio about 5 s after Obsidian leaves the foreground. A session
+is never stored, archived or continued from, and its notification shows "Obsidian note" only.
+
 ### R-M13 - Distribution
 
 - v1 ships as a signed APK on GitHub Releases, then on F-Droid.
@@ -549,7 +554,10 @@ start, service destroy and once per process start. None of this touches the brid
 
 | Route | Method | Auth | Response |
 |---|---|---|---|
-| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy, maxChars}` |
+| `/health` | GET | none | `{ok, version:1, ttsReady, engine, voice, port, busy, maxChars, play}`; `play` true when `/play` exists (ADR 0014); `busy` is Read Me's own reading, not a bridge session |
+| `/play?rate=<f>` | POST | token | `{session, chunks}`; body: the chunks, UTF-8, separated by U+001E, none blank, at most 1 MiB and 10,000 chunks. Read Me reads them itself (ADR 0014). `503` busy while Read Me reads one of its own items |
+| `/status` | GET | token | `{session, state, index}`; state `none`, `starting`, `playing`, `paused`, `ended`, `stopped`; index is the chunk being read |
+| `/control?action=<pause\|resume\|stop>&session=<n>` | POST | token | the status; `409 {"error":"stale-session","session":<newest>}` for an older session |
 | `/synthesize?rate=<f>` | POST | token | `audio/wav`; headers `X-Synth-Ms`, `X-Rate`. `503` `{"error":"busy","reason":"playback"}` while Read Me is playing (ADR 0004); `reason` is `queue` when the synthesis queue is full and `stopping` when the bridge is shutting down (REA-23) |
 
 - Body: UTF-8 text, at most 64 KiB, and at most `maxChars` characters (ADR 0008; 413
@@ -568,6 +576,8 @@ start, service destroy and once per process start. None of this touches the brid
   `ownsPlayback: true` with a buffer is the combination that shipped 2.25x once. Measured
   RTF at 1.0 (0.116 to 0.169, cited above) already clears 2x playback. Any caller that
   requests `rate != 1.0` MUST NOT also speed up playback.
+- `/play`'s rate is applied by the engine, once; a plugin using `/play` owns no audio and applies
+  no rate of its own (ADR 0014).
 - No word timings are promised. The plugin's engine declares `timing: "none"`.
 - Voice and engine are Read Me settings (R-S01), not request parameters. `/health` reports
   which voice is in use so the plugin can display it. The prototype's `/speak`, `/voices`,
