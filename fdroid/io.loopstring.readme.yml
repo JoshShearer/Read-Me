@@ -33,19 +33,23 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-    init: cd ../.. && npm ci --ignore-scripts
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-armeabi-v7a.apk
     prebuild:
       # hermesc from the external/hermes submodule, built outside the tree (~/.cache).
-      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - cd ../..
+      - HERMESC=$(bash scripts/build-hermesc.sh)
       # React Native's Gradle plugin hardcodes a JDK 17 toolchain; this sets it to the image's
       # JDK 21, the app's bytecode target staying 17. Our release builds run the same script
       # (npm postinstall), so both builds have the same inputs (REA-43).
       - node scripts/patch-rn-jdk21.mjs
-      # fdroidserver joins prebuild entries with "; " into one shell, so this runs at the repo
-      # root (the cd above). gradle.properties has no final newline: start with one. The last
+      # fdroidserver joins init and prebuild entries with "; " into one shell, so this runs at
+      # the repo root (the cd above); fdroiddata wants one command per entry, never ; or &&.
+      # gradle.properties has no final newline: start with one. The last
       # reactNativeArchitectures wins: React Native and the ABI split then build only armeabi-v7a.
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=armeabi-v7a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
@@ -75,12 +79,15 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-    init: cd ../.. && npm ci --ignore-scripts
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-arm64-v8a.apk
     prebuild:
-      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - cd ../..
+      - HERMESC=$(bash scripts/build-hermesc.sh)
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=arm64-v8a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
@@ -104,12 +111,15 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-    init: cd ../.. && npm ci --ignore-scripts
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86.apk
     prebuild:
-      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - cd ../..
+      - HERMESC=$(bash scripts/build-hermesc.sh)
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86\n' "$HERMESC" >> android/gradle.properties
     scanignore:
@@ -133,12 +143,15 @@ Builds:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
       - apt-get install -y -t forky nodejs npm
-    init: cd ../.. && npm ci --ignore-scripts
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
     gradle:
       - yes
     binary: https://github.com/JoshShearer/Read-Me/releases/download/v%v/read-me-%v-x86_64.apk
     prebuild:
-      - cd ../.. && HERMESC=$(bash scripts/build-hermesc.sh)
+      - cd ../..
+      - HERMESC=$(bash scripts/build-hermesc.sh)
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86_64\n' "$HERMESC" >> android/gradle.properties
     scanignore:
