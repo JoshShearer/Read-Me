@@ -180,7 +180,7 @@ next_seen() {
 reader_shows() {
   local k
   device_has "$1" 'content-desc="trim"' || return 1
-  device_has "$1" 'content-desc="current paragraph"' || return 1
+  device_has "$1" 'resource-id="current paragraph"' || return 1
   device_has "$1" 'content-desc="pause"' || return 1
   device_has "$1" "text=\"$(escape "${TITLES[$2]}")\"" || return 1
   for k in 0 1 2 3; do
@@ -194,7 +194,7 @@ reader_shows() {
 reader_state() {
   local k shown=none names=(T1 T2 T3 buffer) hl=no button=none
   for k in 0 1 2 3; do device_has "$1" "text=\"$(escape "${TITLES[$k]}")" && shown=${names[$k]}; done
-  device_has "$1" 'content-desc="current paragraph"' && hl=yes
+  device_has "$1" 'resource-id="current paragraph"' && hl=yes
   device_has "$1" 'content-desc="pause"' && button=Pause
   device_has "$1" 'content-desc="play"' && button=Play
   echo "title $shown, highlighted paragraph $hl, button $button"

@@ -73,6 +73,9 @@ function strings(node: Node, out: string[] = []): string[] {
   else {
     const label = node.props.accessibilityLabel;
     if (typeof label === 'string') out.push(`"${label}"`);
+    // REA-50: the current paragraph is found by its testID (TalkBack reads its own text).
+    const id = node.props.testID;
+    if (typeof id === 'string') out.push(`#${id}`);
     strings(node.children, out);
   }
   return out;
@@ -186,7 +189,7 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await service(2, true);
     const { title, s } = readerOf(r);
     expect(title).toBe(2);
-    expect(s).toContain('"current paragraph"');
+    expect(s).toContain('#current paragraph');
     expect(s).toContain('"pause"');
     // Following is not an open (ADR 0011): only the user's own open marks an item opened.
     expect(Native.markOpened).toHaveBeenCalledTimes(1);

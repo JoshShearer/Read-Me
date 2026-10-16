@@ -100,7 +100,7 @@ check "field reads one number" "$(src "field 'playback continue from=12 item=11 
 # --- REA-55: the Reader follows the handover ---
 RD() { # RD <title> <button> [highlight]: a Reader dump
   printf '<node text="%s" bounds="[0,0][1,1]"/><node content-desc="trim" bounds="[0,0][1,1]"/>%s<node content-desc="%s" bounds="[0,0][1,1]"/>' \
-    "$1" "${3:+<node content-desc=\"current paragraph\" bounds=\"[0,0][1,1]\"/>}" "$2"
+    "$1" "${3:+<node resource-id=\"current paragraph\" bounds=\"[0,0][1,1]\"/>}" "$2"
 }
 R_T2=$(RD "Kestrel test item two." pause yes)
 R_STALE=$(RD "Kestrel test item three." play)
