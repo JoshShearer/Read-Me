@@ -109,7 +109,8 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   ADR 0004's speaking flag; Policies; Utterances; GapStats;
   ContinuousPlay: the next unread item for R-S05; Segmenter: the Kotlin port of `segment`),
   bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
-  server, caps, token, CORS, drain; Http: request-head parsing; TtsSynth: the bridge's own
+  server, caps, token, CORS, drain; BridgePlayback: the /play, /status, /control session the
+  service reads itself (ADR 0014); Http: request-head parsing; TtsSynth: the bridge's own
   TextToSpeech; BridgeFiles: cache WAVs and the start-up sweep; BridgeView: Settings state and
   the sensitive-clip Copy)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,

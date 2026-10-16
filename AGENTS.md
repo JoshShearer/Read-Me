@@ -78,6 +78,11 @@ leaves the phone locked writes `~/.local/state/read-me/unlock-failed` and turns 
 until the owner deletes that file, so a wrong or changed PIN never uses up the phone's attempts.
 Create the file without the PIN reaching shell history:
 `mkdir -p ~/.config/read-me && (umask 077; read -rsp 'PIN: ' p; echo; printf '%s\n' "$p" > ~/.config/read-me/device-pin)`.
+On the reference phone (2026-10-16) it unlocked the phone for a whole batch (`device:playback`,
+`gap`, `ui`, `bridge`, `lifecycle`, `SCREEN_OFF=1 device:continuous`) with nobody touching it; a
+single swipe missed the PIN pad 2 times in 4, so it tries three (REA-45 PR). `device_clear_app`
+counts only live activities (`Hist #n`) and, on a real relaunch after `pm clear`, saves
+ActivityTaskManager's START lines to `.claude/scratch/device-clear-app.log` (REA-45).
 Never put a secret on an `adb shell` command line: adbd logs every argv command to logcat
 (SPIKE-01); send the command on stdin instead (`scripts/lib/spike.sh` on the spike branches). `adb devices` must show exactly one device, or the command stops and says
 so. Installing a build replaces whatever build another lane installed; whoever installs says so.
@@ -245,6 +250,13 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   (lowest: light Reader disabled 3.05, light Trim faint 3.28, need 3.0; other text 5.85 or
   better). TalkBack announcements were not heard on the phone. A Pause in an item's last ~40 ms
   still archives it (seen while scripting; not chased).
+  Engine follow-ups (REA-21, PR #59, 1c2a66f): an `EngineProbe` throw settles as no-engine; the
+  Reader re-probes the engine when the app returns while its blocking card shows (newest answer
+  wins; its Play reaches REA-18's fresh-engine rebind); Settings' voice list starts with "Engine
+  default" (`setVoice(null)`, `getEngine` returns `preferred`); the voice sheet scrolls to the
+  checked voice on layout, clamped, after `initialScrollIndex` left a blank gap over the first
+  row on the phone. `device:ui` and `device:themes` passed (2026-10-16); the probe throw and the
+  re-probe are unit-tested only.
 - **UI controls (REA-28, PR #22):** `src/ui/Button.tsx` (Button, IconButton), `Select.tsx` (a
   bottom-sheet Modal), `Toggle.tsx`, `Stepper.tsx`, on Pressable and Modal, no dependencies.
   Article words are set in the system serif (`read` in `theme.ts`), controls in sans. Settings'
@@ -349,7 +361,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   absent from logcat) and `npm run device:ui`; `npm run device:playback` on build 7c2c04a
   (playback code unchanged since). After a reboot or process death the
   bridge returns when Read Me is next opened (no boot receiver). Not established: Android
-  14-16, and on the reference device the real plugin (NRL-130) and screen-off use from Obsidian.
+  14-16. The real plugin and screen-off use from Obsidian: see bridge sessions below.
   Engine death (REA-29, PR #18): the bridge rebinds a dead engine and retries once, at most
   one rebind per 10 s, `ttsReady:false` meanwhile; a rebind must return the same voice, so
   Android's silent fallback to another engine is refused (owner decision: a stop, not a
@@ -362,7 +374,18 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   head with bare LF line endings is 400 at once; `close()` drops live connections after a 1 s
   grace and answers anything caught in it 503 `stopping`; `onResume` restarts only a stopped
   bridge; a first binding with no engine or voice is retried by the next request. srs.md R-M12
-  and ADR 0004 carry the contract. `device:bridge` has not been rerun since.
+  and ADR 0004 carry the contract. `device:bridge` passed since (REA-44, 2026-10-15).
+  Bridge sessions (REA-39, PR #61, 43d1ef7, ADR 0014): Android 17 muted Obsidian's own audio
+  about 5 s after Obsidian left the foreground (`AudioHardening background playback muted for
+  md.obsidian`, reproduced 2026-10-08), so Read Me reads the plugin's text itself: `POST /play`
+  (chunks separated by U+001E), `GET /status`, `POST /control`; `/health` gains `play`. A session
+  is item -1 (`PlaybackService.BRIDGE_ITEM`): never stored, archived or continued from, "Obsidian
+  note" on the lock screen. The plugin side is Note-Reader-Local 4a10231 (#245, its ADR 0037),
+  which needs `play`. On the reference device, 2026-10-16, build e7f018a with that plugin in the
+  phone vault: a 40-sentence note read from Obsidian kept going with the screen off for 61 s
+  (chunk 8 to 32, then all 40), pause, resume and stop from Obsidian reached the session;
+  `device:bridge` and `device:playback` passed. `device:bridge` does not exercise `/play`; the
+  audio by ear and the plugin's highlight were not observed.
 - **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven (including the
   substituted react-android and hermes-android), the native libraries in `libreactnative.so`
   (folly, glog, double-conversion, fast_float, fmt, boost), libjpeg-turbo 2.1.5.1 inside Fresco's
