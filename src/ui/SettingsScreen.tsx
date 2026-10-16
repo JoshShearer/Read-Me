@@ -32,7 +32,18 @@ import {
   type Engine,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { bridgeStatus, formatRate, parsePort, RATE_MAX, RATE_MIN, stepRate, visibleItems } from './model';
+import {
+  bridgeStatus,
+  ENGINE_DEFAULT,
+  formatRate,
+  parsePort,
+  RATE_MAX,
+  RATE_MIN,
+  stepRate,
+  visibleItems,
+  voiceOptions,
+  voiceValue,
+} from './model';
 import { ui } from './ui';
 
 // REA-28: Settings keeps one structure from its first frame. It used to add the voice picker
@@ -180,10 +191,10 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             title="Voice"
             disabled={engine === null}
             placeholder="Checking the text-to-speech engine..."
-            options={(engine?.voices ?? []).map(v => ({ value: v.name, label: v.label, detail: v.detail || undefined }))}
-            value={engine?.selected ?? null}
-            onChange={name => {
-              setVoice(name).then(loadEngine, () => undefined);
+            options={voiceOptions(engine)}
+            value={voiceValue(engine)}
+            onChange={v => {
+              setVoice(v === ENGINE_DEFAULT ? null : v).then(loadEngine, () => undefined);
             }}
           />
         </View>

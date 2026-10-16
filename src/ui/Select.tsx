@@ -15,7 +15,7 @@
 // current option and that option's detail, on a tonal surface, so two fields under one section
 // heading read as two settings. An option can be disabled (an engine Android will not bind):
 // it stays listed, faint, with its reason as the detail, and cannot be picked.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
@@ -25,6 +25,13 @@ export type Option = { value: string; label: string; detail?: string; disabled?:
 
 // Every option row is this tall, so the list can open scrolled to the current option.
 const ROW = 64;
+
+/** The scroll offset that centres row [at] of [count] in a list [height] tall, clamped to the content. */
+export function selectOffset(at: number, count: number, height: number): number {
+  if (at < 0) return 0;
+  const max = Math.max(0, count * ROW - height);
+  return Math.min(max, Math.max(0, at * ROW - (height - ROW) / 2));
+}
 
 export function Select({
   name,
@@ -49,6 +56,7 @@ export function Select({
   const p = palette(useColorScheme());
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const listRef = useRef<FlatList<Option>>(null);
   const at = options.findIndex(o => o.value === value);
   const current = at >= 0 ? options[at] : null;
 
@@ -102,7 +110,15 @@ export function Select({
             <FlatList
               data={options}
               keyExtractor={o => o.value}
-              initialScrollIndex={at > 0 ? at : undefined}
+              ref={listRef}
+              // REA-21: initialScrollIndex scrolled a list shorter than the sheet past its first
+              // rows and left a blank gap there ("Engine default" above a chosen voice, seen on
+              // the phone). Once the list knows its height, scroll only as far as needed to
+              // centre the checked row, never past either end.
+              onLayout={e => {
+                const off = selectOffset(at, options.length, e.nativeEvent.layout.height);
+                if (off > 0) listRef.current?.scrollToOffset({ offset: off, animated: false });
+              }}
               getItemLayout={(_, i) => ({ length: ROW, offset: ROW * i, index: i })}
               renderItem={({ item: o }) => {
                 const on = o.value === value;

@@ -222,6 +222,9 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
             }
           })
           putString("selected", r.selected)
+          // REA-21 (e): Settings' choice, null for the engine's own default; [selected] is the
+          // voice that choice resolves to.
+          putString("preferred", settings.voice)
           putString("engine", r.engine)
           putString("engineLabel", r.engine?.let { e -> TtsOpen.candidates(reactApplicationContext).firstOrNull { it.pkg == e }?.label } ?: r.engine)
           putBoolean("choosable", TtsOpen.choosable)

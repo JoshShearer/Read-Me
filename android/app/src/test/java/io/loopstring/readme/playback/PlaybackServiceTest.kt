@@ -350,6 +350,28 @@ class PlaybackServiceTest {
     c.destroy()
   }
 
+  @Test fun theReadersPlayOnAPausedSpeakerWithNoVoiceBindsAFreshEngineFirst() {
+    // REA-21 (c): the Reader re-checks the engine when the app comes back, so after a voice is
+    // installed its Play reaches a paused item whose speaker reported no-voice. Resuming that
+    // speaker would read with whatever voice the engine falls back to, unvetted (AGENTS.md 5).
+    val c = playing()
+    c.withIntent(intent(PlaybackCommands.ACTION_PAUSE)).startCommand(0, 2)
+    idle()
+    val speaker = PlaybackService::class.java.getDeclaredField("speaker").apply { isAccessible = true }.get(c.get()) as TtsSpeaker
+    // As onInit leaves it when the engine has no usable voice (TtsSpeaker.status has a private setter).
+    TtsSpeaker::class.java.getDeclaredField("status").apply { isAccessible = true }.set(speaker, TtsSpeaker.EngineStatus.NO_VOICE)
+    val broken = lastTts()
+    // Native.resume() from the Reader's Play.
+    PlaybackHub.controller!!(PlaybackCommands.ACTION_PLAY)
+    idle()
+    assertFalse("Play resumed the speaker with no voice", broken === lastTts())
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertTrue(PlaybackHub.queue!!.snapshot().playing)
+    c.destroy()
+  }
+
   // --- REA-35: a play request waiting for a cold engine (the engine is PENDING) ---
 
   private fun intent(action: String) =

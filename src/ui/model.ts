@@ -180,3 +180,27 @@ export function bridgeStatus(b: { enabled: boolean; state: string; port: number;
   }
   return 'Starting...';
 }
+
+// REA-21 (e): Settings' voice list starts with the engine's own default, so a chosen voice can
+// be undone. The value is not a voice name; Settings maps it to setVoice(null). Offline voices
+// only (R-M06): the default resolves through the same VoicePicker as any choice.
+export const ENGINE_DEFAULT = 'engine-default';
+
+type EngineVoices = {
+  voices: readonly { name: string; label: string; detail: string }[];
+  selected: string | null;
+  preferred?: string | null;
+};
+
+export function voiceOptions(engine: EngineVoices | null): { value: string; label: string; detail?: string }[] {
+  if (!engine) return [];
+  return [
+    { value: ENGINE_DEFAULT, label: 'Engine default', detail: "The engine's own choice" },
+    ...engine.voices.map(v => ({ value: v.name, label: v.label, detail: v.detail || undefined })),
+  ];
+}
+
+export function voiceValue(engine: EngineVoices | null): string | null {
+  if (!engine) return null;
+  return engine.preferred ? engine.selected : ENGINE_DEFAULT;
+}

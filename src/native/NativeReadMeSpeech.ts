@@ -65,6 +65,9 @@ export type NativeEngine = {
   status: string;
   voices: NativeVoice[];
   selected: string | null;
+  // REA-21: Settings' stored voice, null for the engine's own default (selected is what it
+  // resolves to).
+  preferred?: string | null;
   engine: string | null;
   engineLabel: string | null;
   choosable: boolean;
