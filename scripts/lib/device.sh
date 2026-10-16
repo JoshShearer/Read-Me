@@ -159,11 +159,19 @@ device_try_unlock() {
   # Swipe up from below the under-display fingerprint sensor, slowly: the lock screen's own
   # gesture to the PIN pad. From 80% of the height at 200 ms nothing happened on the reference
   # phone (GrapheneOS, 2026-10-16); from 90% at 400 ms the pad came up.
+  # One swipe left the lock screen up 2 times in 4 device:bridge runs (2026-10-16), so up to
+  # three: nothing is typed until the pad is seen, so a retry costs no PIN attempt.
   read -r w h < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
-  adb shell input swipe $((w / 2)) $((h * 9 / 10)) $((w / 2)) $((h / 3)) 400
-  sleep 1.5
+  local pad=0
+  for i in 1 2 3; do
+    adb shell input keyevent KEYCODE_WAKEUP
+    adb shell input swipe $((w / 2)) $((h * 9 / 10)) $((w / 2)) $((h / 3)) 400
+    sleep 1.5
+    if _device_pin_pad_showing; then pad=1; break; fi
+    _device_unlocked && return 0
+  done
   # Type only into the PIN pad itself (systemui's keyguard_pin_view in the window dump).
-  if ! _device_keyguard_showing || ! _device_pin_pad_showing; then
+  if [ "$pad" = 0 ] || ! _device_keyguard_showing; then
     pin=
     echo "unattended unlock: the PIN pad did not come up; not typing" >&2
     return 1
