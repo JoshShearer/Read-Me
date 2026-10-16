@@ -17,10 +17,10 @@ Repo: https://github.com/JoshShearer/Read-Me.git
 # ABI (REA-40), each naming its APK in binary:.
 
 Builds:
-  - versionName: 1.0.5
-    versionCode: 61
+  - versionName: 1.1.0
+    versionCode: 71
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.0.5
+    commit: v1.1.0
     subdir: android/app
     submodules: true
     sudo:
@@ -64,9 +64,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.5
-    versionCode: 62
-    commit: v1.0.5
+  - versionName: 1.1.0
+    versionCode: 72
+    commit: v1.1.0
     subdir: android/app
     submodules: true
     sudo:
@@ -93,9 +93,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.5
-    versionCode: 63
-    commit: v1.0.5
+  - versionName: 1.1.0
+    versionCode: 73
+    commit: v1.1.0
     subdir: android/app
     submodules: true
     sudo:
@@ -122,9 +122,9 @@ Builds:
       - external/hermes/android
     ndk: r27b
 
-  - versionName: 1.0.5
-    versionCode: 64
-    commit: v1.0.5
+  - versionName: 1.1.0
+    versionCode: 74
+    commit: v1.1.0
     subdir: android/app
     submodules: true
     sudo:
@@ -161,5 +161,5 @@ VercodeOperation:
   - 10 * %c + 2
   - 10 * %c + 3
   - 10 * %c + 4
-CurrentVersion: 1.0.5
-CurrentVersionCode: 64
+CurrentVersion: 1.1.0
+CurrentVersionCode: 74
