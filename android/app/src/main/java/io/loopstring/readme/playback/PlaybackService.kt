@@ -27,6 +27,7 @@ import androidx.annotation.VisibleForTesting
 import io.loopstring.readme.MainActivity
 import io.loopstring.readme.R
 import io.loopstring.readme.bridge.BridgeFiles
+import io.loopstring.readme.bridge.BridgePlayback
 import io.loopstring.readme.bridge.BridgeServer
 import io.loopstring.readme.bridge.TtsSynth
 import io.loopstring.readme.playback.PlaybackCommands.Route
@@ -264,13 +265,14 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   }
 
   private fun load(r: PlaybackHub.Request) {
-    // Deleted while the engine was starting (the request waited in `waiting`).
-    if (store.item(r.itemId) == null) {
+    // Deleted while the engine was starting (the request waited in `waiting`). A bridge session
+    // (REA-39) is not in the store.
+    if (r.itemId != BRIDGE_ITEM && store.item(r.itemId) == null) {
       end()
       return
     }
     title = r.title
-    val rate = Settings(this).rate
+    val rate = r.rate ?: Settings(this).rate
     rebinds = 0
     if (queue.load(r.itemId, r.sentences, r.startIndex, rate)) {
       Log.i(TAG, "playback start item=${r.itemId} sentences=${r.sentences.size} from=${r.startIndex} rate=$rate")
@@ -402,6 +404,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
         synth = sy,
         files = BridgeFiles(cacheDir),
         log = { Log.i(TAG, it) },
+        player = bridgePlayer,
       )
       synth = sy
       PlaybackHub.publishBridge(BridgeStatus("on", s.bridgePort, null))
@@ -411,6 +414,72 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
       PlaybackHub.publishBridge(BridgeStatus("failed", s.bridgePort, e.javaClass.simpleName))
       Log.i(TAG, "bridge failed: ${e.javaClass.simpleName}")
     }
+  }
+
+  // --- REA-39, ADR 0014: the plugin's chunks, read by this service's own playback ---
+
+  // The newest session's number; the session whose last chunk was read; the chunk being read.
+  @Volatile private var bridgeSession = 0
+  @Volatile private var bridgeEnded = 0
+  @Volatile private var bridgeIndex = 0
+
+  /** Bridge worker threads call in; the work runs on main, as a JS Play's begin() does. */
+  @VisibleForTesting val bridgePlayer = object : BridgePlayback {
+    override fun play(chunks: List<String>, rate: Float): Int? = onMainAndWait {
+      // ADR 0004: Read Me's own reading has the engine; a paused item gives way.
+      val s = queue.snapshot()
+      val own = (s.itemId != null && s.itemId != BRIDGE_ITEM && s.playing) ||
+        startingItemId().let { it != null && it != BRIDGE_ITEM }
+      if (own) return@onMainAndWait null
+      val n = bridgeSession + 1
+      bridgeSession = n
+      bridgeIndex = 0
+      // One row per chunk: paragraphIndex is the plugin's chunk number (Utterances.fit keeps it
+      // when it splits a long chunk), so the status index needs no mapping.
+      val rows = chunks.mapIndexed { i, t -> SentenceRow(i, 0, t.length, t) }
+      Log.i(TAG, "bridge session start session=$n chunks=${chunks.size} rate=$rate")
+      begin(PlaybackHub.Request(BRIDGE_ITEM, BRIDGE_TITLE, rows, 0, rate))
+      n
+    }
+
+    override fun status(): BridgePlayback.Status {
+      val n = bridgeSession
+      if (n == 0) return BridgePlayback.Status(0, BridgePlayback.State.NONE, 0)
+      val s = queue.snapshot()
+      val state = when {
+        s.itemId == BRIDGE_ITEM -> if (s.playing) BridgePlayback.State.PLAYING else BridgePlayback.State.PAUSED
+        startingItemId() == BRIDGE_ITEM -> BridgePlayback.State.STARTING
+        bridgeEnded == n -> BridgePlayback.State.ENDED
+        else -> BridgePlayback.State.STOPPED
+      }
+      return BridgePlayback.Status(n, state, bridgeIndex)
+    }
+
+    override fun control(session: Int, action: BridgePlayback.Action): BridgePlayback.Status? {
+      if (session != bridgeSession) return null
+      val ours = queue.snapshot().itemId == BRIDGE_ITEM || startingItemId() == BRIDGE_ITEM
+      if (ours) {
+        handle(
+          when (action) {
+            BridgePlayback.Action.PAUSE -> PlaybackCommands.ACTION_PAUSE
+            BridgePlayback.Action.RESUME -> PlaybackCommands.ACTION_PLAY
+            BridgePlayback.Action.STOP -> PlaybackCommands.ACTION_STOP
+          },
+        )
+      }
+      return status()
+    }
+  }
+
+  /** Runs [block] on main and returns its result; null if main does not get to it in 5 s. */
+  private fun <T> onMainAndWait(block: () -> T?): T? {
+    if (Looper.myLooper() == main.looper) return block()
+    val done = java.util.concurrent.CountDownLatch(1)
+    val result = java.util.concurrent.atomic.AtomicReference<T?>(null)
+    main.post {
+      try { if (!destroyed) result.set(block()) } finally { done.countDown() }
+    }
+    return if (done.await(5, java.util.concurrent.TimeUnit.SECONDS)) result.get() else null
   }
 
   // --- TtsSpeaker.Callbacks ---
@@ -483,10 +552,17 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   // --- PlaybackSink (queue lock held; no calls back into the queue) ---
 
   override fun savePosition(itemId: Long, paragraphIndex: Int, charOffset: Int) {
+    // REA-39: the plugin's text is never stored; its position is the plugin's to keep.
+    if (itemId == BRIDGE_ITEM) return
     store.savePosition(itemId, paragraphIndex, charOffset, System.currentTimeMillis())
   }
 
   override fun finished(itemId: Long) {
+    if (itemId == BRIDGE_ITEM) {
+      bridgeEnded = bridgeSession
+      Log.i(TAG, "bridge session ended session=$bridgeSession")
+      return
+    }
     store.finishReading(itemId, System.currentTimeMillis())
     Log.i(TAG, "playback finished item=$itemId")
   }
@@ -497,7 +573,8 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
    * Ids and counts only in the log (AGENTS.md 1); the title goes to the notification.
    */
   override fun nextItem(finishedId: Long, skip: Set<Long>): NextItem? {
-    if (!Settings(this).continuousPlay) return null
+    // REA-39: a note read for Obsidian never hands over to the List.
+    if (finishedId == BRIDGE_ITEM || !Settings(this).continuousPlay) return null
     val began = SystemClock.elapsedRealtime()
     val found = ContinuousPlay.next(store, finishedId, skip)
     val ms = SystemClock.elapsedRealtime() - began
@@ -517,7 +594,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
    * that). Ids, counts and ms only in the log (AGENTS.md 1).
    */
   override fun peekNext(currentId: Long, skip: Set<Long>): NextItem? {
-    if (!Settings(this).continuousPlay) return null
+    if (currentId == BRIDGE_ITEM || !Settings(this).continuousPlay) return null
     val began = SystemClock.elapsedRealtime()
     val found = ContinuousPlay.next(store, currentId, skip)
     val ms = SystemClock.elapsedRealtime() - began
@@ -550,6 +627,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   }
 
   override fun changed(snapshot: PlaybackSnapshot) {
+    if (snapshot.itemId == BRIDGE_ITEM) snapshot.sentence?.let { bridgeIndex = it.paragraphIndex }
     PlaybackHub.publish(withWaiting(snapshot))
     main.post { if (!destroyed) onSnapshot(snapshot) }
   }
@@ -878,6 +956,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     const val NOTIFICATION_ID = 3001
     private const val WAKE_LOCK_MS = 4 * 60 * 60 * 1000L
     private const val STALL_TICK_MS = 5_000L
+
+    /** REA-39: the item id of a bridge session. Store ids start at 1, so it is never an item. */
+    const val BRIDGE_ITEM = -1L
+    /** What the notification and lock screen show for it: never the note's own text or name. */
+    const val BRIDGE_TITLE = "Obsidian note"
 
     /** Called from ReadMeSpeech while the app is in the foreground (the user tapped play). */
     fun start(context: Context, request: PlaybackHub.Request) {

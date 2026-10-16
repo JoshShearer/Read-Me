@@ -51,7 +51,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
 }));
 
 import Native from '../src/native/NativeReadMeSpeech';
-import { applyCuts, engineBlocked, engineProblem, handedOver, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
+import { applyCuts, BRIDGE_ITEM, engineBlocked, engineProblem, handedOver, marker, plan, playItem, toggle, type Playback } from '../src/library/playback';
 import type { Item } from '../src/library/library';
 
 const paragraphs = [
@@ -210,6 +210,12 @@ describe('handedOver (REA-55)', () => {
     expect(handedOver(at(null, false), at(2))).toBeNull();
     expect(handedOver(null, at(2))).toBeNull();
     expect(handedOver(at(1), at(1, false))).toBeNull();
+  });
+
+  test('a note read for Obsidian is not, either way (REA-39)', () => {
+    // The Reader must not follow to the bridge's item, which is not in the store, nor from it.
+    expect(handedOver(at(1, false), at(BRIDGE_ITEM))).toBeNull();
+    expect(handedOver(at(BRIDGE_ITEM), at(2))).toBeNull();
   });
 
   test('a Play that was waiting for the engine is not', () => {

@@ -8,6 +8,7 @@ import android.os.Looper
 import io.loopstring.readme.store.Settings
 import androidx.test.core.app.ApplicationProvider
 import io.loopstring.readme.store.Store
+import io.loopstring.readme.bridge.BridgePlayback.State as BridgePlaybackState
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -558,6 +559,76 @@ class PlaybackServiceTest {
       if (PlaybackHub.queue?.snapshot()?.itemId != item) break
     }
     idle()
+  }
+
+  // --- REA-39, ADR 0014: a bridge session, the plugin's chunks read by this service ---
+
+  private fun bridgeService() = Robolectric.buildService(PlaybackService::class.java, intent(PlaybackCommands.ACTION_BRIDGE)).create()
+
+  @Test fun aBridgeSessionReadsItsChunksStoresNothingAndEnds() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val unread = store.insertText("Unread", listOf("Never part of the session."), 100L)
+    Settings(ctx).continuousPlay = true
+    val c = bridgeService()
+    val player = c.get().bridgePlayer
+    assertEquals(BridgePlaybackState.NONE, player.status().state)
+    assertEquals(1, player.play(listOf("First chunk.", "Second chunk."), 1.5f))
+    idle()
+    assertEquals(BridgePlaybackState.STARTING, player.status().state)
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    val s = PlaybackHub.queue!!.snapshot()
+    assertEquals(PlaybackService.BRIDGE_ITEM, s.itemId)
+    assertTrue(s.playing)
+    // The plugin's rate, applied by the engine (AGENTS.md 9), not Settings' default.
+    assertEquals(1.5f, s.rate)
+    assertEquals(io.loopstring.readme.bridge.BridgePlayback.Status(1, BridgePlaybackState.PLAYING, 0), player.status())
+    // Never the note's text or name on the lock screen.
+    val n = shadowOf(c.get()).lastForegroundNotification
+    assertEquals(PlaybackService.BRIDGE_TITLE, n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    finishCurrent(c, 0, 1)
+    assertEquals(io.loopstring.readme.bridge.BridgePlayback.Status(1, BridgePlaybackState.ENDED, 1), player.status())
+    // No handover to the List, and the store was not touched.
+    assertNull(PlaybackHub.queue?.snapshot()?.itemId)
+    assertNull(store.item(unread)!!.archivedAt)
+    assertNull(store.position(unread))
+    assertNull(store.item(PlaybackService.BRIDGE_ITEM))
+    Settings(ctx).continuousPlay = false
+    c.destroy()
+  }
+
+  @Test fun readMesOwnReadingKeepsTheEngineFromTheBridge() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = playingItem(Store.get(ctx).insertText("t", listOf("Hello World"), 1L))
+    assertNull(c.get().bridgePlayer.play(listOf("One."), 1f))
+    assertTrue(PlaybackHub.queue!!.snapshot().itemId!! > 0)
+    c.destroy()
+  }
+
+  @Test fun theSessionIsControlledByItsNumberAndGivesWayToReadMesOwnPlay() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val c = bridgeService()
+    val player = c.get().bridgePlayer
+    player.play(listOf("One.", "Two."), 1f)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(BridgePlaybackState.PAUSED, player.control(1, io.loopstring.readme.bridge.BridgePlayback.Action.PAUSE)!!.state.also { idle() })
+    assertFalse(PlaybackHub.queue!!.snapshot().playing)
+    // An older session number is refused and changes nothing.
+    assertNull(player.control(0, io.loopstring.readme.bridge.BridgePlayback.Action.STOP))
+    assertEquals(PlaybackService.BRIDGE_ITEM, PlaybackHub.queue!!.snapshot().itemId)
+    // The user plays an article in Read Me: it replaces the session, which reads as stopped.
+    val id = Store.get(ctx).insertText("t", listOf("Hello World"), 1L)
+    PlaybackHub.offer(request(id))
+    c.withIntent(intent(PlaybackCommands.ACTION_START)).startCommand(0, 2)
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(id, PlaybackHub.queue!!.snapshot().itemId)
+    assertEquals(BridgePlaybackState.STOPPED, player.status().state)
+    c.destroy()
   }
 
   /** Plays [first] (two sentences) on a ready engine. */
