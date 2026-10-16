@@ -5,6 +5,8 @@
 # a wait loop never sees what it waits for. Every device script must read the answer whole first
 # (a here-string or device_has). `||` is not a pipe.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 fail=0
 

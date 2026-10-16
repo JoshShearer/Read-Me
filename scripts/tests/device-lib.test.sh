@@ -2,6 +2,8 @@
 # Tests for scripts/lib/device.sh lock rules and scripts/device-smoke.sh crash detection, against
 # a stub adb in a throwaway git repo. Never touches a real device.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/repo/scripts/lib"
@@ -158,6 +160,62 @@ check "device-smoke passes on a clean run with MBs of dumpsys and logcat (no fal
   "$(STUB_BIG=1 smoke_run 0)" 0
 check "device-smoke catches a crash buried before MBs of logcat (F1)" "$(STUB_BIG=1 STUB_CRASH=1 smoke_run 0)" 1
 check "and says why" "$(grep -c 'FAIL: crash logged' "$T/smoke/out")" 1
+# REA-48: the opt-in unattended unlock. The stub phone is "locked", "asleep" (unlocked once woken)
+# or "unlocked"; a PIN on stdin unlocks it only when it is the right one. argv and stdin are logged
+# separately, so the PIN must show up on stdin and never in argv.
+mkdir -p "$T/unl"
+cat > "$T/unl/adb" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$STUB_DIR/argv"
+st=$(cat "$STUB_DIR/state")
+case "$*" in
+  "shell dumpsys power") [ "$st" = asleep ] && echo "  mWakefulness=Asleep" || echo "  mWakefulness=Awake" ;;
+  "shell dumpsys window") [ "$st" = unlocked ] && echo "    isKeyguardShowing=false" || echo "    isKeyguardShowing=true" ;;
+  "shell wm size") echo "Physical size: 1344x2992" ;;
+  "shell cat /sdcard/readme-kg.xml") [ "$st" = locked ] && [ -z "$STUB_NO_PAD" ] && echo '<node resource-id="com.android.systemui:id/keyguard_pin_view"/>' ;;
+  "shell input keyevent KEYCODE_WAKEUP") [ "$st" = asleep ] && echo unlocked > "$STUB_DIR/state" ;;
+  shell)
+    in=$(cat); printf '%s\n' "$in" >> "$STUB_DIR/stdin"
+    printf '%s\n' "$in" | grep -qx "input text $STUB_PIN" && echo unlocked > "$STUB_DIR/state" ;;
+esac
+exit 0
+STUB
+chmod +x "$T/unl/adb"
+mkdir -p "$T/home"; PINF="$T/home/pin"; echo 482916 > "$PINF"; chmod 600 "$PINF"
+U="$T/unl/run"
+unl() { # unl <state> [pin file] [stub pin]: exit status of device_require_unlocked
+  rm -rf "$U"; mkdir -p "$U"; echo "$1" > "$U/state"; : > "$U/argv"; : > "$U/stdin"
+  STUB_DIR="$U" STUB_PIN="${3:-482916}" STUB_NO_PAD="${STUB_NO_PAD:-}" READ_ME_PIN_FILE="${2:-}" DEVICE_UNLOCK_STATE="$T/unl/state-dir" \
+    PATH="$T/unl:$PATH" bash -c '. scripts/lib/device.sh; sleep() { :; }; device_require_unlocked' >/dev/null 2>"$U/err"; echo $?
+}
+rm -rf "$T/unl/state-dir"
+check "unlock: off by default, a locked phone is exit 5" "$(unl locked)" 5
+check "and nothing is typed or tapped" "$(grep -c 'input' "$U/argv"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '0\n0')"
+check "unlock: the right PIN unlocks" "$(unl locked "$PINF")" 0
+check "the PIN went on stdin" "$(grep -c 'input text 482916' "$U/stdin")" 1
+check "and never in argv" "$(grep -c 482916 "$U/argv")" 0
+check "nor in the script's output" "$(grep -c 482916 "$U/err")" 0
+check "and no failure is recorded" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked || echo clear)" clear
+check "unlock: a phone only asleep is woken, nothing typed" "$(unl asleep "$PINF")" 0
+check "and the PIN is not sent" "$(wc -c < "$U/stdin" | tr -d ' ')" 0
+check "unlock: no PIN pad on screen, nothing is typed" "$(STUB_NO_PAD=1 unl locked "$PINF"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+check "and no failure is recorded" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked || echo clear)" clear
+check "unlock: a wrong PIN leaves exit 5" "$(unl locked "$PINF" 111111)" 5
+check "and records the failure" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked)" marked
+check "after which nothing is typed again" "$(unl locked "$PINF"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+rm -f "$T/unl/state-dir/unlock-failed"
+chmod 644 "$PINF"
+check "unlock: a group-readable PIN file is refused" "$(unl locked "$PINF"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+chmod 600 "$PINF"
+ln -s "$PINF" "$T/home/link"
+check "unlock: a symlinked PIN file is refused" "$(unl locked "$T/home/link"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+echo 482916 > in-repo-pin; chmod 600 in-repo-pin
+check "unlock: a PIN file inside the repo is refused" "$(unl locked "$PWD/in-repo-pin"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+rm -f in-repo-pin
+printf 'hunter2\n' > "$T/home/bad"; chmod 600 "$T/home/bad"
+check "unlock: a file that is not just digits is refused" "$(unl locked "$T/home/bad"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+check "unlock: refused under xtrace" "$(rm -rf "$U"; mkdir -p "$U"; echo locked > "$U/state"; : > "$U/stdin"; STUB_DIR="$U" STUB_PIN=482916 READ_ME_PIN_FILE="$PINF" DEVICE_UNLOCK_STATE="$T/unl/state-dir" PATH="$T/unl:$PATH" bash -xc '. scripts/lib/device.sh; sleep() { :; }; device_require_unlocked' >/dev/null 2>&1; echo $?; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+
 check "device-smoke matches the crash when pidof returns two pids (F3)" "$(STUB_PIDS='4242 4343' STUB_CRASH=1 smoke_run 0)" 1
 check "device-smoke refuses an APK stamped for another commit (F2)" "$(STUB_STAMP=stale smoke_run 0)" 6
 check "and installs nothing" "$([ -f "$T/smoke/installed" ] && echo installed || echo none)" none

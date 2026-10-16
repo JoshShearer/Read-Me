@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # release.sh: a debug-signed APK is refused; no script passes a password on a command line.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 cd "$(dirname "$0")/../.."
 source scripts/lib/release.sh
 fail=0
