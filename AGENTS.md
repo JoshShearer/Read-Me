@@ -226,6 +226,17 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   REA-27 was not reproduced: `LOOPS=30 npm run device:settings` on the reference device, build
   8ddfadf (2026-10-04), 0 of 30 loops failed (15 plain List to Settings, 15 via Reader, Home and
   /health). Settings is unchanged: the token and notifications-off blocks still mount late.
+  Phase 4 follow-ups (REA-50, PR #52, 3349943): a `getItem` failure other than a missing item
+  shows "Could not open this item." with Retry (`src/ui/ItemUnavailable.tsx`; unit-tested only,
+  it cannot be induced on a release build); the fetched drain runs from App on every store change
+  (`listFetched`); Trim and Reader paragraphs carry no `accessibilityLabel` (TalkBack reads the
+  text; Trim adds a hint, the Reader marks the current paragraph `selected`) and device scripts
+  find paragraphs by `resource-id` (testID); word counts are stored per paragraph (ADR 0013,
+  backfilled at process start, no schema version bump). On the reference device, 2026-10-15:
+  `device:ui`, `device:screens`, `device:intake` passed on 8aaace3 and `device:themes` on db663b7
+  (lowest: light Reader disabled 3.05, light Trim faint 3.28, need 3.0; other text 5.85 or
+  better). TalkBack announcements were not heard on the phone. A Pause in an item's last ~40 ms
+  still archives it (seen while scripting; not chased).
 - **UI controls (REA-28, PR #22):** `src/ui/Button.tsx` (Button, IconButton), `Select.tsx` (a
   bottom-sheet Modal), `Toggle.tsx`, `Stepper.tsx`, on Pressable and Modal, no dependencies.
   Article words are set in the system serif (`read` in `theme.ts`), controls in sans. Settings'
@@ -402,7 +413,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `fdroid:build` SAME on all four ABIs on the image's JDK 21 (no JDK downloaded), `repro` SAME,
   `fdroid-scan.sh` CLEAN; on the reference device `device:intake`, `ui`, `screens`, `playback`
   (n=20 p50=11 p95=19 max=20 ms), `bridge` (Supertonic as default: Marmalade was too slow for its
-  timing, REA-44), `accept-share` (resumed at sentence 16, list "2% read"), `continuous`, and
+  timing; since REA-44, PR #56, 5da73fa, the while-playing text is longer and a playback that ends
+  before the WebView check is a precondition failure, and `device:bridge` on bd8e4be, 2026-10-15,
+  passed with Marmalade and with Supertonic, Obsidian included), `accept-share` (resumed at sentence 16, list "2% read"), `continuous`, and
   `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=101 p50=8 p95=17 max=27 ms, stalls 0, errors 0);
   each signed APK equals its tested build. The MR branch carries the 1.0.5 recipe (898bbc04e);
   its pipeline was still running when this was written.
@@ -426,9 +439,22 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   only then (nothing is synthesized across the boundary), so its first sentence waits for the
   engine; the 35 and 20 ms above were `speak()`'s. On 69b3db1 (2026-10-13, GrapheneOS Speech
   Services) `device:continuous` passed with handovers 731 and 818 ms (772 and 1048 ms on
-  93ba8e0); the owner accepted that for REA-31. REA-49 (PR #57, open, not merged) prepares the
-  next item's first audio before the end; its device acceptance (handovers under 100 ms) has not
-  been run.
+  93ba8e0); the owner accepted that for REA-31. REA-49 (PR #57, 5a6f377) prepares the next
+  item's first audio before the end (log `playback prepare ...`, handover line `prepared=<0|1>`).
+  On the reference device, build 0b58d8e (2026-10-15): `SCREEN_OFF=0 device:continuous`
+  handovers 90 and 55 ms, both `prepared=1`, prepared 3 s and 8 s before each end (the run then
+  failed on REA-55's Reader checks' empty captures, below); `device:gap` (2 min, GrapheneOS
+  Speech Services) n=27 p50=13 p95=18 max=20 ms, stalls 0, underruns 0; `device:playback`
+  (GrapheneOS) gaps n=20 p95=16 max=18 ms. With Marmalade (the phone's default engine on
+  2026-10-15) `device:gap` failed (p95 801, max 2796 ms, 2 stalls): Marmalade synthesized 3.0-3.5 s
+  of audio in 11.9-16.8 s under forced Doze, slower than real time, so gap runs pin GrapheneOS.
+  REA-55 (PR #58, c19c8fb): an open Reader follows a handover to the item being read (not an
+  open: `opened_at` stays NULL, no Trim; srs.md R-S05, ADR 0011). Reproduced first on e6ede5d
+  (the Reader stayed on the finished item and its Play restarted it). On fcd922f/c8fdac9
+  (2026-10-15) `SCREEN_OFF=0 device:continuous` passed twice, `SCREEN_OFF=1` once,
+  `device:screens` 10/10. The Reader checks are flaky: `uiautomator dump` while the Reader plays
+  waits about 12 s and returns nothing ("could not get idle state"), on main's build too; every
+  failure was an empty capture, never a wrong Reader or item. REA-56 tracks a log-based check.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

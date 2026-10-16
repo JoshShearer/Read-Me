@@ -89,7 +89,8 @@ src/ui/                      R-M01 screens: model.ts (routes, R-M10 actions, lis
                              spans; pure), List, Trim, Reader, Settings, Licenses; theme.ts (the
                              LoopString Material 3 palette, light and dark, and the type scale)
                              and Text.tsx (the themed Text every screen uses, with a tone);
-                             Button.tsx, Select.tsx, Toggle.tsx, Stepper.tsx: the shared controls
+                             Button.tsx, Select.tsx, Toggle.tsx, Stepper.tsx: the shared controls;
+                             ItemUnavailable.tsx: the deleted or could-not-open state (R-M10)
 src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
                              (fixtures.generated.ts is gitignored, written by make-devcheck-fixtures.mjs)
