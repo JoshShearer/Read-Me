@@ -447,7 +447,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   Speech Services) n=27 p50=13 p95=18 max=20 ms, stalls 0, underruns 0; `device:playback`
   (GrapheneOS) gaps n=20 p95=16 max=18 ms. With Marmalade (the phone's default engine on
   2026-10-15) `device:gap` failed (p95 801, max 2796 ms, 2 stalls): Marmalade synthesized 3.0-3.5 s
-  of audio in 11.9-16.8 s under forced Doze, slower than real time, so gap runs pin GrapheneOS.
+  of audio in 11.9-16.8 s under forced Doze, slower than real time. `device:gap` does not pin an engine: set GrapheneOS as the default first.
   REA-55 (PR #58, c19c8fb): an open Reader follows a handover to the item being read (not an
   open: `opened_at` stays NULL, no Trim; srs.md R-S05, ADR 0011). Reproduced first on e6ede5d
   (the Reader stayed on the finished item and its Play restarted it). On fcd922f/c8fdac9
