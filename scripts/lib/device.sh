@@ -106,6 +106,16 @@ _device_keyguard_showing() {
   fi
 }
 
+# 0 when systemui's PIN pad is on screen. A fresh dump each time: a stale file must not count.
+_device_pin_pad_showing() {
+  adb shell rm -f /sdcard/readme-kg.xml
+  adb shell uiautomator dump /sdcard/readme-kg.xml >/dev/null 2>&1 || true
+  adb shell cat /sdcard/readme-kg.xml 2>/dev/null | grep -q 'id/keyguard_pin_view'
+  local r=$?
+  adb shell rm -f /sdcard/readme-kg.xml
+  return $r
+}
+
 # REA-48: the opt-in unattended unlock. Off unless READ_ME_PIN_FILE names the owner's PIN file:
 # a regular file (not a link) owned by this user, mode 0600, outside the repository, holding only
 # the PIN's digits. The PIN goes to `adb shell` on stdin, never argv: adbd logs argv to logcat
@@ -146,14 +156,20 @@ device_try_unlock() {
   _device_unlocked && return 0
   _device_keyguard_showing || { echo "unattended unlock: no lock screen showing; not typing" >&2; return 1; }
   pin=$(head -n1 "$f")
-  # Swipe up: the lock screen's own gesture to the PIN pad (a fingerprint prompt may show too;
-  # the pad still takes the PIN).
+  # Swipe up from below the under-display fingerprint sensor, slowly: the lock screen's own
+  # gesture to the PIN pad. From 80% of the height at 200 ms nothing happened on the reference
+  # phone (GrapheneOS, 2026-10-16); from 90% at 400 ms the pad came up.
   read -r w h < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
-  adb shell input swipe $((w / 2)) $((h * 8 / 10)) $((w / 2)) $((h * 3 / 10)) 200
-  sleep 1
+  adb shell input swipe $((w / 2)) $((h * 9 / 10)) $((w / 2)) $((h / 3)) 400
+  sleep 1.5
+  # Type only into the PIN pad itself (systemui's keyguard_pin_view in the window dump).
+  if ! _device_keyguard_showing || ! _device_pin_pad_showing; then
+    pin=
+    echo "unattended unlock: the PIN pad did not come up; not typing" >&2
+    return 1
+  fi
   # Written before the PIN is sent: if this process dies mid-attempt, the next one does not try.
   : > "$DEVICE_UNLOCK_FAILED"
-  _device_keyguard_showing || { pin=; rm -f "$DEVICE_UNLOCK_FAILED"; echo "unattended unlock: the lock screen went away; not typing" >&2; return 1; }
   printf 'input text %s\ninput keyevent KEYCODE_ENTER\nexit\n' "$pin" | adb shell >/dev/null 2>&1
   pin=
   for i in 1 2 3 4 5 6; do

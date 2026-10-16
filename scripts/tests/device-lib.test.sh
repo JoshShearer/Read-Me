@@ -172,6 +172,7 @@ case "$*" in
   "shell dumpsys power") [ "$st" = asleep ] && echo "  mWakefulness=Asleep" || echo "  mWakefulness=Awake" ;;
   "shell dumpsys window") [ "$st" = unlocked ] && echo "    isKeyguardShowing=false" || echo "    isKeyguardShowing=true" ;;
   "shell wm size") echo "Physical size: 1344x2992" ;;
+  "shell cat /sdcard/readme-kg.xml") [ "$st" = locked ] && [ -z "$STUB_NO_PAD" ] && echo '<node resource-id="com.android.systemui:id/keyguard_pin_view"/>' ;;
   "shell input keyevent KEYCODE_WAKEUP") [ "$st" = asleep ] && echo unlocked > "$STUB_DIR/state" ;;
   shell)
     in=$(cat); printf '%s\n' "$in" >> "$STUB_DIR/stdin"
@@ -184,7 +185,7 @@ mkdir -p "$T/home"; PINF="$T/home/pin"; echo 482916 > "$PINF"; chmod 600 "$PINF"
 U="$T/unl/run"
 unl() { # unl <state> [pin file] [stub pin]: exit status of device_require_unlocked
   rm -rf "$U"; mkdir -p "$U"; echo "$1" > "$U/state"; : > "$U/argv"; : > "$U/stdin"
-  STUB_DIR="$U" STUB_PIN="${3:-482916}" READ_ME_PIN_FILE="${2:-}" DEVICE_UNLOCK_STATE="$T/unl/state-dir" \
+  STUB_DIR="$U" STUB_PIN="${3:-482916}" STUB_NO_PAD="${STUB_NO_PAD:-}" READ_ME_PIN_FILE="${2:-}" DEVICE_UNLOCK_STATE="$T/unl/state-dir" \
     PATH="$T/unl:$PATH" bash -c '. scripts/lib/device.sh; sleep() { :; }; device_require_unlocked' >/dev/null 2>"$U/err"; echo $?
 }
 rm -rf "$T/unl/state-dir"
@@ -197,6 +198,8 @@ check "nor in the script's output" "$(grep -c 482916 "$U/err")" 0
 check "and no failure is recorded" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked || echo clear)" clear
 check "unlock: a phone only asleep is woken, nothing typed" "$(unl asleep "$PINF")" 0
 check "and the PIN is not sent" "$(wc -c < "$U/stdin" | tr -d ' ')" 0
+check "unlock: no PIN pad on screen, nothing is typed" "$(STUB_NO_PAD=1 unl locked "$PINF"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
+check "and no failure is recorded" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked || echo clear)" clear
 check "unlock: a wrong PIN leaves exit 5" "$(unl locked "$PINF" 111111)" 5
 check "and records the failure" "$([ -e "$T/unl/state-dir/unlock-failed" ] && echo marked)" marked
 check "after which nothing is typed again" "$(unl locked "$PINF"; wc -c < "$U/stdin" | tr -d ' ')" "$(printf '5\n0')"
