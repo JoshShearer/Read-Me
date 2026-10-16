@@ -33,12 +33,14 @@ demo -e command notifications -e visible false
 
 # Long enough that playback cannot reach the end before Pause: finishing archives the item
 # (R-M11), which took Pause off the screen and the item off the list for the dark pass (REA-28,
-# twice on 2026-10-03 once the Reader dumped more slowly).
+# twice on 2026-10-03 once the Reader dumped more slowly). On 2026-10-15 the five sentences
+# (about 9 s at 2x) ended 39 ms after Pause: a dump can wait about 12 s for the playing Reader to
+# go idle (REA-56), so the last paragraph now runs on for about a minute.
 FIRST='Light and dark both have to read well.
 
 This second paragraph gets cut in Trim, so its faint style is measured too.
 
-The last paragraph is plain text again, long enough to wrap onto a second line on the phone. It goes on for a while, because reading it to the end archives the item, and the dark pass opens it again. A few more sentences keep it playing while the screen is captured and Pause is pressed. The playback stops well before here.'
+The last paragraph is plain text again, long enough to wrap onto a second line on the phone. It goes on for a while, because reading it to the end archives the item, and the dark pass opens it again. A few more sentences keep it playing while the screen is captured and Pause is pressed. The playback stops well before here. Filler sentence one is here only to keep the reading going. Filler sentence two is here only to keep the reading going. Filler sentence three is here only to keep the reading going. Filler sentence four is here only to keep the reading going. Filler sentence five is here only to keep the reading going. Filler sentence six is here only to keep the reading going. Filler sentence seven is here only to keep the reading going. Filler sentence eight is here only to keep the reading going. Filler sentence nine is here only to keep the reading going. Filler sentence ten is here only to keep the reading going. Filler sentence eleven is here only to keep the reading going. Filler sentence twelve is here only to keep the reading going. Filler sentence thirteen is here only to keep the reading going. Filler sentence fourteen is here only to keep the reading going. Filler sentence fifteen is here only to keep the reading going. Filler sentence sixteen is here only to keep the reading going. Filler sentence seventeen is here only to keep the reading going. Filler sentence eighteen is here only to keep the reading going. Filler sentence nineteen is here only to keep the reading going. Filler sentence twenty is here only to keep the reading going.'
 SECOND='A second item keeps the list from looking empty. It has one paragraph.'
 
 device_clear_app
