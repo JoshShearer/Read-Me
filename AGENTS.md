@@ -450,6 +450,16 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=101 p50=8 p95=17 max=27 ms, stalls 0, errors 0);
   each signed APK equals its tested build. The MR branch carries the 1.0.5 recipe (898bbc04e);
   its pipeline was still running when this was written.
+  Release 1.1.0 (REA-36, PR #63, main 9442c21; tested build 642b54f, same tree): draft GitHub
+  Release with four signed APKs and `SHA256SUMS` (signer f730c468...), not yet published.
+  2026-10-16, reference device, GrapheneOS Speech Services as default: `device:bridge`, `ui`,
+  `intake`, `screens`, `themes`, `playback` (n=19 p95=17 max=17 ms), `SCREEN_OFF=1 continuous`
+  (handovers 76 and 58 ms, prepared=1), `accept-share` (resumed at sentence 14, list "2% read")
+  and `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=156 p50=14 p95=17 max=19 ms, stalls 0, errors 0,
+  underruns 0) passed; `device:lifecycle` failed its first pause tap (REA-56) and passed on the
+  rerun. R-M14 run 3: a real plugin read through `/play` (REA-39, build e7f018a). Host:
+  `fdroid-scan.sh` CLEAN, `repro` SAME, `fdroid:build` SAME on all four ABIs (71-74). The F-Droid
+  screenshots were retaken; SystemUI's demo mode does not hide notification icons on this phone.
 - **Continuous play (R-S05, REA-41, ADR 0011):** a Settings switch, off by default. When an
   item ends, `PlaybackQueue` hands over to the next unread item in List order with no JS:
   `ContinuousPlay` picks it and `Segmenter` (a Kotlin port of `segment`'s fallback, pinned to the
