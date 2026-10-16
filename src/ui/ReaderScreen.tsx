@@ -3,7 +3,7 @@
 // highlight follows the service's events. R-M10: a blocking card when there is no engine or
 // no offline voice, checked on open rather than after a failed play (REA-18).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Linking, useColorScheme, View } from 'react-native';
+import { AppState, FlatList, Linking, useColorScheme, View } from 'react-native';
 import { Button, IconButton } from './Button';
 import { ItemUnavailable } from './ItemUnavailable';
 import { Stepper } from './Stepper';
@@ -72,16 +72,42 @@ export function ReaderScreen({
     return onItemsChanged(load);
   }, [load]);
 
+  // REA-21 (c): only the newest answer counts. A slow probe from before an app switch must not
+  // put the blocking card back over a newer "ready", nor clear one the service reported since.
+  const probeSeq = useRef(0);
+  const probe = useCallback(() => {
+    const seq = ++probeSeq.current;
+    getEngine().then(
+      e => seq === probeSeq.current && setEngine(e.status),
+      () => seq === probeSeq.current && setEngine('no-engine'),
+    );
+  }, []);
+
   useEffect(() => {
     getPlayback().then(setPlayback, () => undefined);
-    getEngine().then(e => setEngine(e.status), () => setEngine('no-engine'));
+    probe();
     Native.getRate().then(setRateState, () => undefined);
     return onPlayback(p => {
       setPlayback(p);
       if (p.itemId !== null) setRateState(p.rate);
-      if (engineBlocked(p.engine)) setEngine(p.engine);
+      if (engineBlocked(p.engine)) {
+        probeSeq.current++;
+        setEngine(p.engine);
+      }
     });
-  }, []);
+  }, [probe]);
+
+  // REA-21 (c): the card sends the user to Android's TTS settings; when they come back with a
+  // voice installed, check again instead of keeping the card until the Reader is reopened. Play
+  // then reaches a service whose speaker failed, which binds a fresh engine first (REA-18).
+  const blocked = engineBlocked(engine);
+  useEffect(() => {
+    if (!blocked) return;
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active') probe();
+    });
+    return () => sub.remove();
+  }, [blocked, probe]);
 
   // After a continuous-play handover App moves this route to the new item (REA-55), so a Reader
   // whose item was being read shows the item being read; one opened on another item stays put.

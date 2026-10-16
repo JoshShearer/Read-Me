@@ -18,6 +18,9 @@ import {
   type Route,
   bridgeStatus,
   parsePort,
+  ENGINE_DEFAULT,
+  voiceOptions,
+  voiceValue,
 } from '../src/ui/model';
 
 const item = (over: Partial<Item> = {}): Item => ({
@@ -202,4 +205,20 @@ test('bridgeStatus explains a taken port', () => {
 test('parseNotices includes native entries with their text', () => {
   const j = JSON.stringify({npm: [], android: [], native: [{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]});
   expect(parseNotices(j)).toEqual([{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]);
+});
+
+describe('voice options (REA-21)', () => {
+  const v = { name: 'a-local', label: 'A', detail: '' };
+  test('the engine default comes first and is chosen when nothing is stored', () => {
+    const e = { voices: [v], selected: 'a-local', preferred: null };
+    expect(voiceOptions(e).map(o => o.value)).toEqual([ENGINE_DEFAULT, 'a-local']);
+    expect(voiceValue(e)).toBe(ENGINE_DEFAULT);
+  });
+  test('a stored voice shows the voice it resolves to', () => {
+    expect(voiceValue({ voices: [v], selected: 'a-local', preferred: 'a-local' })).toBe('a-local');
+  });
+  test('nothing while the engine is being checked', () => {
+    expect(voiceOptions(null)).toEqual([]);
+    expect(voiceValue(null)).toBeNull();
+  });
 });

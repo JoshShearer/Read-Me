@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import java.util.Locale
 
 /**
@@ -72,7 +73,24 @@ class EngineProbe private constructor(
     private const val TIMEOUT_MS = 20_000L
 
     fun start(context: Context, preferred: String?, done: (Report) -> Unit) {
-      Handler(Looper.getMainLooper()).post { EngineProbe(context, preferred, done) }
+      Handler(Looper.getMainLooper()).post { guarded(done) { once -> EngineProbe(context, preferred, once) } }
+    }
+
+    /**
+     * REA-21: the probe is built on the main thread, outside getEngine's try, so a throw there
+     * (from TtsOpen or a TextToSpeech constructor) crashed Read Me and left the promise unsettled.
+     * It now settles once, as no-engine. [done] runs at most once even if [build] reported
+     * before throwing. No message in the log: only the exception's class.
+     */
+    internal fun guarded(done: (Report) -> Unit, build: ((Report) -> Unit) -> Unit) {
+      var called = false
+      val once: (Report) -> Unit = { if (!called) { called = true; done(it) } }
+      try {
+        build(once)
+      } catch (e: Exception) {
+        Log.i("ReadMe", "engine probe failed: ${e.javaClass.simpleName}")
+        once(Report("no-engine", emptyList(), null))
+      }
     }
   }
 }

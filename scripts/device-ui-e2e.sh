@@ -178,6 +178,21 @@ checked_voice() {
   adb shell input keyevent KEYCODE_BACK
   for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
 }
+# reveal_radio <desc>: swipes the open sheet's list down (towards its first row) until the radio
+# is on screen at full height; the heading can cut the top row to a sliver (2026-10-03).
+reveal_radio() {
+  local h
+  h=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2)
+  for _ in $(seq 6); do
+    grep -oE "content-desc=\"$1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" <<<"$(ui)" \
+      | sed -E 's/.*\[[0-9]+,([0-9]+)\]\[[0-9]+,([0-9]+)\]".*/\1 \2/' \
+      | { read -r y0 y1 && [ $((y1 - y0)) -ge 150 ]; } && return 0
+    adb shell input swipe 500 $((h * 6 / 10)) 500 $((h * 9 / 10)) 300
+    sleep 1
+  done
+  echo "FAIL: $1 is not on screen after scrolling the sheet"
+  fail=1
+}
 tap_node content-desc 'settings'
 on_screen "content-desc=\"$FIELD\"" || fail=1
 on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
@@ -208,6 +223,9 @@ if [ -n "$other" ]; then
   # back from the sheet: the radio "voice <name>" must be the checked one.
   [ "$(checked_voice)" = "$other" ] || { echo "FAIL: the picked voice is not the checked one"; fail=1; }
   tap_node content-desc "$FIELD"
+  # The sheet opens scrolled to the checked voice, so the first voice can be above it; on a
+  # fresh install that is "Engine default", the first row (REA-21). Scroll back to it.
+  reveal_radio "voice $was"
   tap_node content-desc "voice $was"
   for _ in $(seq 10); do device_has "$(ui)" 'content-desc="close voice"' || break; sleep 1; done
   [ "$(checked_voice)" = "$was" ] || { echo "FAIL: the first voice was not restored"; fail=1; }

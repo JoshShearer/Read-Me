@@ -1,20 +1,20 @@
 import React from 'react';
-import { DeviceEventEmitter } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
-import type { NativeItem } from '../src/native/NativeReadMeSpeech';
+import type { NativeEngine, NativeItem } from '../src/native/NativeReadMeSpeech';
 
 const mockState = {
   items: [] as NativeItem[],
   detail: null as unknown,
   engine: {
     status: 'ready',
-    voices: [] as unknown[],
-    selected: null as string | null,
-    engine: null as string | null,
-    engineLabel: null as string | null,
+    voices: [],
+    selected: null,
+    engine: null,
+    engineLabel: null,
     choosable: false,
-    engines: [] as unknown[],
-  },
+    engines: [],
+  } as NativeEngine,
   bridge: { enabled: false, state: 'off', port: 8787, token: null as string | null, error: null as string | null },
   continuous: false,
 };
@@ -46,6 +46,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     regenerateBridgeToken: jest.fn(async () => mockState.bridge),
     copyBridgeToken: jest.fn(async () => undefined),
     getContinuousPlay: jest.fn(async () => mockState.continuous),
+    setVoice: jest.fn(async () => undefined),
     setContinuousPlay: jest.fn(async (on: boolean) => {
       mockState.continuous = on;
       return on;
@@ -101,6 +102,14 @@ async function render(el: React.ReactElement) {
   mounted.push(r);
   return strings(r.toJSON()).join('\n');
 }
+
+// Jest's react-native AppState returns no subscription; the Reader listens while it blocks.
+beforeEach(() => {
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(
+    () => ({ remove: () => undefined }) as ReturnType<typeof AppState.addEventListener>,
+  );
+});
+afterEach(() => jest.restoreAllMocks());
 
 beforeEach(() => {
   mockState.items = [];
@@ -288,6 +297,66 @@ test('Reader blocks when the engine has no offline voice (Review Focus 4)', asyn
   expect(out).not.toContain('"play"');
 });
 
+test('Reader checks the engine again when the app comes back while it blocks (REA-21)', async () => {
+  // The card sends the user to Android's TTS settings; before, it stayed until the Reader was
+  // reopened, even after an offline voice was installed.
+  let onChange: ((s: string) => void) | null = null;
+  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
+    onChange = h as (s: string) => void;
+    return { remove: () => { onChange = null; } } as ReturnType<typeof AppState.addEventListener>;
+  });
+  try {
+    mockState.detail = text(['One.']);
+    mockState.engine = { ...mockState.engine, status: 'no-voice' };
+    let r!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    });
+    mounted.push(r);
+    expect(strings(r.toJSON()).join('\n')).toContain('no offline text-to-speech voice');
+    mockState.engine = { ...mockState.engine, status: 'ready' };
+    await ReactTestRenderer.act(async () => onChange!('active'));
+    const out = strings(r.toJSON()).join('\n');
+    expect(out).not.toContain('no offline text-to-speech voice');
+    expect(out).toContain('"play"');
+    // Once it reads, nothing listens: the check is only for the blocking card.
+    expect(onChange).toBeNull();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("Reader drops an engine answer older than the newest check (REA-21)", async () => {
+  let onChange: ((s: string) => void) | null = null;
+  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
+    onChange = h as (s: string) => void;
+    return { remove: () => { onChange = null; } } as ReturnType<typeof AppState.addEventListener>;
+  });
+  const getEngine = Native.getEngine as jest.Mock;
+  try {
+    mockState.detail = text(['One.']);
+    mockState.engine = { ...mockState.engine, status: 'no-voice' };
+    let r!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    });
+    mounted.push(r);
+    // A slow check (a busy engine), then a quick one after another switch.
+    let slow!: (e: NativeEngine) => void;
+    getEngine.mockImplementationOnce(() => new Promise<NativeEngine>(res => { slow = res; }));
+    await ReactTestRenderer.act(async () => onChange!('active'));
+    getEngine.mockImplementationOnce(async () => ({ ...mockState.engine, status: 'ready' }));
+    await ReactTestRenderer.act(async () => onChange!('active'));
+    expect(strings(r.toJSON()).join('\n')).toContain('"play"');
+    await ReactTestRenderer.act(async () => slow({ ...mockState.engine, status: 'no-voice' }));
+    const out = strings(r.toJSON()).join('\n');
+    expect(out).not.toContain('no offline text-to-speech voice');
+    expect(out).toContain('"play"');
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 test('Reader shows kept paragraphs and the transport', async () => {
   mockState.detail = text(['Kept one.', 'Cut one.', 'Kept two.'], [1]);
   const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
@@ -320,6 +389,7 @@ test('Settings lists offline voices, the default rate and storage', async () => 
     status: 'ready',
     voices: [{ name: 'en-us-x-a-local', language: 'en', quality: 400, label: 'English (United States)', detail: 'High quality' }],
     selected: 'en-us-x-a-local',
+    preferred: 'en-us-x-a-local',
     engine: 'com.google.android.tts',
     engineLabel: 'Speech Services by Google',
     choosable: false,
@@ -335,6 +405,33 @@ test('Settings lists offline voices, the default rate and storage', async () => 
   expect(out).toContain('2.0x');
   expect(out).toContain('2 items, 1 archived');
   expect(out).toContain('Licenses');
+});
+
+test("Settings offers the engine's default voice and choosing it clears the stored voice (REA-21)", async () => {
+  const voice = { name: 'en-us-x-a-local', language: 'en', quality: 400, label: 'English (United States)', detail: '' };
+  mockState.engine = { ...mockState.engine, voices: [voice], selected: voice.name, preferred: null };
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<SettingsScreen onLicenses={() => {}} />);
+  });
+  mounted.push(r);
+  const byLabel = (label: string) =>
+    r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function');
+  // Nothing stored: the engine's default is the checked row, first in the sheet.
+  await ReactTestRenderer.act(async () => byLabel('voice').props.onPress());
+  expect(byLabel('voice engine-default').props.accessibilityState).toEqual({ checked: true });
+  expect(byLabel(`voice ${voice.name}`).props.accessibilityState).toEqual({ checked: false });
+  mockState.engine = { ...mockState.engine, preferred: voice.name };
+  await ReactTestRenderer.act(async () => byLabel(`voice ${voice.name}`).props.onPress());
+  expect(Native.setVoice).toHaveBeenLastCalledWith(voice.name);
+  // Back to the default. The sheet opens scrolled to the checked voice, so the default row is
+  // above it; the choice goes through the Select's onChange either way.
+  const select = r.root.find(n => n.props.name === 'voice' && typeof n.props.onChange === 'function');
+  expect(select.props.value).toBe(voice.name);
+  mockState.engine = { ...mockState.engine, preferred: null };
+  await ReactTestRenderer.act(async () => select.props.onChange('engine-default'));
+  expect(Native.setVoice).toHaveBeenLastCalledWith(null);
+  expect(r.root.find(n => n.props.name === 'voice' && typeof n.props.onChange === 'function').props.value).toBe('engine-default');
 });
 
 // REA-28: the bridge is a switch whose label stays "Use the bridge"; its state is checked.
