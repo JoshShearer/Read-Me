@@ -5,7 +5,7 @@ import * as RN from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import '../jest/loadReactNative';
 import { Button, IconButton, look, type Appearance } from '../src/ui/Button';
-import { Select } from '../src/ui/Select';
+import { Select, selectOffset } from '../src/ui/Select';
 import { Stepper } from '../src/ui/Stepper';
 import { Toggle } from '../src/ui/Toggle';
 import { contrast, faint, palette } from '../src/ui/theme';
@@ -164,5 +164,19 @@ describe('Select', () => {
   test('with no current value the field shows the placeholder', () => {
     const r = render(<Select name="voice" title="Voice" options={options} value={null} placeholder="System default" onChange={() => {}} />);
     expect(byLabel(r, 'voice').props.accessibilityValue).toEqual({ text: 'System default' });
+  });
+});
+
+describe('the sheet scrolls to the checked option without leaving a gap (REA-21)', () => {
+  test('a list shorter than the sheet does not scroll', () => {
+    // Two 64 dp rows in a 128 dp list: "Engine default" stays above the chosen voice.
+    expect(selectOffset(1, 2, 128)).toBe(0);
+  });
+  test('a long list centres the checked row', () => {
+    expect(selectOffset(10, 20, 320)).toBe(10 * 64 - (320 - 64) / 2);
+  });
+  test('never past the last row, nor for nothing checked', () => {
+    expect(selectOffset(19, 20, 320)).toBe(20 * 64 - 320);
+    expect(selectOffset(-1, 20, 320)).toBe(0);
   });
 });
