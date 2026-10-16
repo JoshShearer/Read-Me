@@ -8,6 +8,8 @@
 # EXIT trap puts the previous default back; unset, no setting is written. Every adb call of every
 # run is logged and must never carry the token. Never touches a real device.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 unset READ_ME_ENGINE DEVICE_ON_EXIT
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT

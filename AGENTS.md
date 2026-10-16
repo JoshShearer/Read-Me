@@ -70,6 +70,14 @@ worktree path from `git rev-parse --show-toplevel`, then `branch=<name> commit=<
 purpose=<...>`), and removes the directory after. A lock with no owner file is treated as another
 lane's. `scripts/lib/device.sh` implements it; every device script sources it. The phone has a
 secure lock screen, so device scripts stop with exit 5 when it is locked and the owner unlocks it.
+Unattended unlock (REA-48, opt-in): the owner keeps the PIN in a file outside the repo, mode 0600,
+holding only the digits, and exports `READ_ME_PIN_FILE=<path>`; then `device_require_unlocked`
+(and every wait for an unlock) wakes the phone, swipes to the PIN pad and sends the PIN on
+`adb shell`'s stdin, never argv. It types only while the keyguard is showing. One attempt that
+leaves the phone locked writes `~/.local/state/read-me/unlock-failed` and turns the helper off
+until the owner deletes that file, so a wrong or changed PIN never uses up the phone's attempts.
+Create the file without the PIN reaching shell history:
+`mkdir -p ~/.config/read-me && (umask 077; read -rsp 'PIN: ' p; echo; printf '%s\n' "$p" > ~/.config/read-me/device-pin)`.
 Never put a secret on an `adb shell` command line: adbd logs every argv command to logcat
 (SPIKE-01); send the command on stdin instead (`scripts/lib/spike.sh` on the spike branches). `adb devices` must show exactly one device, or the command stops and says
 so. Installing a build replaces whatever build another lane installed; whoever installs says so.

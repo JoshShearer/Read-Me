@@ -75,8 +75,8 @@ _device_exit() {
 # as a miss. device_has <text> <ERE> searches text that is already in hand.
 device_has() { grep -qE -- "$2" <<<"$1"; }
 
-# The phone has a secure lock screen that no script can dismiss. Stop early and say so.
-device_require_unlocked() {
+# 0 when the phone is awake and its keyguard is not showing.
+_device_unlocked() {
   local power window
   power=$(adb shell dumpsys power); window=$(adb shell dumpsys window)
   # Android 10 (the VRD-W09 tablet) has no isKeyguardShowing line; its KeyguardStateMonitor
@@ -91,10 +91,86 @@ device_require_unlocked() {
     kg=$(awk '/KeyguardStateMonitor/ { f = 1; next } f && /mIsShowing=/ { print; exit }' <<<"$window")
     device_has "$kg" 'mIsShowing=false' || unlocked=0
   fi
-  if ! device_has "$power" 'mWakefulness=Awake' || [ "$unlocked" = 0 ]; then
-    echo "the phone is asleep or locked: ask the owner to unlock it, leave the screen on, rerun" >&2
-    exit 5
+  device_has "$power" 'mWakefulness=Awake' && [ "$unlocked" = 1 ]
+}
+
+# 0 only when the dump positively says the keyguard is showing.
+_device_keyguard_showing() {
+  local window kg
+  window=$(adb shell dumpsys window)
+  if device_has "$window" 'isKeyguardShowing='; then
+    device_has "$window" 'isKeyguardShowing=true'
+  else
+    kg=$(awk '/KeyguardStateMonitor/ { f = 1; next } f && /mIsShowing=/ { print; exit }' <<<"$window")
+    device_has "$kg" 'mIsShowing=true'
   fi
+}
+
+# REA-48: the opt-in unattended unlock. Off unless READ_ME_PIN_FILE names the owner's PIN file:
+# a regular file (not a link) owned by this user, mode 0600, outside the repository, holding only
+# the PIN's digits. The PIN goes to `adb shell` on stdin, never argv: adbd logs argv to logcat
+# (SPIKE-01). It is never echoed, and nothing runs while xtrace is on. One attempt that leaves the
+# phone locked writes DEVICE_UNLOCK_FAILED and turns the helper off until the owner deletes it,
+# so a wrong PIN or a changed lock screen can never burn through the phone's attempt limit.
+DEVICE_UNLOCK_STATE=${DEVICE_UNLOCK_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/read-me}
+DEVICE_UNLOCK_FAILED="$DEVICE_UNLOCK_STATE/unlock-failed"
+
+# Prints why the PIN file is refused, or nothing when it is usable.
+_device_pin_file_problem() {
+  local f=$1 real
+  [ -L "$f" ] && { echo "is a symbolic link"; return; }
+  [ -f "$f" ] || { echo "is not a regular file"; return; }
+  [ "$(stat -c %u "$f")" = "$(id -u)" ] || { echo "is not owned by $(id -un)"; return; }
+  [ "$(stat -c %a "$f")" = 600 ] || { echo "must be mode 0600 (chmod 600)"; return; }
+  real=$(realpath "$f")
+  case "$real/" in "$PRIMARY"/*|"$(git rev-parse --show-toplevel)"/*) echo "is inside the repository"; return ;; esac
+  grep -qxE '[0-9]{4,16}' "$f" && [ "$(wc -l < "$f")" -le 1 ] || echo "must hold only the PIN (4-16 digits)"
+}
+
+# 0 when it unlocked the phone; 1 when it is off, refused or failed (the reason on stderr).
+device_try_unlock() {
+  local f=${READ_ME_PIN_FILE:-} problem pin i w h
+  [ -n "$f" ] || return 1
+  case $- in *x*) echo "unattended unlock: refused while xtrace is on" >&2; return 1 ;; esac
+  if [ -e "$DEVICE_UNLOCK_FAILED" ]; then
+    echo "unattended unlock: off after a failed attempt; unlock the phone, then rm $DEVICE_UNLOCK_FAILED" >&2
+    return 1
+  fi
+  problem=$(_device_pin_file_problem "$f")
+  [ -z "$problem" ] || { echo "unattended unlock: READ_ME_PIN_FILE $problem" >&2; return 1; }
+  mkdir -p "$DEVICE_UNLOCK_STATE"
+  adb shell input keyevent KEYCODE_WAKEUP
+  sleep 1
+  # Only asleep: waking was enough. And never type unless the keyguard is what is showing: a PIN
+  # typed into an app's text field would be a leak.
+  _device_unlocked && return 0
+  _device_keyguard_showing || { echo "unattended unlock: no lock screen showing; not typing" >&2; return 1; }
+  pin=$(head -n1 "$f")
+  # Swipe up: the lock screen's own gesture to the PIN pad (a fingerprint prompt may show too;
+  # the pad still takes the PIN).
+  read -r w h < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
+  adb shell input swipe $((w / 2)) $((h * 8 / 10)) $((w / 2)) $((h * 3 / 10)) 200
+  sleep 1
+  # Written before the PIN is sent: if this process dies mid-attempt, the next one does not try.
+  : > "$DEVICE_UNLOCK_FAILED"
+  _device_keyguard_showing || { pin=; rm -f "$DEVICE_UNLOCK_FAILED"; echo "unattended unlock: the lock screen went away; not typing" >&2; return 1; }
+  printf 'input text %s\ninput keyevent KEYCODE_ENTER\nexit\n' "$pin" | adb shell >/dev/null 2>&1
+  pin=
+  for i in 1 2 3 4 5 6; do
+    if _device_unlocked; then rm -f "$DEVICE_UNLOCK_FAILED"; echo "unattended unlock: unlocked" >&2; return 0; fi
+    sleep 1
+  done
+  echo "unattended unlock: the phone is still locked; turned off until $DEVICE_UNLOCK_FAILED is removed" >&2
+  return 1
+}
+
+# The phone has a secure lock screen. With the owner's opt-in (READ_ME_PIN_FILE, REA-48) the
+# script unlocks it once; otherwise stop early and say so.
+device_require_unlocked() {
+  _device_unlocked && return 0
+  if device_try_unlock && _device_unlocked; then return 0; fi
+  echo "the phone is asleep or locked: ask the owner to unlock it, leave the screen on, rerun" >&2
+  exit 5
 }
 
 # Spike runs must name the build that was measured (AGENTS.md 17): a clean tree, AND an APK

@@ -4,6 +4,8 @@
 # device lock and has not cleared the app or put anything on an adb command line beyond the
 # checks. Never touches a real device.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/repo/scripts/lib"

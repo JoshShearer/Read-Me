@@ -5,6 +5,8 @@
 # a stub adb in a throwaway git repo. The script stops at the install step (no APK), which is an
 # early exit the restore must survive. Never touches a real device.
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/repo/scripts/lib"

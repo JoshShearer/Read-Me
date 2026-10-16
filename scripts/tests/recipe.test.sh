@@ -2,6 +2,8 @@
 # The recipe's prebuild must leave readmeHermesc in android/gradle.properties (REA-26 review C1),
 # and each ABI's entry must build that ABI only (REA-40).
 set -uo pipefail
+# REA-48: never the owner's real unattended unlock against a stub phone.
+unset READ_ME_PIN_FILE DEVICE_UNLOCK_STATE
 cd "$(dirname "$0")/../.."
 source scripts/lib/recipe.sh
 $(recipe_py) -c 'import yaml' 2>/dev/null || { echo "SKIP: no PyYAML here"; exit 0; }
