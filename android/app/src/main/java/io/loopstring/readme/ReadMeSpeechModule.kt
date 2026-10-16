@@ -1,5 +1,6 @@
 package io.loopstring.readme
 
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -295,6 +296,12 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   override fun copyBridgeToken(promise: Promise) = settle(promise) {
     TokenClipboard.copy(reactApplicationContext, settings.bridgeToken())
     null
+  }
+
+  // REA-56: device:continuous's Reader checks read this line instead of a uiautomator dump, which
+  // returned nothing while the Reader played. An id and 0/1 only (AGENTS.md 1); it only logs.
+  override fun readerShows(itemId: Double, playing: Boolean) {
+    Log.i("ReadMe", "reader shows item=${itemId.toLong()} playing=${if (playing) 1 else 0}")
   }
 
   private fun bridgeMap(): WritableMap = Arguments.createMap().apply {

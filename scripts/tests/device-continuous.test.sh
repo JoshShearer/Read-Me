@@ -132,7 +132,8 @@ BTN='<node content-desc="pause" bounds="[10,10][20,20]"/><node content-desc="pla
 T2_READING='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3'
 # rc <code>: runs code with the script loaded and short waits; prints its output, then rc=<n>.
-rc() { READER_WAIT=1 TAP_WAIT=2 src "$1"; echo "rc=$?"; }
+# REA-56: taps go to the Play/Pause centre captured once from an idle dump (35 35 in BTN).
+rc() { READER_WAIT=1 TAP_WAIT=2 src "PLAY_XY='35 35'; $1"; echo "rc=$?"; }
 setup() { # setup <log> <dump> <tap answers, one per line>
   printf '%s\n' "$1" > "$STUB_LOG"; printf '%s' "$2" > "$T/ui"; printf '%s' "$3" > "$T/tapq"; : > "$STUB_CALLS"
 }
@@ -172,21 +173,84 @@ out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transpo
 check "and so does one whose earlier start line the log no longer holds (counted from before the tap)" \
   "$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS"),$(grep -c went-on <<<"$out")" "1,0"
 
-setup "$T2_READING" "$R_STALE" ''
-s0=$(date +%s); out=$(rc 'reader_check 1 "live" 2'); s1=$(date +%s)
-check "reader_check on a Reader that did not follow fails within its wait, naming what it shows" \
-  "$(grep -c '^FAIL live: the service is reading item 11; the Reader shows title T3' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ $((s1 - s0)) -le 10 ] && echo bounded)" "1,rc=1,bounded"
-
+# --- REA-56: reader_check reads the Reader's own log line, not a dump ---
+SHOWS11='I ReadMe  : reader shows item=11 playing=1'
+setup "$T2_READING
+I ReadMe  : reader shows item=12 playing=1" "$R_STALE" ''
+s0=$(date +%s); out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 11 "live" 2 0'); s1=$(date +%s)
+check "reader_check with only a stale Reader's line (T3) fails within its wait, naming the item and what it showed" \
+  "$(grep -c "^FAIL live: no 'reader shows item=11 playing=1' line; the service is reading item 11; the Reader's last line: reader shows item=12 playing=1; a dump shows title T3" <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ $((s1 - s0)) -le 10 ] && echo bounded)" "1,rc=1,bounded"
+check "a failed reader_check saves the dump it took" "$(cmp -s "$T/fail.xml" "$T/ui" && echo same)" same
+rm -f "$T/fail.xml"
+setup "$T2_READING
+$SHOWS11" '' ''
+out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 11 "live" 2 0')
+check "reader_check passes on the Reader's line for the item being read, with every dump empty and none taken" \
+  "$(grep -c '^PASS live' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$(grep -c 'uiautomator dump' "$STUB_CALLS")" "1,rc=0,0"
+setup "$T2_READING
+I ReadMe  : reader shows item=11 playing=0" '' ''
+out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 11 "live" 2 0')
+check "a Reader on the item but not playing (Play, not Pause) is not accepted; an empty dump saves nothing" \
+  "$(grep -c "^FAIL live: .*last line: reader shows item=11 playing=0; a dump shows title none" <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ -e "$T/fail.xml" ] && echo saved || echo none)" "1,rc=1,none"
+setup "$T2_READING
+$SHOWS11" '' ''
+out=$(rc 'reader_check 11 "returned" 2 1')
+check "a line already counted in the baseline (before the return) does not pass the returned-to check" \
+  "$(grep -c '^FAIL returned' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=1"
+setup "$T2_READING
+$SHOWS11
+$SHOWS11" '' ''
+out=$(rc 'reader_check 11 "returned" 2 1')
+check "and a new one after it does" "$(grep -c '^PASS returned' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=0"
+check "reader_lines counts only playing=1 lines of that exact id" \
+  "$(src 'reader_lines "$1" 1' _ "$SHOWS11
+I ReadMe  : reader shows item=1 playing=0
+I ReadMe  : reader shows item=1 playing=1")" 1
+check "centre reads a node's bounds" "$(src 'centre "$1" content-desc pause' _ "$BTN")" "15 15"
+setup "" "$BTN" ''
+check "tap_node taps the centre and leaves it in TAP_XY (no subshell)" \
+  "$(src 'tap_node content-desc play >/dev/null; echo "$TAP_XY"'),$(grep -c 'input tap 35 35' "$STUB_CALLS")" "35 35,1"
+setup "$T2_READING" '' 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+I ReadMe  : playback resumed item=11
+'
+out=$(rc 'transport_check 11 "T2 transport"')
+check "transport_check with every dump empty taps the stored centre and passes on the service's lines" \
+  "$(grep -c '^PASS T2 transport' <<<"$out"),$(grep -c 'input tap 35 35' "$STUB_CALLS"),$(grep -c 'uiautomator dump' "$STUB_CALLS"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,2,0,rc=0"
 setup "$T2_READING" '' ''
-out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 1 "live" 2')
-check "reader_check whose captures are all empty says so and saves none" \
-  "$(grep -cE '^FAIL live: .*title none, .*\(([0-9]+) of \1 captures empty\)' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$([ -e "$T/fail.xml" ] && echo saved || echo none)" "1,rc=1,none"
-setup "$T2_READING" "$R_STALE" ''
-out=$(READER_FAIL_DUMP="$T/fail.xml" rc 'reader_check 1 "live" 2')
-check "a failed reader_check saves the last capture it saw and counts no empty one" \
-  "$(grep -c '(0 of [0-9]* captures empty)' <<<"$out"),$(cmp -s "$T/fail.xml" "$T/ui" && echo same)" "1,same"
+out=$(READER_WAIT=1 TAP_WAIT=2 src 'transport_check 11 "T2 transport"'; echo "rc=$?")
+check "with no stored centre nothing is tapped and the check fails" \
+  "$(grep -c 'no Play/Pause position' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,0,rc=1"
 
-for fn in live_switch_checks:11 returned_checks:11; do
+# FORMAT PIN: the Kotlin line, rendered for item 7 playing, is what the script counts.
+KT="$ROOT/android/app/src/main/java/io/loopstring/readme/ReadMeSpeechModule.kt"
+tmpl=$(grep -oE '"reader shows item=[^"]*"' "$KT" | head -1)
+if [ -z "$tmpl" ]; then echo "FAIL format pin: no reader shows line in $KT"; fail=1; else
+  rendered=$(sed -E 's/^"//; s/"$//; s/\$\{itemId\.toLong\(\)\}/7/; s/\$\{if \(playing\) 1 else 0\}/1/' <<<"$tmpl")
+  check "format pin: the Kotlin template renders to the line the script counts" \
+    "$rendered,$(src 'reader_lines "$1" 7' _ "I ReadMe  : $rendered")" "reader shows item=7 playing=1,1"
+fi
+
+# MUTATIONS: each weakened copy wrongly passes the case the real check fails.
+mutant() { # mutant <name> <sed expr>
+  sed -E "$2" scripts/device-continuous.sh > "scripts/dc-$1.sh"
+  if cmp -s scripts/device-continuous.sh "scripts/dc-$1.sh"; then echo "FAIL mutant $1: the mutation changed nothing"; fail=1; fi
+}
+msrc() { local f=$1 c=$2; shift 2; READER_WAIT=1 bash -c "DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/dc-$f.sh; $c" "$@"; echo "rc=$?"; }
+mutant anyid 's/item=\$2 playing=1/item=[0-9]+ playing=1/'
+mutant nobase 's/-gt "\$4"/-gt 0/'
+mutant paused 's/playing=1\\b/playing=[01]\\b/'
+setup "$T2_READING
+I ReadMe  : reader shows item=12 playing=1" '' ''
+check "mutant: any id counts -> a stale T3 Reader passes" "$(msrc anyid 'reader_check 11 live 1 0' | grep -o 'rc=[0-9]*')" rc=0
+setup "$T2_READING
+$SHOWS11" '' ''
+check "mutant: no baseline -> a line from before the return passes" "$(msrc nobase 'reader_check 11 returned 1 1' | grep -o 'rc=[0-9]*')" rc=0
+setup "$T2_READING
+I ReadMe  : reader shows item=11 playing=0" '' ''
+check "mutant: playing=[01] -> a Reader showing Play passes" "$(msrc paused 'reader_check 11 live 1 0' | grep -o 'rc=[0-9]*')" rc=0
+rm -f scripts/dc-*.sh
+
+for fn in live_switch_checks:11 "returned_checks:11 0"; do
   setup "$T2_READING" "$R_STALE$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
 I ReadMe  : playback resumed item=11
 '
@@ -194,7 +258,8 @@ I ReadMe  : playback resumed item=11
   check "${fn%%:*}: a Reader that did not follow fails the run although its transport passed" \
     "$(grep -o 'FAIL=[0-9]' <<<"$out" | tail -1),$(grep -o 'rc=[0-9]*' <<<"$out")" "FAIL=1,rc=0"
 done
-setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
+setup "$T2_READING
+$SHOWS11" "$R_T2$BTN" 'I ReadMe  : playback paused item=11 paragraph=3 offset=0
 I ReadMe  : playback resumed item=11
 '
 out=$(rc 'live_switch_checks 11; echo FAIL=$FAIL')
@@ -203,12 +268,12 @@ check "live_switch_checks: a followed Reader and a working transport pass" \
 for fn in live_switch_checks:T2 returned_checks:T1; do
   setup "$T2_READING
 I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
-  out=$(rc "${fn%%:*} 11; echo went-on")
+  out=$(rc "${fn%%:*} 11 0; echo went-on")
   check "${fn%%:*}: a transport check NOT REACHED ends the run as a failure" \
     "$(grep -c went-on <<<"$out"),$(grep -c "FAIL: the transport check on ${fn#*:} did not pass" <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
 done
 check "the main path runs these functions, not its own copies" \
-  "$(grep -cE '^\s*live_switch_checks "\$id2"$' <<<"$code"),$(grep -cE '^returned_checks "\$id1"$' <<<"$code"),$(grep -cE '(reader|transport)_check "?\$id[12]' <<<"$code")" "1,1,0"
+  "$(grep -cE '^\s*live_switch_checks "\$id2"$' <<<"$code"),$(grep -cE '^returned_checks "\$id1" "\$RET_BASE"$' <<<"$code"),$(grep -cE '(reader|transport)_check "?\$id[12]' <<<"$code")" "1,1,0"
 
 # --- REA-55 fix round 2: SystemUI's clipboard overlay took the returned-to Reader's Pause tap ---
 WW=$(printf '  Window #0 Window{a u0 ScreenDecorHwcOverlay}:\n    isVisible=true\n  Window #1 Window{b u0 ClipboardOverlay}:\n    isVisible=true\n  Window #2 Window{c u0 NotificationShade}:\n    isVisible=false\n  Window #3 Window{d u0 io.loopstring.readme/io.loopstring.readme.MainActivity}:\n    isVisible=true\n  Window #4 Window{e u0 ClipboardOverlay}:\n    isVisible=true\n')
