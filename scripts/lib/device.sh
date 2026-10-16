@@ -159,11 +159,19 @@ device_try_unlock() {
   # Swipe up from below the under-display fingerprint sensor, slowly: the lock screen's own
   # gesture to the PIN pad. From 80% of the height at 200 ms nothing happened on the reference
   # phone (GrapheneOS, 2026-10-16); from 90% at 400 ms the pad came up.
+  # One swipe left the lock screen up 2 times in 4 device:bridge runs (2026-10-16), so up to
+  # three: nothing is typed until the pad is seen, so a retry costs no PIN attempt.
   read -r w h < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
-  adb shell input swipe $((w / 2)) $((h * 9 / 10)) $((w / 2)) $((h / 3)) 400
-  sleep 1.5
+  local pad=0
+  for i in 1 2 3; do
+    adb shell input keyevent KEYCODE_WAKEUP
+    adb shell input swipe $((w / 2)) $((h * 9 / 10)) $((w / 2)) $((h / 3)) 400
+    sleep 1.5
+    if _device_pin_pad_showing; then pad=1; break; fi
+    _device_unlocked && return 0
+  done
   # Type only into the PIN pad itself (systemui's keyguard_pin_view in the window dump).
-  if ! _device_keyguard_showing || ! _device_pin_pad_showing; then
+  if [ "$pad" = 0 ] || ! _device_keyguard_showing; then
     pin=
     echo "unattended unlock: the PIN pad did not come up; not typing" >&2
     return 1
@@ -253,13 +261,33 @@ device_clear_app() {
   fi
   # From the home screen: clearing an app that is on screen relaunched it into a new task
   # (2026-10-03, after device:bridge left Settings open), so the wait below never ended.
+  # REA-45: HOME is a transition, not an instant. Clear only once Read Me is no longer the
+  # resumed activity, or a clear that lands mid-transition can relaunch it the same way (seen
+  # once in 4 device:bridge runs, 2026-10-09: a MainActivity task with NEW_TASK|CLEAR_TASK).
   adb shell input keyevent KEYCODE_HOME
-  adb shell pm clear "$PKG" >/dev/null
   for _ in $(seq 20); do
-    adb shell dumpsys activity activities | grep -qE "A=[0-9]+:$PKG\b" || return 0
+    adb shell dumpsys activity activities | grep -E "ResumedActivity" | grep -q "$PKG/" || break
+    sleep 0.25
+  done
+  # The log is read from here on, not cleared: the calling script may still want what is in it.
+  local since
+  since=$(adb shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+  adb shell pm clear "$PKG" >/dev/null
+  # A live activity is a "Hist #n" record. Matching the task's affinity (A=<uid>:<pkg>) also
+  # matched dead references the dump keeps after a clear (mLastFocusedRootTask, a finished
+  # ActivityRecord with task -1): 15 of 15 clears "failed" that way on the reference phone
+  # (REA-45, 2026-10-16) with no START line and the launcher resumed.
+  for _ in $(seq 20); do
+    adb shell dumpsys activity activities | grep -qE "Hist +#[0-9]+: ActivityRecord\{[^}]* $PKG/" || return 0
     sleep 0.5
   done
-  echo "device_clear_app: $PKG still has tasks after 10 s" >&2
+  # Say what started it: ActivityTaskManager's START lines name the intent's flags and component
+  # and the calling uid ("has extras" at most, never their contents: no item text, AGENTS.md 1).
+  local log="$PRIMARY/.claude/scratch/device-clear-app.log"
+  mkdir -p "$(dirname "$log")"
+  { date -Iseconds; adb logcat -d -T "$since" -s ActivityTaskManager:I | grep -E "START|$PKG" || true
+    adb shell dumpsys activity activities | grep -E "Hist +#[0-9]+: ActivityRecord\{[^}]* $PKG/|ResumedActivity" || true; } > "$log" 2>&1
+  echo "device_clear_app: $PKG still has tasks after 10 s (what started it: $log)" >&2
   return 1
 }
 
