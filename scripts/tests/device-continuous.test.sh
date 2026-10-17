@@ -67,9 +67,9 @@ check "the trap is set right after the slot is taken" \
 # --- helpers ---
 LOG='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback finished item=12
-I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3
 I ReadMe  : playback handover from=12 item=11 ms=180
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=9
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=9
 I ReadMe  : playback finished item=10
 I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
 check "playback ids are read from every playback line" "$(src "playback_ids \"\$1\"" _ "$LOG" | tr '\n' ' ')" "4 10 11 12 "
@@ -79,14 +79,14 @@ PLOG="$LOG
 I ReadMe  : playback prepare from=10 item=3 sentences=9 start=0 ms=4
 I ReadMe  : playback handover from=12 item=11 ms=40 prepared=1"
 check "a prepare line is not a play (REA-49)" "$(src "foreign_ids \"\$1\" '12 11 10 4'" _ "$PLOG")" ""
-check "sentence windows: T1 151, T2 81, T3 4" \
-  "$(src 'count_ok 0 151 && count_ok 1 81 && count_ok 2 4 && echo yes')" yes
+check "sentence windows: T1 101, T2 51, T3 4" \
+  "$(src 'count_ok 0 101 && count_ok 1 51 && count_ok 2 4 && echo yes')" yes
 check "the windows do not admit each other's counts" \
-  "$(src 'count_ok 0 41 || count_ok 1 4 || count_ok 2 41 || count_ok 2 151 || count_ok 1 151 || echo none')" none
-check "T2's window is 80-82 (REA-55: long enough for the Reader checks)" \
-  "$(src 'count_ok 1 80 && count_ok 1 82 && echo yes'),$(src 'count_ok 1 79 || count_ok 1 83 || echo no')" "yes,no"
-L3='I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3'
+  "$(src 'count_ok 0 51 || count_ok 1 4 || count_ok 2 51 || count_ok 2 101 || count_ok 1 101 || echo none')" none
+check "T2's window is 50-52 (long enough for the Reader checks)" \
+  "$(src 'count_ok 1 50 && count_ok 1 52 && echo yes'),$(src 'count_ok 1 49 || count_ok 1 53 || echo no')" "yes,no"
+L3='I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3'
 check "the item after T3 and the item after T2 are test items before next_test records them" \
   "$(src 'TEST_IDS=12; ID3=12; ID2=11; next_seen "$1" "$ID3" 1; next_seen "$1" "$ID2" 0; foreign_ids "$1" "$TEST_IDS" | tr "\n" " "; echo "[$TEST_IDS]"' _ "$L3")" "[12 11 10]"
 printf '%s\n' "$L3" > "$STUB_LOG"
@@ -95,14 +95,14 @@ check "guard: a run that dies on T2's checks does not call T1 a non-test item" \
 : > "$STUB_LOG"
 check "but not one with another count, from a later start, or newer" \
   "$(src 'TEST_IDS=12; next_seen "$1" 12 1; next_seen "$1" 11 0; echo "[$TEST_IDS]"' _ 'I ReadMe  : playback continue from=12 item=11 sentences=60 start=0 ms=3
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=9 ms=3')" "[12]"
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=9 ms=3')" "[12]"
 check "a two-sentence owner item matches no window" "$(src 'count_ok 0 2 || count_ok 1 2 || count_ok 2 2 || echo none')" none
 DUMP='<node content-desc="delete Kestrel test item three." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item two." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item one." bounds="[0,0][1,1]"/><node content-desc="delete Owner thing" bounds="[0,0][1,1]"/>'
 check "row titles come top to bottom" "$(src "row_titles \"\$1\" | head -3 | tr '\n' '|'" _ "$DUMP")" \
   "Kestrel test item three.|Kestrel test item two.|Kestrel test item one.|"
 check "the body text has no digits and the marker" \
   "$(src 'body_text 3' | grep -cE '[0-9]'),$(src 'body_text 3' | grep -c Kestrel)" "0,1"
-check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=81 start=0' item")" 11
+check "field reads one number" "$(src "field 'playback continue from=12 item=11 sentences=51 start=0' item")" 11
 
 # --- REA-55: the Reader follows the handover ---
 RD() { # RD <title> <button> [highlight]: a Reader dump
@@ -122,7 +122,7 @@ check "the FAIL line names what the stale Reader shows (no item text)" "$(src 'r
   "title T3, highlighted paragraph no, button Play"
 L2='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : playback start cancelled item=9
-I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3
 I ReadMe  : playback paused item=11 paragraph=3 offset=0'
 check "JS starts are counted, a cancelled start is not" "$(src 'js_starts "$1"' _ "$L2")" 1
 check "the item being read is the latest continue" "$(src 'reading_now "$1"' _ "$L2")" 11
@@ -135,7 +135,7 @@ I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0" | tr '\n' ' ')" 
 # returned_checks with a stub log, a stub dump and the service's answer to each tap.
 BTN='<node content-desc="pause" bounds="[10,10][20,20]"/><node content-desc="play" bounds="[30,30][40,40]"/>'
 T2_READING='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
-I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3'
+I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3'
 # rc <code>: runs code with the script loaded and short waits; prints its output, then rc=<n>.
 # REA-56: taps go to the Play/Pause centre captured once from an idle dump (35 35 in BTN).
 rc() { READER_WAIT=1 TAP_WAIT=2 src "PLAY_XY='35 35'; $1"; echo "rc=$?"; }
@@ -152,17 +152,17 @@ check "transport_check passes when Pause and Play act on the item being read" \
   "$(grep -c '^PASS T2 transport' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS")" "1,rc=0,2"
 
 setup "$T2_READING
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3" "$R_T2$BTN" ''
 out=$(rc 'transport_check 11 "T2 transport"')
 check "transport_check on an item that already ended: NOT REACHED, a failure, never PASS, no tap" \
   "$(grep -c '^NOT REACHED T2 transport' <<<"$out"),$(grep -c PASS <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out"),$(grep -c 'input tap' "$STUB_CALLS")" "1,0,rc=1,0"
 
-setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3
 '
 out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"')
 check "transport_tap whose item ends before its line: NOT REACHED and a failure" \
   "$(grep -c '^NOT REACHED T2 transport' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=1"
-setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3
+setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3
 '
 out=$(rc 'transport_check 11 "T2 transport"')
 check "and transport_check then fails without PASS" "$(grep -c PASS <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,rc=1"
@@ -172,7 +172,7 @@ setup "$T2_READING" "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 
 out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
 check "a tap that makes JS start another item stops Read Me and dies at once" \
   "$(grep -c 'started item 12 while item 11' <<<"$out"),$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS"),$(grep -c went-on <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,0,rc=1"
-setup 'I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3' "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+setup 'I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3' "$R_T2$BTN" 'I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 '
 out=$(rc 'transport_tap 11 "(pause|play)" "playback paused item=11 " "T2 transport"; echo went-on')
 check "and so does one whose earlier start line the log no longer holds (counted from before the tap)" \
@@ -272,7 +272,7 @@ check "live_switch_checks: a followed Reader and a working transport pass" \
   "$(grep -o 'FAIL=[0-9]' <<<"$out" | tail -1),$(grep -c '^PASS' <<<"$out")" "FAIL=0,2"
 for fn in live_switch_checks:T2 returned_checks:T1; do
   setup "$T2_READING
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=3" "$R_T2$BTN" ''
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3" "$R_T2$BTN" ''
   out=$(rc "${fn%%:*} 11 0; echo went-on")
   check "${fn%%:*}: a transport check NOT REACHED ends the run as a failure" \
     "$(grep -c went-on <<<"$out"),$(grep -c "FAIL: the transport check on ${fn#*:} did not pass" <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "0,1,rc=1"
@@ -316,11 +316,11 @@ unset STUB_UI STUB_TAPQ; : > "$STUB_LOG"
 FULL='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
 I ReadMe  : reader shows item=12 playing=1
 I ReadMe  : playback finished item=12
-I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
+I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3
 I ReadMe  : playback handover from=12 item=11 ms=60 prepared=1
 I ReadMe  : reader shows item=10 playing=1
 I ReadMe  : playback finished item=11
-I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=9
+I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=9
 I ReadMe  : reader shows item=10 playing=1
 I ReadMe  : playback finished item=10'
 printf '%s\n' "$FULL" > "$T/stream"; printf '%s\n' "$FULL" | tail -3 > "$STUB_LOG"
@@ -410,7 +410,7 @@ check "four test items" "$(src 'echo ${#TITLES[@]} ${#BODY[@]}')" "4 4"
 check "the buffer's window takes 160-162 sentences" \
   "$(src 'count_ok 3 160 && count_ok 3 162 && echo yes'),$(src 'count_ok 3 159 || count_ok 3 163 || echo no')" "yes,no"
 check "the buffer's window admits no other item's count, nor they its" \
-  "$(src 'count_ok 3 151 || count_ok 3 41 || count_ok 3 4 || count_ok 0 161 || echo none')" none
+  "$(src 'count_ok 3 101 || count_ok 3 51 || count_ok 3 4 || count_ok 0 161 || echo none')" none
 : > "$STUB_CALLS"
 src share_all >"$T/out" 2>&1
 check "the shares go buffer, T1, T2, T3 (List order: T3, T2, T1, buffer)" \

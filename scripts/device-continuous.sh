@@ -58,15 +58,16 @@ SWITCH_DEADLINE=${SWITCH_DEADLINE:-45}
 # word finds them on screen. TITLES[0] is T1, read last; TITLES[3] is the buffer, shared first.
 MARK=Kestrel
 TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "$MARK test item buffer.")
-# Body sentences per item. Distinct counts identify each item in the service's log line; T1 is
-# long (about 7500 characters) so the switch can be turned off while it plays. The buffer is at
-# least as long: it only has to outlast the watcher's reaction (an estimated few seconds). T2
-# (about 4000 characters, about 80 s at 2x) outlasts REA-55's live-switch and transport checks on
-# it. Those used uiautomator dumps until REA-56: for the first 10-20 s after playback starts or a
-# handover each one waited about 12 s and returned nothing (2026-10-15), and at 40 sentences T2
-# once ended before the Pause tap. A Pause landing after T2's end would fall in the handover
-# window, which ends the chain (ADR 0011).
-BODY=(150 80 3 160)
+# Body sentences per item. Distinct counts identify each item in the service's log line. About
+# 0.9 s per sentence on the reference phone (2026-10-17: T2's 80 sentences played in 73 s). T1
+# (about 90 s) outlasts SWITCH_DEADLINE (45 s), the returned-to Reader checks and turning
+# Continuous play off, so the switch is off while it plays. The buffer is longer still: it only
+# has to outlast the watcher's reaction (an estimated few seconds) and never plays in a passing
+# run. T2 (about 45 s) outlasts REA-55's live-switch and transport checks on it, which since
+# REA-56 read the Reader's log line, not uiautomator dumps that each waited about 12 s while the
+# Reader played. A Pause landing after T2's end would fall in the handover window, which ends the
+# chain (ADR 0011). Shorter items keep a run at about 4-5 min (owner, 2026-10-17).
+BODY=(100 50 3 160)
 STATE_FILE="$PRIMARY/.claude/scratch/device-continuous.before"
 # The last capture a failed reader_check saw (test titles and controls only, no item text).
 READER_FAIL_DUMP=${READER_FAIL_DUMP:-$PRIMARY/.claude/scratch/device-continuous-reader-fail.xml}
