@@ -48,6 +48,13 @@ export function ReaderScreen({
   // The current paragraph's laid-out lines, so a long paragraph scrolls to the sentence, not
   // only to its first line (R-M07 "kept in view"; /critique run A F1).
   const [lines, setLines] = useState<{ index: number; lines: { text: string; y: number }[] } | null>(null);
+  // REA-56: whether the app is in front, as state, so a return re-renders and the line below is
+  // written for what the Reader shows then.
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', s => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
 
   // R-M10, REA-50: a rejection is not "deleted". It keeps whatever was loaded (a failed reload
   // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
@@ -125,6 +132,17 @@ export function ReaderScreen({
     // KEEP_ABOVE of context above the highlighted line.
     list.current?.scrollToIndex({ index: currentAt, viewPosition: 0, viewOffset: KEEP_ABOVE - lineY, animated: true });
   }, [currentAt, sentenceStart, lineY]);
+
+  // REA-56: one log line (ids and a state only) when this item's Reader is in front with its
+  // text, a highlighted sentence and the service's state for it, and again only when playing
+  // changes: never per sentence. device:continuous reads it instead of a uiautomator dump, which
+  // returned nothing while the Reader played. Shown here means what REA-55's dump checked: the
+  // item's Reader, a current paragraph, and Pause (playing) or Play.
+  const shown = detail != null && !blocked && paragraphs.length > 0 && mine !== null && currentAt >= 0 && appActive;
+  const playingNow = shown && mine.playing;
+  useEffect(() => {
+    if (shown) Native.readerShows(id, playingNow);
+  }, [id, shown, playingNow]);
 
   // Nothing, not an empty View, while loading: an empty layout-only View followed by the
   // full screen inside App's former keyed wrapper view made Fabric add children to a view it had not

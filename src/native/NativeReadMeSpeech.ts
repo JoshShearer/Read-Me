@@ -132,6 +132,12 @@ export interface Spec extends TurboModule {
   setBridgePort(port: number): Promise<NativeBridge>;
   regenerateBridgeToken(): Promise<NativeBridge>;
   copyBridgeToken(): Promise<void>;
+  /**
+   * REA-56: the Reader shows this item with its current sentence highlighted, and whether the
+   * service plays it. Writes one log line (ids and a state only, AGENTS.md 1) that
+   * device:continuous reads instead of a uiautomator dump. Changes nothing.
+   */
+  readerShows(itemId: number, playing: boolean): void;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

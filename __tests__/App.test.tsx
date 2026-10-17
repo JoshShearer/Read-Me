@@ -48,6 +48,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     pause: jest.fn(async () => true),
     resume: jest.fn(async () => true),
     stop: jest.fn(async () => true),
+    readerShows: jest.fn(),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
     getEngine: jest.fn(async () => ({ status: 'ready', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] })),
@@ -82,7 +83,11 @@ function strings(node: Node, out: string[] = []): string[] {
 }
 
 let backHandlers: (() => unknown)[] = [];
-let appStateHandler: ((s: string) => void) | null = null;
+// REA-56: App and the Reader both listen, so every handler hears each change.
+let appStateHandlers: ((s: string) => void)[] = [];
+const appStateHandler = (s: string) => appStateHandlers.slice().forEach(h => h(s));
+// The preset's AppState.currentState is a jest.fn, not a state; the Reader reads it on mount.
+let currentState: PropertyDescriptor | undefined;
 const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
 // Every act() the helpers start, until it settles. A test that times out leaves its act and the
 // rest of its body running: afterEach closes the helpers to it (an act it starts later throws)
@@ -111,15 +116,18 @@ beforeEach(() => {
   mockState.playback = { itemId: null, playing: false, waitingItemId: null };
   mockState.unopened = [];
   backHandlers = [];
-  appStateHandler = null;
+  appStateHandlers = [];
+  currentState = Object.getOwnPropertyDescriptor(AppState, 'currentState');
+  Object.defineProperty(AppState, 'currentState', { value: 'active', configurable: true, writable: true });
   jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_e, h) => {
     const f = h as () => unknown;
     backHandlers.push(f);
     return { remove: () => { backHandlers = backHandlers.filter(x => x !== f); } };
   });
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
-    appStateHandler = h as (s: string) => void;
-    return { remove: () => { appStateHandler = null; } } as ReturnType<typeof AppState.addEventListener>;
+    const f = h as (s: string) => void;
+    appStateHandlers.push(f);
+    return { remove: () => { appStateHandlers = appStateHandlers.filter(x => x !== f); } } as ReturnType<typeof AppState.addEventListener>;
   });
 });
 afterEach(async () => {
@@ -129,6 +137,7 @@ afterEach(async () => {
     while (mounted.length) mounted.pop()!.unmount();
   });
   jest.restoreAllMocks();
+  if (currentState) Object.defineProperty(AppState, 'currentState', currentState);
   if (rejected.length) throw rejected[0];
 });
 
@@ -200,6 +209,20 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     expect(Native.resume).not.toHaveBeenCalled();
   });
 
+  test('the followed Reader writes the new item and that it plays, once it shows it (REA-56)', async () => {
+    const r = await render();
+    await openRow(r, 1);
+    await service(1, true);
+    expect(Native.readerShows).toHaveBeenLastCalledWith(1, true);
+    (Native.readerShows as jest.Mock).mockClear();
+    await service(2, true);
+    expect(readerOf(r).title).toBe(2);
+    expect(Native.readerShows).toHaveBeenCalledTimes(1);
+    expect(Native.readerShows).toHaveBeenCalledWith(2, true);
+    await service(2, true); // the next sentence writes nothing
+    expect(Native.readerShows).toHaveBeenCalledTimes(1);
+  });
+
   test('Pause in the followed Reader pauses the item being read', async () => {
     const r = await render();
     await openRow(r, 1);
@@ -226,7 +249,7 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await openRow(r, 1);
     await service(1, true);
     mockState.playback = { itemId: 3, playing: true, waitingItemId: null };
-    await act(async () => appStateHandler!('active'));
+    await act(async () => appStateHandler('active'));
     await flush();
     expect(readerOf(r).title).toBe(3);
   });
@@ -304,7 +327,7 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await service(1, true);
     let answer!: (v: unknown) => void;
     (Native.getPlayback as jest.Mock).mockImplementationOnce(() => new Promise(res => { answer = res; }));
-    await act(async () => appStateHandler!('active'));
+    await act(async () => appStateHandler('active'));
     await service(2, true);
     expect(readerOf(r).title).toBe(2);
     await act(async () => answer(mockSnapshot(1, true)));
