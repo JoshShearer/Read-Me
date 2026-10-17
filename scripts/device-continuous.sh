@@ -179,6 +179,19 @@ next_seen() {
   return 0
 }
 
+# final_checks <log> <T3 id> <T2 id> <T1 id>: after the chain ended, each test item finished, and
+# T2 and T1 were started by the service, not by JS (a JS start logs "playback start"). Sets FAIL.
+final_checks() {
+  local id
+  for id in "$2" "$3" "$4"; do
+    device_has "$1" "playback finished item=$id\b" || { echo "FAIL: item $id did not finish"; FAIL=1; }
+  done
+  for id in "$3" "$4"; do
+    if device_has "$1" "playback start item=$id "; then echo "FAIL: item $id was started from JS"; FAIL=1; fi
+  done
+  return 0
+}
+
 # --- REA-55: the Reader follows the handover (pure helpers, tested off the phone) ---
 
 # reader_lines <log> <id>: how many "reader shows item=<id> playing=1" lines the log holds: the
@@ -279,7 +292,54 @@ on_screen() {
   for _ in $(seq 10); do device_has "$(ui)" "$1" && return 0; sleep 1; done
   echo "FAIL: '$1' not on screen"; return 1
 }
-logs() { adb logcat -d -s ReadMe:I || true; }
+# REA-56 fix round 1: the run's evidence is a capture streamed from just after `logcat -c`, not
+# the ring buffer. The 512 KiB main buffer held about 4.5 min on the reference phone (2026-10-16),
+# so a long T1 rotated T3's finished line out before the final read, and every count over it
+# (Reader lines, JS starts) could fall between two reads. Read Me's lines go to readme.log; every
+# tag goes through a filter that keeps only lines carrying test item text (hits.log), so the
+# non-negotiable 1 check sees the whole run without other apps' logs reaching the host's disk.
+CAPTURE_DIR="" CAPTURE_PID="" CAPTURE_ALL_PID="" CAPTURE_GREP_PID=""
+TEXT_RE="$MARK|hovers over the field|long grass"
+capture_alive() {
+  [ -n "$CAPTURE_PID" ] && kill -0 "$CAPTURE_PID" 2>/dev/null && kill -0 "$CAPTURE_ALL_PID" 2>/dev/null
+}
+start_capture() {
+  CAPTURE_DIR=$(mktemp -d)
+  mkfifo "$CAPTURE_DIR/all"
+  grep --line-buffered -E -- "$TEXT_RE" < "$CAPTURE_DIR/all" > "$CAPTURE_DIR/hits.log" &
+  CAPTURE_GREP_PID=$!
+  adb logcat > "$CAPTURE_DIR/all" 2>/dev/null &
+  CAPTURE_ALL_PID=$!
+  adb logcat -s ReadMe:I > "$CAPTURE_DIR/readme.log" 2>/dev/null &
+  CAPTURE_PID=$!
+  sleep 1
+  capture_alive || die "could not start the log capture (adb logcat)"
+}
+stop_capture() {
+  if [ -n "$CAPTURE_PID" ]; then
+    kill "$CAPTURE_PID" "$CAPTURE_ALL_PID" 2>/dev/null || true
+    # The filter ends when its writer does (end of the fifo).
+    wait "$CAPTURE_PID" "$CAPTURE_ALL_PID" "$CAPTURE_GREP_PID" 2>/dev/null || true
+  fi
+  if [ -n "$CAPTURE_DIR" ]; then rm -rf "$CAPTURE_DIR"; fi
+  CAPTURE_DIR="" CAPTURE_PID="" CAPTURE_ALL_PID="" CAPTURE_GREP_PID=""
+  return 0
+}
+# logs: Read Me's lines for this run. Before the capture starts (CLEANUP_ONLY), the ring buffer.
+# A capture that stopped fails the run in on_exit; until then reads add the ring buffer, so a
+# line logged after the stop is still seen (negative checks above all).
+logs() {
+  if [ -n "$CAPTURE_DIR" ]; then
+    cat "$CAPTURE_DIR/readme.log" 2>/dev/null || true
+    capture_alive && return 0
+  fi
+  adb logcat -d -s ReadMe:I || true
+}
+# text_logged <final ring-buffer read>: item text in any log line, from the capture or the read.
+text_logged() {
+  device_has "$1" "$TEXT_RE" && return 0
+  [ -n "$CAPTURE_DIR" ] && [ -s "$CAPTURE_DIR/hits.log" ]
+}
 # wait_log <ERE> <seconds>: prints the first matching line.
 wait_log() {
   local hit
@@ -493,6 +553,10 @@ on_exit() {
   local bad=0 i
   if [ "$PLAYED" = 1 ] && [ "$ENDED" = 0 ]; then stop_readme; fi
   guard || bad=1
+  if [ -n "$CAPTURE_DIR" ] && ! capture_alive; then
+    echo "FAIL: the log capture stopped mid-run; a check that found no line proves nothing"
+    bad=1
+  fi
   if [ "$BUFFER_PLAYED" = 1 ] && [ "$FAIL" = 0 ]; then
     echo "FAIL: NOT COMPLETED: the chain went past the last test item into the buffer ($BUFFER_ID); Read Me was stopped"
     bad=1
@@ -527,6 +591,7 @@ finish() {
     echo "  information: the watcher stopped Read Me $(cut -d' ' -f4 "$WATCH_MARK") ms after its last read that did not show the chain going on"
   fi
   [ -n "$WATCH_MARK" ] && rm -f "$WATCH_MARK"
+  stop_capture
   [ "$FAIL" = 0 ] || [ "$rc" != 0 ] || rc=1
   echo "device:continuous $([ "$rc" = 0 ] && echo PASS || echo FAIL)"
   (exit "$rc")
@@ -568,6 +633,7 @@ echo "Continuous play was: $before"
 set_switch true
 
 adb logcat -c
+start_capture
 CLEARED=1
 SHARED=1
 share_all
@@ -676,19 +742,13 @@ fi
 ENDED=1
 guard || exit 1
 
-for id in $id3 $id2 $id1; do
-  device_has "$log" "playback finished item=$id\b" || { echo "FAIL: item $id did not finish"; FAIL=1; }
-done
-# T2 and T1 were started by the service, not by JS (a JS start logs "playback start").
-for id in $id2 $id1; do
-  device_has "$log" "playback start item=$id " && { echo "FAIL: item $id was started from JS"; FAIL=1; }
-done
+final_checks "$log" "$id3" "$id2" "$id1"
 grep -E 'playback (start|finished|continue|handover|paused|resume refused|engine)' <<<"$log" | sed 's/^/  /' || true
 grep -oE 'playback handover from=[0-9]+ item=[0-9]+ ms=[0-9]+( prepared=[01])?' <<<"$log" | sed 's/^/  information (not an R-M07 gap; REA-49 expects prepared=1 and ms < 100): /' || true
 grep -oE 'playback prepare (from=[0-9]+ item=[0-9]+ .*ms=[0-9]+|none after=[0-9]+ ms=[0-9]+)' <<<"$log" | sed 's/^/  information (next item prepared): /' || true
 grep -oE 'playback continue from=[0-9]+ item=[0-9]+ .*ms=[0-9]+' <<<"$log" | sed 's/^/  information (next item built): /' || true
 all=$(adb logcat -d)
-device_has "$all" "$MARK|hovers over the field|long grass" && { echo "FAIL: a log line carries item text"; FAIL=1; }
+text_logged "$all" && { echo "FAIL: a log line carries item text"; FAIL=1; }
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)
 if device_crash_seen "${pid%% *}" <<<"$(adb logcat -d -b crash,main)"; then echo "FAIL: crash logged"; FAIL=1; fi
 

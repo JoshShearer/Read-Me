@@ -25,6 +25,11 @@ case "$*" in
   # REA-47: STUB_LOGCAT_FAIL names a file; while it exists, one logcat read fails and removes it.
   "logcat -d"*) if [ -n "${STUB_LOGCAT_FAIL:-}" ] && [ -f "$STUB_LOGCAT_FAIL" ]; then rm -f "$STUB_LOGCAT_FAIL"; exit 1; fi
     cat "$STUB_LOG" 2>/dev/null ;;
+  # REA-56 fix round 1: the run's streamed captures. STUB_STREAM holds every ReadMe line the
+  # phone logged, STUB_STREAM_ALL every line of every tag; STUB_LOG is the ring buffer, which may
+  # have dropped early lines. A missing stream file: a capture that ends at once.
+  "logcat -s ReadMe:I") [ -n "${STUB_STREAM:-}" ] || exit 1; exec tail -n +1 -f "$STUB_STREAM" ;;
+  logcat) [ -n "${STUB_STREAM_ALL:-}" ] || exit 1; exec tail -n +1 -f "$STUB_STREAM_ALL" ;;
   # REA-47: a bare `adb shell` gets its command on stdin (the shares); record it so checks see it.
   shell) cat >> "$STUB_CALLS" ;;
   # REA-47: STUB_UI names a file served as the uiautomator dump.
@@ -302,6 +307,61 @@ check "a tap with no answer says what the Reader and the windows above Read Me s
   "$(grep -cF "tap; now the Reader shows title T2, highlighted paragraph yes, button " <<<"$out"),$(grep -cF "and the visible windows above Read Me are: StatusBar " <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,rc=1"
 unset STUB_OVERLAY
 unset STUB_UI STUB_TAPQ; : > "$STUB_LOG"
+
+# ===================== REA-56 fix round 1: evidence that the ring buffer cannot lose =====================
+# On the phone (2026-10-16) the 512 KiB main buffer held about 4.5 min; when T1 ran long, T3's
+# finished line had rotated out before the final read and the run failed "item 47 did not finish"
+# although T3 had finished. Here the ring buffer (STUB_LOG) has lost T3's lines; the phone logged
+# them (STUB_STREAM). The run's evidence must come from what the phone logged, not what it keeps.
+FULL='I ReadMe  : playback start item=12 sentences=4 from=0 rate=2.0
+I ReadMe  : reader shows item=12 playing=1
+I ReadMe  : playback finished item=12
+I ReadMe  : playback continue from=12 item=11 sentences=81 start=0 ms=3
+I ReadMe  : playback handover from=12 item=11 ms=60 prepared=1
+I ReadMe  : reader shows item=10 playing=1
+I ReadMe  : playback finished item=11
+I ReadMe  : playback continue from=11 item=10 sentences=151 start=0 ms=9
+I ReadMe  : reader shows item=10 playing=1
+I ReadMe  : playback finished item=10'
+printf '%s\n' "$FULL" > "$T/stream"; printf '%s\n' "$FULL" | tail -3 > "$STUB_LOG"
+: > "$T/stream-all"
+ROT="STUB_STREAM=$T/stream STUB_STREAM_ALL=$T/stream-all"
+cap() { env $ROT bash -c "DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; if type start_capture >/dev/null 2>&1; then start_capture; sleep 0.5; fi; $1; type stop_capture >/dev/null 2>&1 && stop_capture; true"; }
+out=$(cap 'final_checks "$(logs)" 12 11 10; echo FAIL=$FAIL')
+check "every test item finished although the ring buffer dropped T3's lines" \
+  "$(grep -c 'did not finish' <<<"$out"),$(grep -o 'FAIL=[0-9]' <<<"$out")" "0,FAIL=0"
+out=$(cap 'echo n=$(reader_lines "$(logs)" 10)')
+check "a Reader line count never falls when the ring buffer rotates (a baseline stays valid)" "$(grep -o 'n=[0-9]*' <<<"$out")" n=2
+out=$(cap 'final_checks "$(logs)" 12 11 9; echo FAIL=$FAIL')
+check "the capture still fails an item that never finished" \
+  "$(grep -c 'item 9 did not finish' <<<"$out"),$(grep -o 'FAIL=[0-9]' <<<"$out")" "1,FAIL=1"
+out=$(cap 'n=$(js_starts "$(logs)"); echo starts=$n')
+check "a JS start the ring buffer dropped is still counted" "$(grep -o 'starts=[0-9]*' <<<"$out")" starts=1
+# Item text logged under any tag, early in the run, rotated out of the ring buffer: still caught.
+printf '%s\n' 'I SomeTag : The Kestrel hovers over the field for a short while.' > "$T/stream-all"
+out=$(cap 'text_logged "$(adb logcat -d)" && echo leaked || echo clean')
+check "item text that rotated out of every buffer is still found (non-negotiable 1)" "$(tail -1 <<<"$out")" leaked
+: > "$T/stream-all"
+out=$(cap 'text_logged "$(adb logcat -d)" && echo leaked || echo clean')
+check "and a clean capture is clean" "$(tail -1 <<<"$out")" clean
+out=$(env $ROT bash -c 'DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; start_capture; sleep 0.5; text_logged "I X : a Kestrel test item one." && echo leaked || echo clean; stop_capture')
+check "item text in the final ring-buffer read is still caught" "$(tail -1 <<<"$out")" leaked
+# A capture that dies mid-run fails the run (its absence of a line proves nothing), and reads
+# fall back to the ring buffer so negative checks still see what it holds.
+: > "$STUB_CALLS"; mkdir -p .claude; mkdir .claude/device.lock
+env $ROT bash -c "DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; DEVICE_LOCK_OURS=1; trap finish EXIT; start_capture; sleep 0.5; kill \$CAPTURE_PID; sleep 0.3; logs | grep -c 'finished item=10' > '$T/n'; exit 0" >"$T/out" 2>&1
+check "a capture that stopped mid-run fails the run" "$?,$(grep -c 'log capture stopped' "$T/out")" "1,1"
+check "and reads then include the ring buffer's lines too" "$(cat "$T/n")" 2
+check "and the slot is released" "$([ -d .claude/device.lock ] && echo held || echo free)" free
+out=$(env $ROT bash -c 'DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; start_capture; sleep 0.3; p=$CAPTURE_PID; q=$CAPTURE_ALL_PID; stop_capture; sleep 0.3; kill -0 $p 2>/dev/null && echo alive; kill -0 $q 2>/dev/null && echo alive; [ -e "$CAPTURE_DIR" ] && echo kept; echo done')
+check "stop_capture ends both streams and removes the capture" "$(tr '\n' ' ' <<<"$out")" "done "
+: > "$STUB_CALLS"; mkdir .claude/device.lock
+env $ROT bash -c "DEVICE_CONTINUOUS_SOURCE_ONLY=1; . scripts/device-continuous.sh; DEVICE_LOCK_OURS=1; trap finish EXIT; start_capture; echo \$CAPTURE_PID \$CAPTURE_ALL_PID > '$T/cpids'; exit 0" >"$T/out" 2>&1
+check "the EXIT trap ends both streams" \
+  "$(for p in $(cat "$T/cpids"); do kill -0 "$p" 2>/dev/null && echo alive; done | wc -l | tr -d ' '),$([ -d .claude/device.lock ] && echo held || echo free)" "0,free"
+check "the capture starts right after the log is cleared, before the shares" \
+  "$(grep -A1 -E '^adb logcat -c$' <<<"$code" | tail -1)" "start_capture"
+: > "$STUB_LOG"; : > "$STUB_CALLS"
 
 # --- guard: a non-test id stops Read Me and fails loudly ---
 printf '%s\n' "$LOG" > "$STUB_LOG"; : > "$STUB_CALLS"
