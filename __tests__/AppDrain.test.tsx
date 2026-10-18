@@ -34,6 +34,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     getRate: jest.fn(async () => 2),
     getBridge: jest.fn(async () => ({ enabled: false, state: 'off', port: 8787, token: null, error: null })),
     getContinuousPlay: jest.fn(async () => false),
+    readerShows: jest.fn(),
   },
 }));
 jest.mock('react-native-safe-area-context', () => ({

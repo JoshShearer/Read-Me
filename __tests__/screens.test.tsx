@@ -45,6 +45,10 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     setBridgePort: jest.fn(async () => mockState.bridge),
     regenerateBridgeToken: jest.fn(async () => mockState.bridge),
     copyBridgeToken: jest.fn(async () => undefined),
+    readerShows: jest.fn(),
+    play: jest.fn(async () => true),
+    pause: jest.fn(async () => true),
+    resume: jest.fn(async () => true),
     getContinuousPlay: jest.fn(async () => mockState.continuous),
     setVoice: jest.fn(async () => undefined),
     setContinuousPlay: jest.fn(async (on: boolean) => {
@@ -103,13 +107,28 @@ async function render(el: React.ReactElement) {
   return strings(r.toJSON()).join('\n');
 }
 
-// Jest's react-native AppState returns no subscription; the Reader listens while it blocks.
+// Jest's react-native AppState returns no subscription. The Reader listens for activity
+// (REA-56) and, while it blocks, to probe again (REA-21): every live handler hears a change.
+let appHandlers: ((s: string) => void)[] = [];
+const appChange = (s: string) => ReactTestRenderer.act(async () => appHandlers.slice().forEach(h => h(s)));
+// The preset's AppState.currentState is a jest.fn, not a state; the Reader reads it on mount.
+let currentState: PropertyDescriptor | undefined;
+const setCurrentState = (v: string) =>
+  Object.defineProperty(AppState, 'currentState', { value: v, configurable: true, writable: true });
 beforeEach(() => {
-  jest.spyOn(AppState, 'addEventListener').mockImplementation(
-    () => ({ remove: () => undefined }) as ReturnType<typeof AppState.addEventListener>,
-  );
+  appHandlers = [];
+  currentState = Object.getOwnPropertyDescriptor(AppState, 'currentState');
+  setCurrentState('active');
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
+    const f = h as (s: string) => void;
+    appHandlers.push(f);
+    return { remove: () => { appHandlers = appHandlers.filter(x => x !== f); } } as ReturnType<typeof AppState.addEventListener>;
+  });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  if (currentState) Object.defineProperty(AppState, 'currentState', currentState);
+});
 
 beforeEach(() => {
   mockState.items = [];
@@ -300,61 +319,114 @@ test('Reader blocks when the engine has no offline voice (Review Focus 4)', asyn
 test('Reader checks the engine again when the app comes back while it blocks (REA-21)', async () => {
   // The card sends the user to Android's TTS settings; before, it stayed until the Reader was
   // reopened, even after an offline voice was installed.
-  let onChange: ((s: string) => void) | null = null;
-  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
-    onChange = h as (s: string) => void;
-    return { remove: () => { onChange = null; } } as ReturnType<typeof AppState.addEventListener>;
+  mockState.detail = text(['One.']);
+  mockState.engine = { ...mockState.engine, status: 'no-voice' };
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
   });
-  try {
-    mockState.detail = text(['One.']);
-    mockState.engine = { ...mockState.engine, status: 'no-voice' };
-    let r!: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(async () => {
-      r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
-    });
-    mounted.push(r);
-    expect(strings(r.toJSON()).join('\n')).toContain('no offline text-to-speech voice');
-    mockState.engine = { ...mockState.engine, status: 'ready' };
-    await ReactTestRenderer.act(async () => onChange!('active'));
-    const out = strings(r.toJSON()).join('\n');
-    expect(out).not.toContain('no offline text-to-speech voice');
-    expect(out).toContain('"play"');
-    // Once it reads, nothing listens: the check is only for the blocking card.
-    expect(onChange).toBeNull();
-  } finally {
-    spy.mockRestore();
-  }
+  mounted.push(r);
+  expect(strings(r.toJSON()).join('\n')).toContain('no offline text-to-speech voice');
+  mockState.engine = { ...mockState.engine, status: 'ready' };
+  // While it blocks, two listen: the probe's and the Reader's own activity (REA-56).
+  expect(appHandlers.length).toBe(2);
+  await appChange('active');
+  const out = strings(r.toJSON()).join('\n');
+  expect(out).not.toContain('no offline text-to-speech voice');
+  expect(out).toContain('"play"');
+  // Once it reads, the probe's listener is gone: the check is only for the blocking card.
+  // Only the Reader's activity listener is left, and a return checks the engine no more.
+  expect(appHandlers.length).toBe(1);
+  const probes = (Native.getEngine as jest.Mock).mock.calls.length;
+  await appChange('active');
+  expect((Native.getEngine as jest.Mock).mock.calls.length).toBe(probes);
 });
 
 test("Reader drops an engine answer older than the newest check (REA-21)", async () => {
-  let onChange: ((s: string) => void) | null = null;
-  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_e, h) => {
-    onChange = h as (s: string) => void;
-    return { remove: () => { onChange = null; } } as ReturnType<typeof AppState.addEventListener>;
-  });
   const getEngine = Native.getEngine as jest.Mock;
-  try {
+  mockState.detail = text(['One.']);
+  mockState.engine = { ...mockState.engine, status: 'no-voice' };
+  let r!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  });
+  mounted.push(r);
+  // A slow check (a busy engine), then a quick one after another switch.
+  let slow!: (e: NativeEngine) => void;
+  getEngine.mockImplementationOnce(() => new Promise<NativeEngine>(res => { slow = res; }));
+  await appChange('active');
+  getEngine.mockImplementationOnce(async () => ({ ...mockState.engine, status: 'ready' }));
+  await appChange('active');
+  expect(strings(r.toJSON()).join('\n')).toContain('"play"');
+  await ReactTestRenderer.act(async () => slow({ ...mockState.engine, status: 'no-voice' }));
+  const out = strings(r.toJSON()).join('\n');
+  expect(out).not.toContain('no offline text-to-speech voice');
+  expect(out).toContain('"play"');
+});
+
+describe('the Reader writes which item it shows, ids and state only (REA-56)', () => {
+  const shows = Native.readerShows as jest.Mock;
+  const snap = (itemId: number, playing: boolean, paragraphIndex = 0, start = 0, end = 9) =>
+    ({ itemId, playing, paragraphIndex, start, end, rate: 2, engine: 'ready' });
+  const event = (n: object) => ReactTestRenderer.act(async () => { DeviceEventEmitter.emit('ReadMePlayback', n); });
+  const reader = () => mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  beforeEach(() => {
+    shows.mockClear();
+    (Native.play as jest.Mock).mockClear();
+    (Native.pause as jest.Mock).mockClear();
+    (Native.resume as jest.Mock).mockClear();
+  });
+
+  test('once when its item is shown playing, never per sentence, once more on a pause', async () => {
+    mockState.detail = text(['One two. Three four.', 'Five six.']);
+    await reader();
+    expect(shows).not.toHaveBeenCalled();
+    await event(snap(1, true));
+    expect(shows.mock.calls).toEqual([[1, true]]);
+    await event(snap(1, true, 0, 9, 20));
+    await event(snap(1, true, 1, 0, 9));
+    expect(shows).toHaveBeenCalledTimes(1);
+    await event(snap(1, false, 1, 0, 9));
+    expect(shows.mock.calls).toEqual([[1, true], [1, false]]);
+    // AGENTS.md 11: it only writes a line; playback is never driven by it.
+    expect(Native.play).not.toHaveBeenCalled();
+    expect(Native.pause).not.toHaveBeenCalled();
+    expect(Native.resume).not.toHaveBeenCalled();
+  });
+
+  test('not while another item plays', async () => {
+    mockState.detail = text(['One.']);
+    await reader();
+    await event(snap(2, true));
+    expect(shows).not.toHaveBeenCalled();
+  });
+
+  test('not while the engine blocks', async () => {
     mockState.detail = text(['One.']);
     mockState.engine = { ...mockState.engine, status: 'no-voice' };
-    let r!: ReactTestRenderer.ReactTestRenderer;
-    await ReactTestRenderer.act(async () => {
-      r = ReactTestRenderer.create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
-    });
-    mounted.push(r);
-    // A slow check (a busy engine), then a quick one after another switch.
-    let slow!: (e: NativeEngine) => void;
-    getEngine.mockImplementationOnce(() => new Promise<NativeEngine>(res => { slow = res; }));
-    await ReactTestRenderer.act(async () => onChange!('active'));
-    getEngine.mockImplementationOnce(async () => ({ ...mockState.engine, status: 'ready' }));
-    await ReactTestRenderer.act(async () => onChange!('active'));
-    expect(strings(r.toJSON()).join('\n')).toContain('"play"');
-    await ReactTestRenderer.act(async () => slow({ ...mockState.engine, status: 'no-voice' }));
-    const out = strings(r.toJSON()).join('\n');
-    expect(out).not.toContain('no offline text-to-speech voice');
-    expect(out).toContain('"play"');
-  } finally {
-    spy.mockRestore();
-  }
+    await reader();
+    await event(snap(1, true));
+    expect(shows).not.toHaveBeenCalled();
+  });
+
+  test('not when the position is in a cut paragraph (nothing highlighted)', async () => {
+    mockState.detail = text(['Cut.', 'Kept.'], [0]);
+    await reader();
+    await event(snap(1, true, 0, 0, 4));
+    expect(shows).not.toHaveBeenCalled();
+  });
+
+  test('a Reader that got its item in the background writes it when the app is active again', async () => {
+    setCurrentState('background');
+    mockState.detail = text(['One.']);
+    await reader();
+    await event(snap(1, true));
+    expect(shows).not.toHaveBeenCalled();
+    await appChange('background');
+    expect(shows).not.toHaveBeenCalled();
+    await appChange('active');
+    expect(shows.mock.calls).toEqual([[1, true]]);
+  });
 });
 
 test('Reader shows kept paragraphs and the transport', async () => {
