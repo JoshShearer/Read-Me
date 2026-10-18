@@ -120,6 +120,19 @@ for b in m["Builds"]:
     assert "node scripts/patch-rn-jdk21.mjs" in b["prebuild"], b["versionCode"]
 assert "node scripts/patch-rn-jdk21.mjs" in json.load(open("package.json"))["scripts"]["postinstall"]
 PY
+# fdroiddata review (!51088): one command per init/prebuild/sudo entry, never chained with ; or &&
+# (fdroidserver joins the entries with "; " itself). A quoted ; inside an argument is not chaining.
+$(recipe_py) - <<'PY' && echo "ok: no build entry chains commands with ; or &&" || { echo "FAIL: a build entry chains commands"; fail=1; }
+import re, yaml
+m = yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))
+for b in m["Builds"]:
+    for key in ("init", "prebuild", "sudo"):
+        v = b.get(key, [])
+        assert isinstance(v, list), (b["versionCode"], key, "not a list")
+        for cmd in v:
+            bare = re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
+            assert "&&" not in bare and ";" not in bare, (b["versionCode"], key, cmd)
+PY
 # The recipe's prebuild runs as fdroidserver runs it: a failing entry stops it.
 mkdir -p "$T/stop/sub"
 cat > "$T/stop.yml" <<'YML'
