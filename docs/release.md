@@ -78,10 +78,13 @@ nothing for day-to-day builds, device scripts or CI.
    in that fork's `metadata/io.loopstring.readme.yml`, replace the four build entries (one per
    ABI) with the ones in `fdroid/io.loopstring.readme.yml`, each with `commit:` set to the tag's
    full hash (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there), and set
-   `CurrentVersion`/`CurrentVersionCode` (the x86_64 entry's, the highest). Then `fdroid rewritemeta io.loopstring.readme` (it
-   strips the comments, which fdroiddata's CI requires) and `fdroid lint io.loopstring.readme`,
-   commit and push; the merge request's pipeline reruns. Before the first merge only the latest
-   version may be listed. After it is merged, `AutoUpdateMode: Version` and `UpdateCheckMode:
+   `CurrentVersion`/`CurrentVersionCode` (the x86_64 entry's, the highest). Then
+   `npm run fdroid:rewritemeta -- <fork checkout>`, which strips the comments (fdroiddata's CI
+   requires that) and lints. It runs fdroidserver master in F-Droid's image, as the merge
+   request's `fdroid rewritemeta` job does. Do not run a local `fdroid rewritemeta`: fdroidserver
+   2.4.5 leaves the long `binary:` URLs on one line where master wraps them, and the 1.0.5
+   pipeline failed on that. Commit and push; the merge request's pipeline reruns. Before the
+   first merge only the latest version may be listed. After it is merged, `AutoUpdateMode: Version` and `UpdateCheckMode:
    Tags` make F-Droid pick up new tags itself.
 
 ## Not established

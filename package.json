@@ -35,7 +35,8 @@
     "device:themes": "bash scripts/device-themes.sh",
     "device:lifecycle": "bash scripts/device-lifecycle.sh",
     "device:continuous": "bash scripts/device-continuous.sh",
-    "fdroid:build": "bash scripts/fdroid-build.sh"
+    "fdroid:build": "bash scripts/fdroid-build.sh",
+    "fdroid:rewritemeta": "bash scripts/fdroid-rewritemeta.sh"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
