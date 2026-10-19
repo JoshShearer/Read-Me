@@ -133,6 +133,20 @@ for b in m["Builds"]:
             bare = re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
             assert "&&" not in bare and ";" not in bare, (b["versionCode"], key, cmd)
 PY
+# fdroiddata review (!51088): React Native's publishing script is deleted, not ignored. The
+# scanner flags its maven repo, and ReactAndroid is not part of this build.
+$(recipe_py) - <<'PY' && echo "ok: every build scandeletes ReactAndroid/publish.gradle" || { echo "FAIL: ReactAndroid/publish.gradle is not in every build's scandelete"; fail=1; }
+import yaml
+f = "node_modules/react-native/ReactAndroid/publish.gradle"
+for b in yaml.safe_load(open("fdroid/io.loopstring.readme.yml"))["Builds"]:
+    assert f in b.get("scandelete", []) and f not in b.get("scanignore", []), b["versionCode"]
+PY
+if grep -q "^include ':app'$" android/settings.gradle && ! grep -q ReactAndroid android/settings.gradle; then
+  echo "ok: the build does not include ReactAndroid"
+else
+  echo "FAIL: android/settings.gradle changed; check that scandeleting ReactAndroid/publish.gradle is still safe"; fail=1
+fi
+
 # The recipe's prebuild runs as fdroidserver runs it: a failing entry stops it.
 mkdir -p "$T/stop/sub"
 cat > "$T/stop.yml" <<'YML'
