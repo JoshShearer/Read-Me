@@ -53,6 +53,7 @@ npm run device:settings   # REA-27 guard: bridge on, then LOOPS (default 20) x L
 npm run device:themes     # R-M01: all five screens in light and dark mode; measures every text node and the status bar (contrast 4.5:1, faint 3:1; clears app data). Run after any colour or style change
 npm run repro             # two clean-clone builds of HEAD in different paths, the recipe's arm64-v8a entry (REPRO_ABI); must print repro: SAME (about 4 min)
 npm run fdroid:build -- release/tested-<sha>  # REA-38: fdroiddata's own build job in F-Droid's buildserver image (docker) on a clean clone of HEAD, every ABI's entry; must print fdroid:build: SAME for each. release:apk requires it (about an hour)
+npm run fdroid:rewritemeta -- <fork>   # formats and lints the fdroiddata MR's metadata with fdroidserver master in F-Droid's image, as the MR's CI does (a local 2.4.5 wraps binary: lines differently)
 npm run release:keystore  # the owner, once: creates the release key interactively (docs/release.md)
 npm run release:apk -- release/tested-<sha>  # one signed APK per ABI, each checked against release/signing-cert.sha256 and its tested build; SHA256SUMS
 npm run notices           # regenerate Settings > Licenses' asset after any dependency change (build:release refuses a stale one)
