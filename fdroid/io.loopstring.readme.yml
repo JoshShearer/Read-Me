@@ -53,8 +53,6 @@ Builds:
       # reactNativeArchitectures wins: React Native and the ABI split then build only armeabi-v7a.
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=armeabi-v7a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
-      # Publishing config for building React Native itself; this app uses the released AARs.
-      - node_modules/react-native/ReactAndroid/publish.gradle
       # A local directory repo inside node_modules, not a remote one.
       - node_modules/react-native-safe-area-context/android/build.gradle
     scandelete:
@@ -66,6 +64,10 @@ Builds:
       # Hermes's Android library and its Maven publishing script (an unknown maven repo to the
       # scanner); hermesc does not use it, and prebuild has already built hermesc.
       - external/hermes/android
+      # React Native's Maven publishing script (an unknown maven repo to the scanner): only
+      # ReactAndroid's own build applies it, and that project is not in this build, which uses
+      # the released AARs (android/settings.gradle includes :app and the Gradle plugin only).
+      - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
   - versionName: 1.1.0
@@ -91,13 +93,13 @@ Builds:
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=arm64-v8a\n' "$HERMESC" >> android/gradle.properties
     scanignore:
-      - node_modules/react-native/ReactAndroid/publish.gradle
       - node_modules/react-native-safe-area-context/android/build.gradle
     scandelete:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
       - external/hermes/android
+      - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
   - versionName: 1.1.0
@@ -123,13 +125,13 @@ Builds:
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86\n' "$HERMESC" >> android/gradle.properties
     scanignore:
-      - node_modules/react-native/ReactAndroid/publish.gradle
       - node_modules/react-native-safe-area-context/android/build.gradle
     scandelete:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
       - external/hermes/android
+      - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
   - versionName: 1.1.0
@@ -155,13 +157,13 @@ Builds:
       - node scripts/patch-rn-jdk21.mjs
       - printf '\nreadmeHermesc=%s\nreactNativeArchitectures=x86_64\n' "$HERMESC" >> android/gradle.properties
     scanignore:
-      - node_modules/react-native/ReactAndroid/publish.gradle
       - node_modules/react-native-safe-area-context/android/build.gradle
     scandelete:
       - node_modules/hermes-compiler/hermesc
       - node_modules/fb-dotslash/bin
       - node_modules/react-native/React/I18n/strings
       - external/hermes/android
+      - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
 AllowedAPKSigningKeys: f730c468c33f4de8ec5b6917920399169ccdef2664def86ffc4f0dbe01535bf5
