@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- REA-59, ADR 0015: read-only, so a failed lookup can say "no network" from "no such host".
+         WorkManager already merges it; declared so the spec and the manifest agree. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- R-M07, ADR 0005: playback and the R-M12 bridge run in one mediaPlayback foreground
          service; the wake lock is held only while speaking or synthesizing. Playback's

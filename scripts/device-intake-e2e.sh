@@ -15,6 +15,7 @@ LINK='https://www.weather.gov/safety/lightning'
 LINK_PATH_MARK='safety/lightning'
 TEXT_MARK='Paragraph one of the shared note'
 DEAD='http://127.0.0.1:9/nothing-here'
+NOHOST='https://nowebsite.invalid/nothing-here'
 
 device_clear_app
 adb logcat -c
@@ -28,10 +29,12 @@ share "$TEXT_MARK, with a second sentence.
 
 Paragraph two."
 share "dead $DEAD"
+# REA-59: a host that does not exist, while online, is "not-found", not "offline".
+share "nowhere $NOHOST"
 # R-M03 allows http: a plain-http page must fetch, not fail as "network" under a cleartext ban.
 # example.com, not neverssl.com: neverssl took 1 to 20 s to connect (2026-10-02).
 share "http://example.com/"
-echo "shared four items with the app closed; waiting for the requests"
+echo "shared five items with the app closed; waiting for the requests"
 sleep 25
 
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
@@ -40,7 +43,7 @@ screen=""
 for _ in $(seq 30); do
   adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
   screen=$(adb shell cat /sdcard/readme-ui.xml 2>/dev/null || true)
-  if device_has "$screen" 'text="ready"' && device_has "$screen" 'fetch-failed: offline'; then
+  if device_has "$screen" 'text="ready"' && device_has "$screen" 'fetch-failed: offline' && device_has "$screen" 'fetch-failed: not-found'; then
     break
   fi
   sleep 2
@@ -52,6 +55,7 @@ readies=$(grep -cE 'text="(ready|extract-poor)"' <<<"${screen//\/>/$'\n'}" || tr
 [ "$readies" -ge 3 ] || { echo "FAIL: expected 3 readable items (link, text, http link), saw $readies"; fail=1; }
 device_has "$screen" 'fetch-failed: network' && { echo "FAIL: a link failed as network (cleartext http blocked?)"; fail=1; }
 device_has "$screen" 'fetch-failed: offline' || { echo "FAIL: dead link not fetch-failed: offline"; fail=1; }
+device_has "$screen" 'fetch-failed: not-found' || { echo "FAIL: .invalid host not fetch-failed: not-found (needs the phone online)"; fail=1; }
 device_has "$screen" 'text="fetching"' && { echo "FAIL: an item still fetching"; fail=1; }
 
 logs=$(adb logcat -d)

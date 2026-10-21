@@ -248,8 +248,9 @@ These are promises. Breaking one is a release blocker.
    external-storage writes in v1. Synthesized playback audio is item content: it lives in
    `noBackupFilesDir/playback`, named by item id and offsets, and is deleted as "Playback"
    says (ADR 0012).
-5. The INTERNET permission is required for R-M03 and is the only network permission
-   requested.
+5. The INTERNET permission is required for R-M03. ACCESS_NETWORK_STATE is also declared
+   (read-only, no network use; it tells "no network" from "no such host", ADR 0015). No other
+   network permission is requested.
 
 ### R-M10 - Visible failure states
 
@@ -258,7 +259,7 @@ toast:
 
 | State | Shown as | User actions |
 |---|---|---|
-| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, network, unsupported redirect, bad URL, interrupted) | Retry, "Share the text instead" guidance, Delete |
+| `fetch-failed` | item badge + reason class (timeout, too large, too many redirects, HTTP status, offline, not found, network, unsupported redirect, bad URL, interrupted) | Retry, "Share the text instead" guidance, Delete |
 | `extract-poor` | item badge, partial text visible | Read anyway, "Share the text instead" guidance, Delete |
 | no TTS engine / no offline voice | blocking card on Reader | Open TTS settings |
 | item cannot be read (a storage error, not a missing item) | "Could not open this item." on Reader and Trim; a missing item stays "This item was deleted." (REA-50) | Retry, Back to the list |

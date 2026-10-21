@@ -28,7 +28,7 @@ class FetchWorker(context: Context, params: WorkerParameters) : Worker(context, 
     if (item.state != States.FETCHING || url == null) return Result.success()
     val started = System.nanoTime()
     val outcome = try {
-      when (val r = Fetcher().fetch(url)) {
+      when (val r = Fetcher(hasValidatedNetwork = Fetcher.validatedNetworkOf(applicationContext)).fetch(url)) {
         is FetchResult.Ok -> {
           store.fetchSucceeded(id, r.html)
           "ok"
