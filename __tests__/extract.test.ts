@@ -206,3 +206,36 @@ describe('saved real pages (R-M14)', () => {
     }
   });
 });
+
+// REA-64: Wikipedia-shaped markup (hand-written; real pages are CC BY-SA and stay out of the repo).
+const WIKI = `<!doctype html><html><head><title>Rivers</title></head><body>
+<div id="content"><div class="mw-parser-output">
+<p>${PROSE}<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup> The area is 5 km<sup>2</sup> in total.<sup class="mw-ref reference" id="cite_ref-2"><a href="#cite_note-2">[2]</a></sup></p>
+<div class="thumb tright"><div class="thumbinner"><img src="a.png"><div class="thumbcaption">THUMBCAPTIONTEXT</div></div></div>
+<p>${PROSE} It finished 1<sup>st</sup> in the ranking.<span class="mw-ref" typeof="mw:Extension/ref"><a>[3]</a></span></p>
+<ul class="gallery"><li class="gallerybox"><div class="gallerytext">GALLERYTEXT</div></li></ul>
+<figure><img src="b.png"><figcaption>FIGCAPTIONTEXT</figcaption></figure>
+<p>${PROSE}</p>
+<span class="mw-editsection">[<a>edit</a>]</span>
+</div></div></body></html>`;
+
+describe('extractArticle footnote markers and captions (REA-64)', () => {
+  const all = extractArticle(WIKI, 'https://en.wikipedia.org/wiki/X')
+    .paragraphs.map(p => p.text)
+    .join('\n');
+
+  test('citation markers are dropped', () => {
+    expect(all).not.toMatch(/\[\d+\]/);
+  });
+  test('captions and edit links are dropped', () => {
+    expect(all).not.toContain('THUMBCAPTIONTEXT');
+    expect(all).not.toContain('GALLERYTEXT');
+    expect(all).not.toContain('FIGCAPTIONTEXT');
+    expect(all).not.toContain('[edit]');
+  });
+  test('superscripts in prose survive', () => {
+    expect(all).toContain('5 km2');
+    expect(all).toContain('1st');
+    expect(all).toContain('The river rose');
+  });
+});
