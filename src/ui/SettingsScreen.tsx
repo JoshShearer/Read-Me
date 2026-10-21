@@ -59,6 +59,9 @@ const NO_BRIDGE: Bridge = { enabled: false, state: 'off', port: 8787, token: nul
 // decision, 2026-10-03). Known from the first frame, so the engine field never arrives mid-mount.
 const CHOOSE_ENGINE = Platform.OS === 'android' && Number(Platform.Version) < 34;
 
+// REA-61: Linking.openURL hands the page to the browser; Read Me makes no network call (AGENTS.md 6).
+const PLUGIN_URL = 'https://github.com/JoshShearer/Note-Reader-Local';
+
 export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
   const colors = palette(useColorScheme());
   const [engine, setEngine] = useState<Engine | null>(null);
@@ -248,6 +251,30 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices. While it is
         on, a notification says so. You can turn the bridge off from that notification or here.
       </Text>
+      <View collapsable={false} style={[ui.row, ui.stack]}>
+        <Text tone="secondary" style={ui.small}>
+          The plugin is a separate install: search Local TTS Reader in Obsidian's Community plugins, or open its
+          page.
+        </Text>
+        <Button
+          appearance="tonal"
+          label="Open the plugin page"
+          accessibilityLabel="open plugin page"
+          role="link"
+          onPress={() => {
+            Linking.openURL(PLUGIN_URL).catch(() => undefined);
+          }}
+        />
+        <Text tone="secondary" style={ui.small}>1. In Obsidian, install and enable Local TTS Reader.</Text>
+        <Text tone="secondary" style={ui.small}>
+          2. Copy the token below and paste it into the plugin's settings, under Read Me Offline bridge,
+          in the Pairing token field. Leave Speech engine on Automatic and the plugin picks Read Me.
+        </Text>
+        <Text tone="secondary" style={ui.small}>
+          3. Open a note and run "Read note aloud" from the command palette, or tap the ribbon's "Read this note
+          aloud".
+        </Text>
+      </View>
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
           <Toggle
             label="Use the bridge"
