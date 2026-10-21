@@ -205,6 +205,11 @@ test('bridgeStatus explains a taken port', () => {
   );
 });
 
+test('bridgeStatus says a blocked bridge is off because notifications are off (REA-60)', () => {
+  const b = { enabled: true, state: 'blocked', port: 8787, token: 'x', error: null };
+  expect(bridgeStatus(b)).toBe('Off: notifications are off for Read Me.');
+});
+
 test('parseNotices includes native entries with their text', () => {
   const j = JSON.stringify({npm: [], android: [], native: [{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]});
   expect(parseNotices(j)).toEqual([{name: 'folly', version: '1', license: 'Apache-2.0', text: 'T'}]);

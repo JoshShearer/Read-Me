@@ -29,6 +29,7 @@ import io.loopstring.readme.R
 import io.loopstring.readme.bridge.BridgeFiles
 import io.loopstring.readme.bridge.BridgePlayback
 import io.loopstring.readme.bridge.BridgeServer
+import io.loopstring.readme.bridge.BridgeView
 import io.loopstring.readme.bridge.TtsSynth
 import io.loopstring.readme.playback.PlaybackCommands.Route
 import io.loopstring.readme.store.Settings
@@ -149,6 +150,24 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     val swept = BridgeFiles(cacheDir).sweep()
     if (swept > 0) Log.i(TAG, "bridge swept files=$swept")
     PlaybackHub.addListener(preemptOnPlay)
+    // REA-60: the user blocking Read Me's notifications or its channel (Android 9+) stops the
+    // bridge at once. A permission revoke sends neither; on the reference phone it killed the
+    // process, and the next open refuses the restart (MainActivity.onResume).
+    if (Build.VERSION.SDK_INT >= 28) {
+      val filter = IntentFilter(NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED).apply {
+        addAction(NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED)
+      }
+      if (Build.VERSION.SDK_INT >= 33) registerReceiver(blockState, filter, RECEIVER_NOT_EXPORTED)
+      else registerReceiver(blockState, filter)
+    }
+  }
+
+  private val blockState = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      if (destroyed) return
+      syncBridge()
+      if (!ServiceLife.keepAlive(hasItem(), bridge != null)) end()
+    }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -204,6 +223,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     session.release()
     PlaybackHub.removeListener(preemptOnPlay)
+    if (Build.VERSION.SDK_INT >= 28) runCatching { unregisterReceiver(blockState) }
     bridge?.close()
     bridge = null
     synth?.shutdown()
@@ -370,10 +390,16 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
   private fun needsFreshSpeaker() =
     !rebinding && !queue.snapshot().playing && (choice() != speakerFor || speakerFailed())
 
-  /** R-M12: the bridge runs exactly while Settings says so, on the port Settings names. */
+  /**
+   * R-M12: the bridge runs exactly while Settings says so, on the port Settings names, and only
+   * while its notification can show (REA-60); blocked, the saved setting stays on.
+   */
   private fun syncBridge() {
     val s = Settings(this)
-    val want = s.bridgeEnabled
+    val blocked = s.bridgeEnabled && !notificationsShown(this)
+    val want = BridgeView.allowed(s.bridgeEnabled, !blocked)
+    if (blocked) Log.i(TAG, "bridge blocked: notifications off")
+    val wasRunning = bridge != null
     bridge?.let { running ->
       if (!want || running.port != s.bridgePort) {
         running.close()
@@ -383,6 +409,12 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
         PlaybackHub.publishBridge(BridgeStatus.OFF)
         Log.i(TAG, "bridge off")
       }
+    }
+    // REA-60 plan review F3: a bridge session belongs to the plugin, which can no longer reach
+    // /control once the bridge is closed; stop it rather than read on with nothing to stop it.
+    if (blocked && wasRunning) {
+      val ours = queue.snapshot().itemId == BRIDGE_ITEM || startingItemId() == BRIDGE_ITEM
+      if (ours) handle(PlaybackCommands.ACTION_STOP)
     }
     // Plan review F5 (REA-23): turned off after a failed bind; without this the hub kept
     // "failed", and turning it back on showed the old failure instead of Starting.
@@ -952,7 +984,7 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
 
   companion object {
     private const val TAG = "ReadMe"
-    private const val CHANNEL = "playback"
+    internal const val CHANNEL = "playback"
     const val NOTIFICATION_ID = 3001
     private const val WAKE_LOCK_MS = 4 * 60 * 60 * 1000L
     private const val STALL_TICK_MS = 5_000L
@@ -961,6 +993,9 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
     const val BRIDGE_ITEM = -1L
     /** What the notification and lock screen show for it: never the note's own text or name. */
     const val BRIDGE_TITLE = "Obsidian note"
+
+    /** REA-60: whether the service's notification can show; replaceable in tests only. */
+    @VisibleForTesting @Volatile var notificationsShown: (Context) -> Boolean = NotificationGate::shown
 
     /** Called from ReadMeSpeech while the app is in the foreground (the user tapped play). */
     fun start(context: Context, request: PlaybackHub.Request) {
@@ -975,7 +1010,11 @@ class PlaybackService : Service(), PlaybackSink, TtsSpeaker.Callbacks, PlayerEve
      * foreground-service start from the background.
      */
     fun syncBridge(context: Context) {
-      val on = Settings(context).bridgeEnabled
+      val enabled = Settings(context).bridgeEnabled
+      // REA-60: every caller (MainActivity.onResume, setVoice, setEngine, setBridgeEnabled,
+      // setBridgePort) comes through here, so none starts a bridge whose notification is hidden.
+      val on = BridgeView.allowed(enabled, notificationsShown(context))
+      if (enabled && !on) Log.i(TAG, "bridge blocked: notifications off")
       val alive = PlaybackHub.controller != null
       if (!on && !alive) {
         PlaybackHub.publishBridge(BridgeStatus.OFF)

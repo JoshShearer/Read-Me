@@ -25,11 +25,15 @@ class MainActivity : ReactActivity() {
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
-  /** R-M12: after a reboot or process death the bridge returns when Read Me is next opened. */
+  /**
+   * R-M12: after a reboot or process death the bridge returns when Read Me is next opened, if
+   * its notification can show (REA-60).
+   */
   override fun onResume() {
     super.onResume()
     try {
-      if (BridgeView.syncOnResume(Settings(this).bridgeEnabled, PlaybackHub.bridge.state)) PlaybackService.syncBridge(this)
+      val shown = PlaybackService.notificationsShown(this)
+      if (BridgeView.syncOnResume(Settings(this).bridgeEnabled, PlaybackHub.bridge.state, shown)) PlaybackService.syncBridge(this)
     } catch (e: IllegalStateException) {
       Log.i("ReadMe", "bridge start refused: ${e.javaClass.simpleName}")
     }

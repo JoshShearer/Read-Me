@@ -322,6 +322,19 @@ bridge session in its own playback service (`/play`, `/status`, `/control` below
 Android 17 mutes Obsidian's own audio about 5 s after Obsidian leaves the foreground. A session
 is never stored, archived or continued from, and its notification shows "Obsidian note" only.
 
+Amended 2026-10-21 (REA-60): "its foreground notification MUST say so" is enforced natively, not
+only by Settings' permission prompt. While Read Me's notifications cannot show (app notifications
+off, which on Android 13+ includes POST_NOTIFICATIONS denied or revoked, or the playback channel
+blocked), `PlaybackService` does not start the bridge on any path (opening the app, a voice,
+engine or port change, the switch) and closes a running one; a bridge session (`/play`) is then
+stopped, since the plugin can no longer reach `/control`. The saved setting stays on, Settings
+shows the bridge off with the reason, and the bridge returns once notifications are allowed and
+Read Me is opened. Known limit: a permission revoke sends the app no broadcast. On the reference
+phone (2026-10-21) `pm revoke` killed Read Me's process, so the bridge stopped with it; on a phone
+where the process survived a revoke, a running bridge would keep serving until Read Me is next
+opened. Blocking notifications or the channel in Android's settings (Android 9+) is broadcast
+and stops the bridge at once (unit-tested; not observed on a device).
+
 ### R-M13 - Distribution
 
 - v1 ships as a signed APK on GitHub Releases, then on F-Droid.
