@@ -74,8 +74,9 @@ export type NativeEngine = {
   engines: NativeEngineChoice[];
 };
 
-// R-M12: state is 'off', 'starting', 'on' or 'failed'; error is an exception class name
-// ('BindException' when the port is taken). token is null while the bridge is off.
+// R-M12: state is 'off', 'starting', 'on', 'failed' or 'blocked' (REA-60: enabled, but held off
+// while Read Me's notifications cannot show); error is an exception class name ('BindException'
+// when the port is taken). token is null while the bridge is off.
 export type NativeBridge = {
   enabled: boolean;
   state: string;

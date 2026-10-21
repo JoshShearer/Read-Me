@@ -172,6 +172,8 @@ export function parsePort(s: string): number | null {
 
 export function bridgeStatus(b: { enabled: boolean; state: string; port: number; error: string | null }): string {
   if (!b.enabled) return 'Off';
+  // REA-60: enabled, but held off by the native guard while Read Me's notifications cannot show.
+  if (b.state === 'blocked') return 'Off: notifications are off for Read Me.';
   if (b.state === 'on') return `On at 127.0.0.1:${b.port}`;
   if (b.state === 'failed') {
     return b.error === 'BindException'

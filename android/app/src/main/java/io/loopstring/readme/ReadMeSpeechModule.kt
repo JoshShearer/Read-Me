@@ -308,7 +308,8 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     val on = settings.bridgeEnabled
     val hub = PlaybackHub.bridge
     putBoolean("enabled", on)
-    val state = BridgeView.state(on, hub.state, hub.port, settings.bridgePort)
+    // REA-60: read live each time, so "blocked" is never stale after a change in Android settings.
+    val state = BridgeView.state(on, PlaybackService.notificationsShown(reactApplicationContext), hub.state, hub.port, settings.bridgePort)
     putString("state", state)
     putInt("port", settings.bridgePort)
     putString("token", if (on) settings.bridgeToken() else null)

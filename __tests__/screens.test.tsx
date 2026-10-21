@@ -595,6 +595,38 @@ test('notifications off with the bridge off shows no bridge warning', async () =
   spy.mockRestore();
 });
 
+// REA-60, R-M12: the native guard reports 'blocked' while Read Me's notifications cannot show.
+test('a blocked bridge shows as off, with the reason, the way back and no token', async () => {
+  mockState.bridge = { enabled: true, state: 'blocked', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('Off: notifications are off for Read Me.');
+  expect(out).toContain('Read Me needs to show a notification while the bridge is on');
+  expect(out).toContain('Allow them in Android settings and the bridge comes back on.');
+  expect(out).toContain('"open app settings"');
+  expect(out).not.toContain('0123456789abcdef0123456789abcdef');
+  expect(bridgeSwitch(await settings()).props.accessibilityState).toMatchObject({ checked: false });
+});
+
+test('the bridge section says it can be turned off from its notification or here', async () => {
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  expect(out).toContain('While it is on, a notification says so. You can turn the bridge off from that notification or here.');
+});
+
+test('returning to Settings from Android settings reads the bridge and the permission again', async () => {
+  const allowed = jest.spyOn(bridgeLib, 'notificationsAllowed').mockResolvedValue(false);
+  mockState.bridge = { enabled: true, state: 'blocked', port: 8787, token: '0123456789abcdef0123456789abcdef', error: null };
+  const r = await settings();
+  const calls = (Native.getBridge as jest.Mock).mock.calls.length;
+  allowed.mockResolvedValue(true);
+  mockState.bridge = { ...mockState.bridge, state: 'on' };
+  await appChange('active');
+  expect((Native.getBridge as jest.Mock).mock.calls.length).toBeGreaterThan(calls);
+  const out = strings(r.toJSON()).join('\n');
+  expect(out).toContain('On at 127.0.0.1:8787');
+  expect(out).not.toContain('Read Me needs to show a notification');
+  expect(bridgeSwitch(r).props.accessibilityState).toMatchObject({ checked: true });
+});
+
 // REA-24: the Material 3 palette on the rendered screens, in dark mode (light is the default
 // the tests above already render in).
 describe('theme on the screens (REA-24)', () => {

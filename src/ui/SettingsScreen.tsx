@@ -1,7 +1,7 @@
 // R-M01 Settings: voice (R-M06: offline voices only), default rate, storage, Licenses (R-M13).
 // R-M12: the Obsidian bridge row (on/off, port, pairing token with Copy).
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
+import { Alert, AppState, Linking, Platform, Pressable, ScrollView, TextInput, useColorScheme, View } from 'react-native';
 import { Button } from './Button';
 import { Select } from './Select';
 import { Stepper } from './Stepper';
@@ -80,7 +80,19 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
     }, () => undefined);
     // R-M12: the permission can be revoked at any time; check it each time Settings opens.
     notificationsAllowed().then(ok => setNotifyOff(!ok), () => undefined);
-    return onBridge(setBridge);
+    // REA-60: and each time the app comes back (from Android's notification settings, say), so
+    // a bridge blocked or unblocked meanwhile shows as it is. A bridge coming back on also
+    // arrives through onBridge.
+    const sub = AppState.addEventListener('change', s => {
+      if (s !== 'active') return;
+      getBridge().then(setBridge, () => undefined);
+      notificationsAllowed().then(ok => setNotifyOff(!ok), () => undefined);
+    });
+    const off = onBridge(setBridge);
+    return () => {
+      sub?.remove();
+      off();
+    };
   }, []);
 
   const applyPort = () => {
@@ -134,6 +146,9 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
 
   const loadingBridge = bridge === null;
   const shown = bridge ?? NO_BRIDGE;
+  // REA-60: the native guard keeps a saved-on bridge from running while notifications cannot
+  // show; it shows as off, and comes back on once they are allowed.
+  const blocked = shown.enabled && shown.state === 'blocked';
   return (
     <ScrollView style={ui.screen}>
       <View collapsable={false} style={ui.header}>
@@ -230,13 +245,14 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
 
       <Text accessibilityRole="header" tone="heading" style={ui.section}>Obsidian bridge</Text>
       <Text tone="secondary" style={[ui.row, ui.small]}>
-        Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices.
+        Lets the Local TTS Reader plugin in Obsidian on this phone use this phone's voices. While it is
+        on, a notification says so. You can turn the bridge off from that notification or here.
       </Text>
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
           <Toggle
             label="Use the bridge"
             disabled={loadingBridge}
-            value={shown.enabled}
+            value={shown.enabled && !blocked}
             onValueChange={on => {
               if (!on) {
                 setBridgeEnabled(false).then(setBridge, () => undefined);
@@ -269,11 +285,12 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
               onSubmitEditing={applyPort}
             />
           </View>
-          {notifyOff && (shown.enabled || refused) ? (
+          {blocked || (notifyOff && (shown.enabled || refused)) ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>
-                Read Me needs to show a notification while the bridge is on, and notifications are off
-                for Read Me. Allow them in Android settings, then turn the bridge on.
+                {blocked
+                  ? 'Read Me needs to show a notification while the bridge is on, and notifications are off for Read Me. Allow them in Android settings and the bridge comes back on.'
+                  : 'Read Me needs to show a notification while the bridge is on, and notifications are off for Read Me. Allow them in Android settings, then turn the bridge on.'}
               </Text>
               <Button
                 appearance="tonal"
@@ -287,7 +304,7 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             </View>
           ) : null}
           {portError ? <Text tone="error" style={ui.small}>The port must be a number from 1024 to 65535.</Text> : null}
-          {shown.enabled && shown.token !== null ? (
+          {shown.enabled && !blocked && shown.token !== null ? (
             <View collapsable={false}>
               <Text tone="secondary" style={ui.small}>Pairing token (paste it into the plugin's settings)</Text>
               <Text selectable accessibilityLabel="pairing token">

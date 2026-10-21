@@ -27,6 +27,8 @@ class PlaybackServiceTest {
     Settings(ApplicationProvider.getApplicationContext()).continuousPlay = false
     PlaybackHub.resetForTest()
     Store.resetForTest()
+    // Plan review F7: global, shared by every test class in this JVM.
+    PlaybackService.notificationsShown = NotificationGate::shown
   }
 
   @Test fun destroyingAPausedServiceRemovesItsNotification() {
@@ -1016,5 +1018,138 @@ class PlaybackServiceTest {
       Settings(ctx).voice = null
     }
     c.destroy()
+  }
+
+  // --- REA-60, R-M12: the bridge runs only while its notification can show ---
+
+  private fun notifications(on: Boolean) {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    shadowOf(ctx.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(on)
+  }
+
+  private fun refused(port: Int) = runCatching { health(port) }.isFailure
+
+  @Test fun aSavedOnBridgeDoesNotStartWhileNotificationsAreOff() {
+    // REA-60: reproduced on the reference phone; a bridge saved on started with the permission revoked.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    notifications(false)
+    val c = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create().startCommand(0, 1)
+    idle()
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+    assertTrue(refused(port))
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    // The saved setting is kept, so the bridge comes back once notifications are allowed.
+    assertTrue(Settings(ctx).bridgeEnabled)
+    c.destroy()
+  }
+
+  @Test fun aRunningBridgeStopsWhenNotificationsTurnOffAndReturnsWhenAllowed() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    val c = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create().startCommand(0, 1)
+    idle()
+    assertEquals(200, health(port))
+    notifications(false)
+    c.withIntent(bridgeIntent(ctx)).startCommand(0, 2)
+    idle()
+    assertTrue(refused(port))
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+
+    notifications(true)
+    val again = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create().startCommand(0, 1)
+    idle()
+    assertEquals(200, health(port))
+    again.destroy()
+  }
+
+  @Test fun aBlockedPlaybackChannelAlsoBlocksTheBridge() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    val nm = ctx.getSystemService(NotificationManager::class.java)
+    nm.createNotificationChannel(android.app.NotificationChannel("playback", "Playback", NotificationManager.IMPORTANCE_NONE))
+    val c = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create()
+    // The service creates its channel at IMPORTANCE_LOW; Android keeps the user's (here NONE).
+    nm.getNotificationChannel("playback").importance = NotificationManager.IMPORTANCE_NONE
+    c.startCommand(0, 1)
+    idle()
+    assertEquals(NotificationManager.IMPORTANCE_NONE, nm.getNotificationChannel("playback").importance)
+    assertTrue(refused(port))
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+    c.destroy()
+  }
+
+  @Test fun withAnItemPlayingOnlyTheBridgeCloses() {
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    val c = playing()
+    c.withIntent(bridgeIntent(ctx)).startCommand(0, 2)
+    idle()
+    assertEquals(200, health(port))
+    val before = PlaybackHub.queue!!.snapshot().itemId
+    notifications(false)
+    c.withIntent(bridgeIntent(ctx)).startCommand(0, 3)
+    idle()
+    assertTrue(refused(port))
+    val s = PlaybackHub.queue!!.snapshot()
+    assertEquals(before, s.itemId)
+    assertTrue(s.playing)
+    assertFalse(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun aBridgeSessionStopsWhenTheBridgeIsBlocked() {
+    // Plan review F3: the plugin cannot reach /control once the bridge closes, so its session stops.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    val c = bridgeService().startCommand(0, 1)
+    idle()
+    val player = c.get().bridgePlayer
+    assertEquals(1, player.play(listOf("One.", "Two."), 1f))
+    idle()
+    c.get().onReady(TtsSpeaker.EngineStatus.READY)
+    idle()
+    assertEquals(PlaybackService.BRIDGE_ITEM, PlaybackHub.queue!!.snapshot().itemId)
+    notifications(false)
+    c.withIntent(bridgeIntent(ctx)).startCommand(0, 2)
+    idle()
+    assertTrue(refused(port))
+    assertNull(PlaybackHub.queue?.snapshot()?.itemId)
+    assertEquals(BridgePlaybackState.STOPPED, player.status().state)
+    c.destroy()
+  }
+
+  @Test fun theBlockStateBroadcastStopsARunningBridge() {
+    // Android 9+ tells the app when the user blocks its notifications or a channel; pm revoke does not.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val port = freePort()
+    Settings(ctx).apply { bridgePort = port; bridgeEnabled = true }
+    val c = Robolectric.buildService(PlaybackService::class.java, bridgeIntent(ctx)).create().startCommand(0, 1)
+    idle()
+    assertEquals(200, health(port))
+    notifications(false)
+    ctx.sendBroadcast(Intent(NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED).setPackage(ctx.packageName))
+    idle()
+    assertTrue(refused(port))
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
+    assertTrue(shadowOf(c.get()).isStoppedBySelf)
+    c.destroy()
+  }
+
+  @Test fun theCompanionStartsNoServiceWhileNotificationsAreOff() {
+    // MainActivity.onResume, setVoice, setEngine, setBridgeEnabled and setBridgePort all come here.
+    val ctx = ApplicationProvider.getApplicationContext<android.app.Application>()
+    Settings(ctx).bridgeEnabled = true
+    notifications(false)
+    PlaybackService.syncBridge(ctx)
+    assertNull(shadowOf(ctx).nextStartedService)
+    assertEquals(BridgeStatus.OFF, PlaybackHub.bridge)
   }
 }

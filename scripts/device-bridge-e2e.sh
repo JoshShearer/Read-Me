@@ -5,8 +5,10 @@
 # and 2.0 (the 2.0 WAV must be shorter: the engine applied the rate once), 401 without the
 # token, the hostile-input set, a silent client, 503 while Read Me plays and the bridge after
 # playback ends. With Obsidian installed, calls the bridge from inside its WebView with Read Me
-# in the background. Turns the bridge off and checks it is gone. Checks logcat for the token
-# and the test text.
+# in the background. REA-60: revokes the notification permission, reopens Read Me and checks the
+# bridge stays off (nothing listens, the refusal is logged, Settings says why), then grants it back
+# and checks the saved setting brings the bridge back. Turns the bridge off and checks it is gone.
+# Checks logcat for the token and the test text.
 #
 # REA-44: the while-playing WebView check needs playback to outlast Obsidian's start. The test
 # text is 40 sentences (about 4x the old margin; a fast enough engine or a slow enough Obsidian
@@ -31,8 +33,11 @@ restore_engine() {
   fi
   echo "engine: restored tts_default_synth to $(adb shell settings get secure tts_default_synth | tr -d '\r')"
 }
+notify_revoked=0      # REA-60's section revoked POST_NOTIFICATIONS and has not granted it back
 cleanup() {
   restore_engine
+  # Plan review F6: a run stopped inside the revoked-permission section gives the permission back.
+  [ "$notify_revoked" = 0 ] || adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
   [ -z "$HDR" ] || rm -f "$HDR"
   adb forward --remove tcp:$PORT >/dev/null 2>&1 || true
   adb shell rm -f /sdcard/readme-ui.xml >/dev/null 2>&1 || true
@@ -232,9 +237,43 @@ else
   OBSIDIAN=skipped
 fi
 
+echo "== R-M12: notifications revoked, the app reopened (REA-60)"
+# The bridge is on in Settings. A revoke killed Read Me on the reference phone (2026-10-21); the
+# next open must refuse the restart while the notification cannot show, and keep the setting.
+notify_revoked=1
+adb shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS
+sleep 2
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+sleep 3
+adb forward tcp:$PORT tcp:$PORT >/dev/null
+check "revoked: nothing listens on the port after the reopen" "[ \"\$(code --max-time 3 $B/health)\" = 000 ]"
+check "revoked: the refusal is logged" "wait_log 'bridge blocked: notifications off' 10"
+check "revoked: no bridge notification" \
+  "! grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
+# A fresh process opens on the List.
+tap_desc settings
+scroll_to_desc "$BRIDGE"
+check "revoked: Settings shows the bridge off and why" \
+  "bridge_is false && on_screen 'Off: notifications are off for Read Me' && on_screen 'the bridge comes back on'"
+check "the section says the bridge can be turned off from its notification or here" \
+  "on_screen 'turn the bridge off from that notification or here'"
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+notify_revoked=0
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+sleep 3
+tap_desc settings
+scroll_to_desc "$BRIDGE"
+check "granted again: the saved setting brings the bridge back" "on_screen 'On at 127\.0\.0\.1:$PORT' && bridge_is true"
+adb forward tcp:$PORT tcp:$PORT >/dev/null
+check "granted again: /health 200" "[ \"\$(code --max-time 5 $B/health)\" = 200 ]"
+check "granted again: the notification says the bridge is on" \
+  "grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
+
 echo "== Settings: turn the bridge off"
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
-# The Reader is still open: back to the List, then Settings.
+# Settings is open (REA-60's section ends there): back to the List, then Settings.
 adb shell input keyevent KEYCODE_BACK
 tap_desc settings
 scroll_to_desc "$BRIDGE"
