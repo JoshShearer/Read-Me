@@ -99,6 +99,22 @@ class FetcherTest {
     assertEquals(FetchResult.Failed("offline"), Fetcher().fetch(gone))
   }
 
+  // REA-59: .invalid never resolves (RFC 6761), so this is a real UnknownHostException.
+  @Test fun anUnknownHostWithAValidatedNetworkIsNotFound() {
+    val f = Fetcher(hasValidatedNetwork = { true })
+    assertEquals(FetchResult.Failed("not-found"), f.fetch("https://nowebsite.invalid/a/b?q=1"))
+  }
+
+  @Test fun anUnknownHostWithNoValidatedNetworkIsOffline() {
+    val f = Fetcher(hasValidatedNetwork = { false })
+    assertEquals(FetchResult.Failed("offline"), f.fetch("https://nowebsite.invalid/a"))
+  }
+
+  @Test fun aNetworkStateReadThatThrowsIsOffline() {
+    val f = Fetcher(hasValidatedNetwork = { throw SecurityException("no") })
+    assertEquals(FetchResult.Failed("offline"), f.fetch("https://nowebsite.invalid/a"))
+  }
+
   @Test fun aMalformedUrlIsBadUrl() {
     assertEquals(FetchResult.Failed("bad-url"), Fetcher().fetch("https://"))
   }

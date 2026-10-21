@@ -126,6 +126,9 @@ describe('the list (R-M01, R-M10)', () => {
 
   test('the badge is the state, with the reason when there is one', () => {
     expect(badge(item({ state: 'fetch-failed', failReason: 'offline' }))).toBe('fetch-failed: offline');
+    expect(badge(item({ state: 'fetch-failed', failReason: 'not-found' }))).toBe('fetch-failed: not-found');
+    expect(actions(item({ state: 'fetch-failed', failReason: 'not-found' }))).toEqual(['retry', 'delete']);
+    expect(guidance(item({ state: 'fetch-failed', failReason: 'not-found' }))).not.toBeNull();
     expect(badge(item())).toBe('ready');
   });
 });

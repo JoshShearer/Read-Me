@@ -1,5 +1,8 @@
 package io.loopstring.readme.fetch
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
@@ -30,6 +33,9 @@ sealed class FetchResult {
 class Fetcher(
   private val timeoutMs: Long = 20_000,
   private val capBytes: Long = CAP_BYTES,
+  // REA-59: read when an UnknownHostException is caught, to tell "no network" from "no such
+  // host". Reading the system's network state makes no network call. Default: no network.
+  private val hasValidatedNetwork: () -> Boolean = { false },
 ) {
   private val client = OkHttpClient.Builder()
     .cookieJar(CookieJar.NO_COOKIES)
@@ -85,7 +91,9 @@ class Fetcher(
       } catch (e: InterruptedIOException) {
         return FetchResult.Failed("timeout")
       } catch (e: UnknownHostException) {
-        return FetchResult.Failed("offline")
+        // With no network Android throws this too, so the exception alone cannot say which.
+        val online = try { hasValidatedNetwork() } catch (t: Throwable) { false }
+        return FetchResult.Failed(if (online) "not-found" else "offline")
       } catch (e: ConnectException) {
         return FetchResult.Failed("offline")
       } catch (e: NoRouteToHostException) {
@@ -113,6 +121,14 @@ class Fetcher(
     const val CAP_BYTES = 5L * 1024 * 1024
     const val MAX_REDIRECTS = 5
     private const val CHUNK = 64L * 1024
+    /** True when the active network has been validated (it reached the internet). */
+    fun validatedNetworkOf(context: Context): () -> Boolean = {
+      val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+      val net = cm.activeNetwork
+      val caps = if (net == null) null else cm.getNetworkCapabilities(net)
+      caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }
+
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android) ReadMe/1.0"
   }
 }
