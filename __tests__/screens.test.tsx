@@ -763,17 +763,30 @@ test('the Continuous play switch is there and disabled before the setting loads 
 // REA-61: first-time setup for the Obsidian plugin.
 const PLUGIN_URL = 'https://github.com/JoshShearer/Note-Reader-Local';
 
-test('the bridge section gives three setup steps with the plugin and setting names (REA-61)', async () => {
+test('the bridge section gives four ordered setup steps a fresh install can follow (REA-61)', async () => {
   const out = await render(<SettingsScreen onLicenses={() => {}} />);
   expect(out).toContain('The plugin is a separate install');
-  expect(out).toContain("search Local TTS Reader in Obsidian's Community plugins");
-  expect(out).toContain('1. In Obsidian, install and enable Local TTS Reader.');
+  expect(out).toContain("1. In Obsidian, search Local TTS Reader in Community plugins, then install and enable it.");
+  expect(out).toContain('2. Turn on "Use the bridge" below and allow the notification.');
+  expect(out).toContain('3. Copy the token that appears below');
   expect(out).toContain('Pairing token');
   expect(out).toContain('Read Me Offline bridge');
-  expect(out).toContain('Speech engine');
-  expect(out).toContain('Automatic');
-  expect(out).toContain('3. Open a note and run "Read note aloud"');
+  expect(out).toContain('Speech engine on Automatic');
+  expect(out).toContain('4. In Obsidian, open a note and run "Read note aloud"');
   expect(out).toContain('Read this note aloud');
+  // the switch the steps point at sits after them
+  expect(out.lastIndexOf('Use the bridge')).toBeGreaterThan(out.indexOf('4. In Obsidian'));
+});
+
+test('the plugin link is a plain text link, not a tonal fill, and does not stretch (REA-61)', async () => {
+  const r = await settings();
+  const link = r.root.find(n => n.props.accessibilityLabel === 'open plugin page' && n.props.accessibilityRole !== undefined);
+  const flat = ([] as object[]).concat(...[link.props.style].flat(5).map(x => x ?? [])) as Array<Record<string, unknown>>;
+  const merged = Object.assign({}, ...flat);
+  // A tonal fill (secondaryContainer #e8ddf8) antialiases into the Reader-highlight match of
+  // scripts/theme-contrast.py (primaryContainer #ecdcff +-6).
+  expect(merged.backgroundColor).toBeUndefined();
+  expect(merged.alignSelf).toBe('flex-start');
 });
 
 test('the plugin link hands off to the browser with the exact URL and is a labelled link (REA-61)', async () => {

@@ -252,27 +252,28 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
         on, a notification says so. You can turn the bridge off from that notification or here.
       </Text>
       <View collapsable={false} style={[ui.row, ui.stack]}>
+        <Text tone="secondary" style={ui.small}>The plugin is a separate install. Follow these steps in order.</Text>
         <Text tone="secondary" style={ui.small}>
-          The plugin is a separate install: search Local TTS Reader in Obsidian's Community plugins, or open its
-          page.
+          1. In Obsidian, search Local TTS Reader in Community plugins, then install and enable it.
         </Text>
         <Button
-          appearance="tonal"
+          appearance="text"
           label="Open the plugin page"
           accessibilityLabel="open plugin page"
           role="link"
+          style={ui.start}
           onPress={() => {
             Linking.openURL(PLUGIN_URL).catch(() => undefined);
           }}
         />
-        <Text tone="secondary" style={ui.small}>1. In Obsidian, install and enable Local TTS Reader.</Text>
+        <Text tone="secondary" style={ui.small}>2. Turn on "Use the bridge" below and allow the notification.</Text>
         <Text tone="secondary" style={ui.small}>
-          2. Copy the token below and paste it into the plugin's settings, under Read Me Offline bridge,
-          in the Pairing token field. Leave Speech engine on Automatic and the plugin picks Read Me.
+          3. Copy the token that appears below and paste it into the plugin's settings, under Read Me Offline
+          bridge, in the Pairing token field. Leave Speech engine on Automatic and the plugin picks Read Me.
         </Text>
         <Text tone="secondary" style={ui.small}>
-          3. Open a note and run "Read note aloud" from the command palette, or tap the ribbon's "Read this note
-          aloud".
+          4. In Obsidian, open a note and run "Read note aloud" from the command palette, or tap the ribbon's
+          "Read this note aloud".
         </Text>
       </View>
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
