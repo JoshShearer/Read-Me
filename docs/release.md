@@ -73,19 +73,27 @@ nothing for day-to-day builds, device scripts or CI.
    public `android` password (React Native's template), nothing secret.
    Then `gh repo edit JoshShearer/Read-Me --visibility public` (gh 2.45 here; newer gh also wants
    `--accept-visibility-change-consequences`).
-3. F-Droid: the merge request is https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088
-   (branch `io.loopstring.readme` of `gitlab.com/Joshshearer/fdroiddata`). For each release,
-   in that fork's `metadata/io.loopstring.readme.yml`, replace the four build entries (one per
-   ABI) with the ones in `fdroid/io.loopstring.readme.yml`, each with `commit:` set to the tag's
-   full hash (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there), and set
-   `CurrentVersion`/`CurrentVersionCode` (the x86_64 entry's, the highest). Then
-   `npm run fdroid:rewritemeta -- <fork checkout>`, which strips the comments (fdroiddata's CI
-   requires that) and lints. It runs fdroidserver master in F-Droid's image, as the merge
-   request's `fdroid rewritemeta` job does. Do not run a local `fdroid rewritemeta`: fdroidserver
-   2.4.5 leaves the long `binary:` URLs on one line where master wraps them, and the 1.0.5
-   pipeline failed on that. Commit and push; the merge request's pipeline reruns. Before the
-   first merge only the latest version may be listed. After it is merged, `AutoUpdateMode: Version` and `UpdateCheckMode:
-   Tags` make F-Droid pick up new tags itself.
+3. F-Droid: the app's metadata is `metadata/io.loopstring.readme.yml` in fdroiddata (merge
+   request https://gitlab.com/fdroid/fdroiddata/-/merge_requests/51088, merged 2026-10-22). Its
+   `UpdateCheckMode: Tags`, `AutoUpdateMode: Version` and `VercodeOperation` (10 x versionCode +
+   1..4, as `android/app/build.gradle` numbers the ABIs) make F-Droid's update check add the four
+   build entries for a new `v<version>` tag itself, copying the last ones, and build them. A
+   release needs no merge request, with two rules:
+   - Publish the tag and the release together (step 1 does: publishing creates the tag). Each
+     build is checked against the signed APK at its `binary:` URL, so a tag whose release is
+     still a draft, or has no APKs, fails F-Droid's build of that version. Never push a `v*` tag
+     by hand.
+   - A change to the recipe itself (`fdroid/io.loopstring.readme.yml`: prebuild, scandelete,
+     scanignore, ndk, sudo) is not carried over by the update check. Open a merge request from
+     the fork (`gitlab.com/Joshshearer/fdroiddata`, a branch off fdroiddata's `master`) that
+     changes the latest build entries, with `commit:` set to the tag's full hash
+     (`git rev-parse v<version>^{commit}`; fdroiddata refuses a tag name there). Then
+     `npm run fdroid:rewritemeta -- <fork checkout>`, which strips the comments (fdroiddata's CI
+     requires that) and lints. It runs fdroidserver master in F-Droid's image, as the merge
+     request's `fdroid rewritemeta` job does. Do not run a local `fdroid rewritemeta`:
+     fdroidserver 2.4.5 leaves the long `binary:` URLs on one line where master wraps them, and
+     the 1.0.5 pipeline failed on that. fdroiddata wants one command per `init`/`prebuild`
+     entry, never `;` or `&&` (recipe.test checks it).
 
 ## Not established
 
