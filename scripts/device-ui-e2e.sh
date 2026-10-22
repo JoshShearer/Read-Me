@@ -195,7 +195,6 @@ reveal_radio() {
 }
 tap_node content-desc 'settings'
 on_screen "content-desc=\"$FIELD\"" || fail=1
-on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
 # Nothing above touches the rate, so it is still the 2.0x default. Twice on 2026-10-03 it read
 # 1.7x after a scripted run (three presses of "slower" no script sends); this catches a repeat.
 on_screen 'text="2\.0x"' || { echo "FAIL: the default rate moved without a press"; fail=1; }
@@ -246,6 +245,9 @@ on_screen "content-desc=\"$FIELD\"" || { echo "FAIL: Back left Settings instead 
 # reference phone: its node is in the dump but a tap at its centre hits nothing. Scroll first.
 read -r W H < <(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr x ' ')
 adb shell input swipe $((W / 2)) $((H * 4 / 5)) $((W / 2)) $((H / 5)) 300
+# Storage sits directly above Licenses; since REA-61's bridge setup steps it is below the fold
+# until this swipe (REA-65).
+on_screen '[0-9]+ items, [0-9]+ archived' || fail=1
 tap_node content-desc 'licenses'
 # Alphabetical, so check what is on screen: packages with a license line.
 on_screen 'text="(MIT|Apache-2.0|ISC|BSD-3-Clause)"' || fail=1
