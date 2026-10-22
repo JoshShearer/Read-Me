@@ -12,7 +12,7 @@
 # read ten sentences before the first screen check). It is the first of $DEVICE_ENGINES
 # installed for the phone's current user (GrapheneOS Speech Services on the reference phone,
 # REA-31), or READ_ME_ENGINE when set. The cold-start section needs a slow-starting engine and
-# switches to the previous default (see there). UI_ONLY=coldstart runs only that section.
+# switches to the previous default (see there). UI_ONLY=coldstart runs only that section; UI_ONLY=trim only the first Trim open and its long-press steps (REA-62).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
@@ -130,6 +130,56 @@ tap_node resource-id 'paragraph 2'
 on_screen 'resource-id="paragraph 2 cut"' || fail=1
 device_has "$(ui)" 'resource-id="paragraph (1|3) cut"' && { echo "FAIL: the wrong paragraph was cut"; fail=1; }
 on_screen '2 of 3 paragraphs kept' || fail=1
+
+# Long press (R-M05, REA-62): the menu offers "Cut everything after this" and "Start here".
+# Since REA-62 it is the app's own bottom sheet; before, the platform AlertDialog (whose One UI
+# rendering left an empty area). Each action must change the kept paragraphs as before, and
+# Cancel must change nothing. The cuts are put back to {2} after, for what follows.
+long_press() {
+  local c
+  c=$(centre_of resource-id "$1")
+  [ -n "$c" ] || { echo "FAIL: no $1 to long-press"; return 1; }
+  adb shell input swipe $c $c 900
+}
+# trim_menu_bounds: the menu's title and first action as the dump shows them (bounds only),
+# so a run records how tall the gap between them is. Never prints item text.
+trim_menu_bounds() {
+  ui | grep -oE '(resource-id="(android:id/(alertTitle|message|contentPanel|buttonPanel)|trim menu[^"]*)")[^>]*bounds="\[[0-9,]+\]\[[0-9,]+\]"' \
+    | sed -E 's/ (text|class|package|content-desc|checkable|checked|clickable|enabled|focusable|focused|scrollable|long-clickable|password|selected|index)="[^"]*"//g; s/^resource-id=//' | sed 's/^/  menu node: /' || true
+}
+ACT_START='(Start here|START HERE)'
+ACT_AFTER='(Cut everything after this|CUT EVERYTHING AFTER THIS)'
+long_press 'paragraph 1' || fail=1
+on_screen "text=\"$ACT_AFTER\"" || fail=1
+trim_menu_bounds
+# TRIM_SHOT=<file.png> keeps a screenshot of the open menu (a synthetic text, no library item).
+[ -z "${TRIM_SHOT:-}" ] || adb exec-out screencap -p > "$TRIM_SHOT"
+# Cancel, not Back: the platform dialog was not cancelable, the sheet is (Jest covers Back).
+tap_node text '(Cancel|CANCEL)'
+for _ in $(seq 10); do device_has "$(ui)" "text=\"$ACT_AFTER\"" || break; sleep 1; done
+device_has "$(ui)" "text=\"$ACT_AFTER\"" && { echo "FAIL: Cancel did not close the Trim menu"; fail=1; }
+on_screen '2 of 3 paragraphs kept' || { echo "FAIL: closing the Trim menu changed the cuts"; fail=1; }
+echo "RUN: long press, Cut everything after this on paragraph 1"
+long_press 'paragraph 1' || fail=1
+tap_node text "$ACT_AFTER"
+on_screen '1 of 3 paragraphs kept' || { echo "FAIL: Cut everything after this did not keep 1 of 3"; fail=1; }
+on_screen 'resource-id="paragraph 3 cut"' || { echo "FAIL: paragraph 3 was not cut"; fail=1; }
+device_has "$(ui)" 'resource-id="paragraph 1 cut"' && { echo "FAIL: paragraph 1 was cut"; fail=1; }
+echo "RUN: long press, Start here on paragraph 3"
+long_press 'paragraph 3 cut' || fail=1
+tap_node text "$ACT_START"
+on_screen '1 of 3 paragraphs kept' || { echo "FAIL: Start here did not keep 1 of 3"; fail=1; }
+on_screen 'resource-id="paragraph 1 cut"' || { echo "FAIL: paragraph 1 was not cut by Start here"; fail=1; }
+on_screen 'resource-id="paragraph 3"' || { echo "FAIL: paragraph 3 is not kept after Start here"; fail=1; }
+# Restore: paragraph 1 back (tap), leaving only paragraph 2 cut.
+tap_node resource-id 'paragraph 1 cut'
+on_screen '2 of 3 paragraphs kept' || { echo "FAIL: could not restore the cuts after the long-press steps"; fail=1; }
+on_screen 'resource-id="paragraph 2 cut"' || { echo "FAIL: paragraph 2 is not the one cut after the long-press steps"; fail=1; }
+if [ "${UI_ONLY:-}" = trim ]; then
+  echo "UI_ONLY=trim: stopping after the long-press steps"
+  [ "$fail" = 0 ] && echo "PASS: Trim long-press steps" || echo "FAIL: Trim long-press steps"
+  exit "$fail"
+fi
 tap_node content-desc 'trim done'
 
 # Reader plays only the kept sentences and highlights the current one (R-M07)

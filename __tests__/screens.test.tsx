@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppState, DeviceEventEmitter, Linking } from 'react-native';
+import { Alert, AppState, DeviceEventEmitter, Linking, Modal } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { NativeEngine, NativeItem } from '../src/native/NativeReadMeSpeech';
 
@@ -868,5 +868,119 @@ describe('the Reader dock in a narrow window (REA-58)', () => {
     expect(Native.setRate).toHaveBeenLastCalledWith(2.1);
     await press(r, 'slower');
     expect(Native.setRate).toHaveBeenLastCalledWith(2);
+  });
+});
+
+// REA-62: the long-press menu is the app's own bottom sheet, not the platform AlertDialog
+// (One UI drew an empty area in it). Each action calls the same cut function as before.
+describe('Trim long-press sheet (REA-62)', () => {
+  const three = () => {
+    mockState.detail = {
+      item: { ...base, kind: 'text' },
+      paragraphs: [{ kind: 'p', text: 'First.' }, { kind: 'p', text: 'Second.' }, { kind: 'p', text: 'Third.' }],
+      cuts: [],
+    };
+  };
+  const sheet = (r: ReactTestRenderer.ReactTestRenderer) => r.root.findByType(Modal);
+  const pressId = (r: ReactTestRenderer.ReactTestRenderer, id: string) =>
+    r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function').props.onPress();
+  const longPress = async (r: ReactTestRenderer.ReactTestRenderer, id: string) => {
+    await ReactTestRenderer.act(async () => {
+      r.root.find(n => n.props.testID === id && typeof n.props.onLongPress === 'function').props.onLongPress();
+    });
+  };
+  const lastCuts = () => {
+    const calls = (Native.setCuts as jest.Mock).mock.calls;
+    return calls[calls.length - 1];
+  };
+
+  test('a long press opens the sheet with its three actions and never the platform Alert', async () => {
+    three();
+    const alert = jest.spyOn(Alert, 'alert');
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    expect(sheet(r).props.visible).toBe(false);
+    await longPress(r, 'paragraph 2');
+    expect(sheet(r).props.visible).toBe(true);
+    const labels = sheet(r).findAll(n => typeof n.props.testID === 'string' && n.props.testID.startsWith('trim menu')).map(n => n.props.accessibilityLabel);
+    expect(labels).toEqual(expect.arrayContaining(['Start here', 'Cut everything after this', 'Cancel']));
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  test('Cut everything after this cuts the paragraphs after the pressed one and closes', async () => {
+    three();
+    (Native.setCuts as jest.Mock).mockClear();
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    await longPress(r, 'paragraph 1');
+    await ReactTestRenderer.act(async () => pressId(r, 'trim menu cut after'));
+    expect(lastCuts()).toEqual([1, [1, 2]]);
+    expect(sheet(r).props.visible).toBe(false);
+  });
+
+  test('Start here cuts the paragraphs before the pressed one and closes', async () => {
+    three();
+    (Native.setCuts as jest.Mock).mockClear();
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    await longPress(r, 'paragraph 3');
+    await ReactTestRenderer.act(async () => pressId(r, 'trim menu start here'));
+    expect(lastCuts()).toEqual([1, [0, 1]]);
+    expect(sheet(r).props.visible).toBe(false);
+  });
+
+  test('Cancel, the scrim and Back close the sheet and change nothing', async () => {
+    three();
+    (Native.setCuts as jest.Mock).mockClear();
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    for (const how of ['cancel', 'scrim', 'back']) {
+      await longPress(r, 'paragraph 2');
+      expect(sheet(r).props.visible).toBe(true);
+      await ReactTestRenderer.act(async () => {
+        if (how === 'cancel') pressId(r, 'trim menu cancel');
+        else if (how === 'scrim') r.root.find(n => n.props.accessibilityLabel === 'close trim menu').props.onPress();
+        else sheet(r).props.onRequestClose();
+      });
+      expect(sheet(r).props.visible).toBe(false);
+    }
+    expect(Native.setCuts).not.toHaveBeenCalled();
+  });
+
+  test('two row taps before a re-render apply only the first action', async () => {
+    three();
+    (Native.setCuts as jest.Mock).mockClear();
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    await longPress(r, 'paragraph 2');
+    await ReactTestRenderer.act(async () => {
+      pressId(r, 'trim menu start here');
+      pressId(r, 'trim menu cut after');
+    });
+    expect(Native.setCuts).toHaveBeenCalledTimes(1);
+    expect(lastCuts()).toEqual([1, [0]]);
+  });
+
+  // At 360 dp and font scale 2.0 (REA-58's narrow case) "Cut everything after this" may wrap.
+  // A row of fixed height would clip a second line, so each row's style must let it grow: a
+  // 48 dp minimum, no fixed height, and a label not capped below the font scale Android asks
+  // for. The test renderer has no layout, so the growth itself is checked on the phone
+  // (device:themes' narrow pass, scripts/sheet-check.py).
+  describe('row style', () => {
+    const RN = require('react-native') as typeof import('react-native');
+    test.each(['trim menu start here', 'trim menu cut after', 'trim menu cancel'])(
+      "the %s row's style lets it grow: minHeight 48, no fixed height",
+      async id => {
+        three();
+        const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+        await longPress(r, 'paragraph 2');
+        const row = r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function');
+        const style = typeof row.props.style === 'function' ? row.props.style({ pressed: false }) : row.props.style;
+        const flat = RN.StyleSheet.flatten(style) ?? {};
+        expect(flat.height).toBeUndefined();
+        expect(flat.minHeight).toBe(48);
+        expect(flat.paddingVertical ?? flat.paddingTop ?? 0).toBeGreaterThan(0);
+        for (const t of row.findAllByType(RN.Text)) {
+          expect(t.props.numberOfLines).toBeUndefined();
+          expect(t.props.maxFontSizeMultiplier).toBeUndefined();
+        }
+      },
+    );
   });
 });

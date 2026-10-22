@@ -73,7 +73,35 @@ echo x >> "$STUB_DIR/forcestops"
 exit 0
 STUB
 printf '#!/bin/sh\necho "Night mode: no"\n' > "$T/phonebin/cmd"
-printf '#!/bin/sh\n:\n' > "$T/phonebin/input"; cp "$T/phonebin/input" "$T/phonebin/uiautomator"
+# The screen: themes() writes $STUB_DIR/screen.xml, and `uiautomator dump <file>` writes it as
+# the phone's state shows it. Trim's sheet rows show only from a long press (a swipe) to the next
+# tap; with $STUB_DIR/cancel-cuts that tap also cuts paragraph 1 (a Cancel that applied an
+# action). With $STUB_DIR/wide.xml the phone at its own density shows that screen instead. With
+# $STUB_DIR/play-centre ("x y") a tap there toggles playing, which puts Pause in Play's place.
+cat > "$T/phonebin/input" <<'STUB'
+#!/bin/sh
+D=$STUB_DIR
+case "$1" in
+  swipe) touch "$D/sheet-open" ;;
+  tap)
+    if [ -f "$D/sheet-open" ]; then rm -f "$D/sheet-open"; [ ! -f "$D/cancel-cuts" ] || touch "$D/cut"
+    elif [ -f "$D/play-centre" ] && [ "$2 $3" = "$(cat "$D/play-centre")" ]; then
+      if [ -f "$D/playing" ]; then rm -f "$D/playing"; else touch "$D/playing"; fi
+    fi ;;
+esac
+exit 0
+STUB
+cat > "$T/phonebin/uiautomator" <<'STUB'
+#!/bin/sh
+D=$STUB_DIR; src=$D/screen.xml
+[ "$1" = dump ] && [ -f "$src" ] || exit 0
+if [ ! -f "$D/override" ] && [ -f "$D/wide.xml" ]; then src=$D/wide.xml; fi
+out=$(cat "$src")
+[ -f "$D/sheet-open" ] || out=$(printf '%s' "$out" | sed 's|<node resource-id="trim menu [^"]*" bounds="[^"]*"><node [^>]*/></node>||g')
+[ ! -f "$D/cut" ] || out=$(printf '%s' "$out" | sed 's|resource-id="paragraph 1"|resource-id="paragraph 1 cut"|')
+[ ! -f "$D/playing" ] || out=$(printf '%s' "$out" | sed 's|content-desc="play"|content-desc="pause"|; s|text="Play"|text="Pause"|')
+printf '%s\n' "$out" > "$2"
+STUB
 chmod +x "$T/bin/adb" "$T/phonebin/"*
 export PATH="$T/bin:$PATH" STUB_CALLS="$T/calls" STUB_DIR="$T"
 SAVED="$T/phone/readme-display.saved"; WATCH="$T/phone/readme-display.watchdog"
@@ -95,7 +123,8 @@ run() {
 # fresh [override] [font_scale]: no save file, the phone at those values, an empty call log.
 fresh() {
   rm -f "$SAVED" "$WATCH" "$T/override" "$T/fs" "$T/down" "$T/catfail" "$T/writefail" "$T/writeshort" \
-    "$T/resetfail" "$T/forcestops" "$T/forcestop-fail-at" "$T/logcat"
+    "$T/resetfail" "$T/forcestops" "$T/forcestop-fail-at" "$T/logcat" \
+    "$T/sheet-open" "$T/cancel-cuts" "$T/cut" "$T/playing" "$T/play-centre" "$T/wide.xml"
   : > "$STUB_CALLS"; unset STUB_WM_RC DISPLAY_WATCHDOG_SECS
   [ -z "${1:-}" ] || echo "$1" > "$T/override"
   [ -z "${2:-}" ] || echo "$2" > "$T/fs"
@@ -267,21 +296,38 @@ device_install_release() { :; }
 device_clear_app() { :; }
 LIB
 cp "$DOCK_CHECK" "$T/repo/scripts/dock-check.py"
+cp "${SHEET_CHECK:-$ROOT/scripts/sheet-check.py}" "$T/repo/scripts/sheet-check.py"
 printf 'print("contrast: not measured (stub)")\n' > "$T/repo/scripts/theme-contrast.py"
 # A two-row dock at 597 dpi (also what the stub phone shows at 480 dpi: wide must be one row).
-dock_dump() {
+dock_two_rows() {
   printf '<hierarchy><node bounds="[0,0][1344,2992]">'
   icon 'back paragraph' 40 2500; icon 'previous sentence' 240 2500
   printf '<node content-desc="play" bounds="[440,2515][800,2664]"><node text="Play" bounds="[530,2540][710,2640]"/></node>'
   icon 'next sentence' 820 2500
   icon slower 400 2700; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'; icon faster 760 2700
-  printf '</node></hierarchy>'
+  trim_nodes; printf '</node></hierarchy>'
+}
+dock_dump() { dock_two_rows; }
+# What the narrow pass's REA-62 step finds on the stub's one screen: Trim's button and Done, a
+# paragraph, and the open sheet's rows at 597 dpi (48 dp = 179 px), each row ${SHEET_ROW:-250} px
+# tall with a label ${SHEET_LABEL:-120} px tall.
+sheet_row() {  # sheet_row <id> <y0> [row height] [label height]
+  local h=${3:-250} l=${4:-120}
+  printf '<node resource-id="%s" bounds="[36,%s][1308,%s]"><node text="LABEL-SENTINEL" bounds="[84,%s][900,%s]"/></node>' \
+    "$1" "$2" "$(($2 + h))" "$(($2 + (h - l) / 2))" "$(($2 + (h + l) / 2))"
+}
+trim_nodes() {
+  printf '<node content-desc="trim" bounds="[1100,100][1300,200]"/><node content-desc="trim done" bounds="[1100,220][1300,320]"/>'
+  printf '<node resource-id="paragraph 1" bounds="[0,400][1344,800]"/>'
+  local h=${SHEET_ROW:-250} l=${SHEET_LABEL:-120}
+  sheet_row 'trim menu start here' 2000 "$h" "$l"; sheet_row 'trim menu cut after' $((2000 + h)) "$h" "$l"
+  sheet_row 'trim menu cancel' $((2000 + 2 * h)) "$h" "$l"
 }
 icon() { printf '<node content-desc="%s" bounds="[%s,%s][%s,%s]"><node text="g" bounds="[%s,%s][%s,%s]"/></node>' \
   "$1" "$2" "$3" "$(($2 + ${5:-179}))" "$(($3 + 179))" "$(($2 + 60))" "$(($3 + (179 - ${4:-160}) / 2))" \
   "$(($2 + 120))" "$(($3 + (179 + ${4:-160}) / 2))"; }
 themes() {  # themes: the real script; stdout+stderr to $T/out, status to $T/rc
-  dock_dump > "$T/phone/readme-ui.xml"
+  dock_dump > "$T/screen.xml"
   (cd "$T/repo" && THEMES_ONLY=narrow bash scripts/device-themes.sh) >"$T/out" 2>&1; echo $? > "$T/rc"
 }
 before() {  # before <ERE a> <ERE b>: the first call matching a comes before the first matching b
@@ -326,13 +372,57 @@ dock_dump() {
   icon 'back paragraph' 20 2500; icon 'previous sentence' 205 2500
   printf '<node content-desc="play" bounds="[390,2515][760,2664]"><node text="Play" bounds="[480,2540][670,2640]"/></node>'
   icon 'next sentence' 770 2500; icon slower 960 2500; icon faster 1150 2500
-  printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'
+  printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/>'; trim_nodes; printf '</node></hierarchy>'
 }
 themes
 check "script: a one-row dock fails narrow's two-row check" \
   "$(grep -c '^narrow-[13]-reader FAIL dock: layout one-row, expected two-rows$' "$T/out")" 2
 check "script: and passes wide's one-row check" "$(grep -c '^wide-1-reader FAIL dock: layout' "$T/out")" 0
 check "script: the display is back after the pass" "$(state) $(file)" 'none 1.0 gone'
+check "script: the narrow pass checks Trim's sheet and it passes" \
+  "$(grep -c '^narrow-5-trim-sheet sheet: PASS$' "$T/out") $(grep -c "^FAIL: Trim's long-press sheet" "$T/out")" '1 0'
+# REA-62: runs where only the sheet can fail. The phone shows a one-row dock at its own 480 dpi
+# (48 dp = 144 px) and the two-row dock at 597, with Pause in Play's place once Play's centre is
+# tapped, so every dock check passes and the verdict rests on the sheet.
+dock_dump() { dock_two_rows; }
+icon480() { printf '<node content-desc="%s" bounds="[%s,2500][%s,2644]"><node text="g" bounds="[%s,2512][%s,2632]"/></node>' \
+  "$1" "$2" "$(($2 + 144))" "$(($2 + 40))" "$(($2 + 100))"; }
+wide_dump() {
+  printf '<hierarchy><node bounds="[0,0][1344,2992]">'
+  icon480 'back paragraph' 20; icon480 'previous sentence' 174
+  printf '<node content-desc="play" bounds="[328,2500][628,2644]"><node text="Play" bounds="[378,2530][578,2614]"/></node>'
+  icon480 'next sentence' 642; icon480 slower 796; printf '<node text="1.0x" bounds="[950,2540][1050,2600]"/>'
+  icon480 faster 1060; printf '</node></hierarchy>'
+}
+clean_pass() {
+  fresh '' 1.0
+  printf 'I ReadMe: playback start item=1\nI ReadMe: playback paused item=1\n' > "$T/logcat"
+  wide_dump > "$T/wide.xml"; echo '620 2589' > "$T/play-centre"
+}
+# The dock passed everywhere: wide, narrow 1 and 3, the playing capture, Pause at Play's centre
+# by bounds and by logcat.
+docks() {
+  echo "$(grep -c '^wide-1-reader dock: PASS$' "$T/out") $(grep -cE '^narrow-(1-reader|3-reader|4-reading) dock: PASS$' "$T/out")" \
+    "$(grep -c "^narrow: Pause's centre (620 2589) is Play's (620 2589)$" "$T/out") $(grep -c "^narrow: Pause at Play's centre" "$T/out")" \
+    "$(grep -c '^FAIL: the Reader' "$T/out")"
+}
+clean_pass; themes
+check "script: a run with every check passing passes" \
+  "$(docks) $(grep -c '^narrow-5-trim-sheet sheet: PASS$' "$T/out") $(grep -c '^device:themes PASS$' "$T/out") $(cat "$T/rc")" '1 3 1 1 0 1 1 0'
+check "script: Cancel closed the sheet with paragraph 1 kept" \
+  "$(grep -c '^narrow-5-trim-sheet sheet: Cancel closed it, paragraph 1 still kept$' "$T/out")" 1
+# A fixed 48 dp row (179 px) whose wrapped label is clipped to it fails the run on the sheet alone.
+clean_pass; SHEET_ROW=179 SHEET_LABEL=179 themes
+check "script: a clipped sheet row fails the run, the dock passing" \
+  "$(docks) $(grep -c "^FAIL: Trim's long-press sheet" "$T/out") $(grep -c '^device:themes FAIL$' "$T/out") $(cat "$T/rc")" '1 3 1 1 0 1 1 1'
+check "script: and the display is still restored" "$(state) $(file)" 'none 1.0 gone'
+check "script: and no label text is printed" "$(grep -c 'LABEL-SENTINEL' "$T/out")" 0
+# A Cancel that applied an action (paragraph 1 cut after it) fails the run.
+clean_pass; touch "$T/cancel-cuts"; themes
+check "script: a Cancel that cuts paragraph 1 fails the run, the dock and sheet passing" \
+  "$(docks) $(grep -c '^narrow-5-trim-sheet sheet: PASS$' "$T/out") $(grep -c \
+    '^narrow-5-trim-sheet FAIL sheet: paragraph 1 is not kept after Cancel$' "$T/out") $(grep -c '^device:themes FAIL$' "$T/out") $(cat "$T/rc")" \
+  '1 3 1 1 0 1 1 1 1'
 
 # Source check (not behaviour): every `adb logcat -c` after the first follows a crash_check, or
 # the clear would drop a crash before the end-of-run gate reads the log.
@@ -386,6 +476,33 @@ check "--expect two-rows fails it" \
   icon 'next sentence' 900 2500; icon slower 960 2500; icon faster 1150 2500
   printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'; } > "$T/d.xml"
 check "overlapping controls fail" "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play | grep -c 'FAIL dock: next sentence overlaps slower')" 1
+# sheet-check.py (REA-62): three rows at 597 dpi on a 1344 x 2992 screen.
+SHEET_CHECK=${SHEET_CHECK:-$ROOT/scripts/sheet-check.py}
+IDS=('trim menu start here' 'trim menu cut after' 'trim menu cancel')
+sc() { { printf '<hierarchy><node bounds="[0,0][1344,2992]">'; "$@"; printf '</node></hierarchy>'; } > "$T/s.xml"
+  python3 "$SHEET_CHECK" "$T/s.xml" 597 1344 2992 "${IDS[@]}"; }
+rows3() { sheet_row "${IDS[0]}" 2000 "$@"; sheet_row "${IDS[1]}" $((2000 + ${1:-250})) "$@"; sheet_row "${IDS[2]}" $((2000 + 2 * ${1:-250})) "$@"; }
+check "sheet-check passes rows that hold their labels" "$(sc rows3 | tail -1)" 'sheet: PASS'
+check "a row below 48 dp fails" "$(sc rows3 150 100 | grep -c 'below 48 dp')" 3
+check "a label as tall as its row fails as clipped" "$(sc rows3 179 179 | grep -c 'label clipped to its row')" 3
+check "a missing row fails" "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2250' | grep -c 'trim menu cancel missing')" 1
+check "overlapping rows fail" \
+  "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2100; sheet_row "${IDS[2]}" 2500' | grep -c 'start here overlaps trim menu cut after')" 1
+check "rows sharing a pixel row (layout rounding) pass" \
+  "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2249; sheet_row "${IDS[2]}" 2498' | tail -1)" 'sheet: PASS'
+check "a row off the bottom fails" "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2900' | grep -c 'cancel off screen')" 1
+check "a label reaching past its row fails" \
+  "$(sc eval 'printf "<node resource-id=\"trim menu start here\" bounds=\"[36,2000][1308,2179]\"><node text=\"x\" bounds=\"[84,1950][900,2229]\"/></node>"; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2500' | grep -c 'start here label .* outside its row')" 1
+check "a row with no label node fails" \
+  "$(sc eval 'printf "<node resource-id=\"trim menu start here\" bounds=\"[36,2000][1308,2250]\"/>"; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2500' | grep -c 'start here has no label node')" 1
+# Label text never reaches the output: a passing dump, a clipped label, a short row, a label
+# reaching past its row (the FAIL lines are where a label would most likely be added).
+outside() { printf '<node resource-id="trim menu start here" bounds="[36,2000][1308,2179]"><node text="LABEL-SENTINEL" bounds="[84,1950][900,2229]"/></node>'
+  sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2500; }
+check "it prints no label text" \
+  "$(sc rows3 | grep -c LABEL-SENTINEL) $(sc rows3 179 179 | grep -c LABEL-SENTINEL) $(sc rows3 150 100 | grep -c LABEL-SENTINEL) $(sc outside | grep -c LABEL-SENTINEL)" '0 0 0 0'
+printf '' > "$T/e.xml"; python3 "$SHEET_CHECK" "$T/e.xml" 597 1344 2992 "${IDS[@]}" >"$T/out"; rc=$?
+check "sheet-check: an empty dump is no capture, exit 2" "$rc $(cut -c1-17 "$T/out")" '2 sheet: no capture'
 printf '' > "$T/e.xml"; python3 "$DOCK_CHECK" "$T/e.xml" 597 2992 play >"$T/out"; rc=$?
 check "an empty dump is no capture, exit 2" "$rc $(cat "$T/out" | cut -c1-16)" '2 dock: no capture'
 exit $fail

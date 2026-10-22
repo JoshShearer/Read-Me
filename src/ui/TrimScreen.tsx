@@ -1,7 +1,8 @@
 // R-M05 Trim: tap cuts or restores a paragraph; a long press offers "Cut everything after
 // this" and "Start here". Cuts are a separate set; text is never changed (AGENTS.md 12).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, View } from 'react-native';
+import { FlatList, Pressable, View } from 'react-native';
+import { ActionSheet } from './ActionSheet';
 import { Button } from './Button';
 import { ItemUnavailable } from './ItemUnavailable';
 import { Text } from './Text';
@@ -26,6 +27,11 @@ export function TrimScreen({
   // from the old set and the second write would undo the first (final review Important 2).
   const latest = useRef<Set<number> | null>(null);
   const [cuts, setLocalCuts] = useState<Set<number> | null>(null);
+  // The paragraph whose long-press menu is open (REA-62); null: closed. Only an index, no text.
+  const [menuAt, setMenuAt] = useState<number | null>(null);
+  // The same, read by the actions: two row taps before a re-render would both see the state's
+  // old value and apply two actions; the ref is cleared by the first.
+  const menuRef = useRef<number | null>(null);
 
   // R-M10, REA-50: a rejection is not "deleted". It keeps whatever was loaded (a failed reload
   // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
@@ -66,12 +72,19 @@ export function TrimScreen({
     setLocalCuts(next);
     applyCuts(id, next).catch(() => undefined);
   };
-  const menu = (i: number) =>
-    Alert.alert('Trim', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Start here', onPress: () => apply(startHere(current(), i, count)) },
-      { text: 'Cut everything after this', onPress: () => apply(cutAfter(current(), i, count)) },
-    ]);
+  const choose = (act: (cuts: Set<number>, i: number, count: number) => Set<number>) => {
+    const i = menuRef.current;
+    close();
+    if (i !== null) apply(act(current(), i, count));
+  };
+  const menu = (i: number) => {
+    menuRef.current = i;
+    setMenuAt(i);
+  };
+  const close = () => {
+    menuRef.current = null;
+    setMenuAt(null);
+  };
 
   return (
     <View collapsable={false} style={ui.screen}>
@@ -103,6 +116,16 @@ export function TrimScreen({
             </Pressable>
           );
         }}
+      />
+      <ActionSheet
+        visible={menuAt !== null}
+        title="Trim"
+        actions={[
+          { label: 'Start here', testID: 'trim menu start here', onPress: () => choose(startHere) },
+          { label: 'Cut everything after this', testID: 'trim menu cut after', onPress: () => choose(cutAfter) },
+        ]}
+        cancelTestID="trim menu cancel"
+        onClose={close}
       />
     </View>
   );
