@@ -391,6 +391,20 @@ open_reader() {
 }
 dock_fail=0
 display_fail=0
+sheet_fail=0
+# long_press <attr> <value>: a 1 s press at the centre of the first node matching, as tap_node.
+long_press() {
+  local b=""
+  for _ in $(seq 10); do
+    b=$(ui | grep -oE "$1=\"$2\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+      | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
+    [ -n "$b" ] && break
+    sleep 1
+  done
+  [ -n "$b" ] || { echo "FAIL: nothing on screen has $1 matching $2"; exit 1; }
+  set -- $b
+  adb shell input swipe $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) 1000
+}
 # dock <capture> <play|pause> <one-row|two-rows|any> [density]: the checker's lines, labels and
 # bounds only.
 dock() {
@@ -429,6 +443,21 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
   open_reader
   shot narrow-3-reader
   dock narrow-3-reader play two-rows
+  # REA-62: Trim's long-press sheet at 360 dp and font scale 2.0. Each row must hold its label
+  # (a wrapped "Cut everything after this" must grow the row, not spill out of it). Cancel
+  # closes it without a change, and Trim's Done goes back to the Reader for the Play check.
+  tap_node content-desc 'trim'
+  wait_for 'content-desc="trim done"'
+  long_press resource-id 'paragraph 1'
+  wait_for 'resource-id="trim menu cancel"'
+  shot narrow-5-trim-sheet
+  python3 scripts/sheet-check.py "$RAW/narrow-5-trim-sheet.xml" "$NARROW_DENSITY" "$SCREEN_W" "$SCREEN_H" \
+    'trim menu start here' 'trim menu cut after' 'trim menu cancel' | sed 's/^/narrow-5-trim-sheet /' \
+    || sheet_fail=1
+  tap_node resource-id 'trim menu cancel'
+  sleep 1
+  tap_node content-desc 'trim done'
+  wait_for 'content-desc="play"'
   centre=$(python3 scripts/dock-check.py "$RAW/narrow-3-reader.xml" "$NARROW_DENSITY" "$SCREEN_H" play \
     | sed -nE 's/^dock: play centre ([0-9]+),([0-9]+)$/\1 \2/p' || true)
   if [ -z "$centre" ]; then
@@ -474,5 +503,6 @@ if [ "$crashed" = 1 ]; then echo "FAIL: a crash in the log"; exit 1; fi
 contrast=0
 python3 scripts/theme-contrast.py "$RAW" || contrast=1
 [ "$dock_fail" = 0 ] || echo "FAIL: the Reader's dock (wide or narrow, lines above)"
+[ "$sheet_fail" = 0 ] || echo "FAIL: Trim's long-press sheet at 360 dp and font scale 2.0 (lines above)"
 [ "$display_fail" = 0 ] || echo "FAIL: the display was not restored (WARNING above has the commands)"
-if [ "$contrast" = 0 ] && [ "$dock_fail" = 0 ] && [ "$display_fail" = 0 ]; then echo "device:themes PASS"; else echo "device:themes FAIL"; exit 1; fi
+if [ "$contrast" = 0 ] && [ "$dock_fail" = 0 ] && [ "$sheet_fail" = 0 ] && [ "$display_fail" = 0 ]; then echo "device:themes PASS"; else echo "device:themes FAIL"; exit 1; fi

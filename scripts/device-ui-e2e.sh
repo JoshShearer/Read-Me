@@ -134,7 +134,7 @@ on_screen '2 of 3 paragraphs kept' || fail=1
 # Long press (R-M05, REA-62): the menu offers "Cut everything after this" and "Start here".
 # Since REA-62 it is the app's own bottom sheet; before, the platform AlertDialog (whose One UI
 # rendering left an empty area). Each action must change the kept paragraphs as before, and
-# Cancel (Back) must change nothing. The cuts are put back to {2} after, for what follows.
+# Cancel must change nothing. The cuts are put back to {2} after, for what follows.
 long_press() {
   local c
   c=$(centre_of resource-id "$1")

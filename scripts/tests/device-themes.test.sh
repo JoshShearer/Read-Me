@@ -267,6 +267,7 @@ device_install_release() { :; }
 device_clear_app() { :; }
 LIB
 cp "$DOCK_CHECK" "$T/repo/scripts/dock-check.py"
+cp "${SHEET_CHECK:-$ROOT/scripts/sheet-check.py}" "$T/repo/scripts/sheet-check.py"
 printf 'print("contrast: not measured (stub)")\n' > "$T/repo/scripts/theme-contrast.py"
 # A two-row dock at 597 dpi (also what the stub phone shows at 480 dpi: wide must be one row).
 dock_dump() {
@@ -275,7 +276,22 @@ dock_dump() {
   printf '<node content-desc="play" bounds="[440,2515][800,2664]"><node text="Play" bounds="[530,2540][710,2640]"/></node>'
   icon 'next sentence' 820 2500
   icon slower 400 2700; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'; icon faster 760 2700
-  printf '</node></hierarchy>'
+  trim_nodes; printf '</node></hierarchy>'
+}
+# What the narrow pass's REA-62 step finds on the stub's one screen: Trim's button and Done, a
+# paragraph, and the open sheet's rows at 597 dpi (48 dp = 179 px), each row ${SHEET_ROW:-250} px
+# tall with a label ${SHEET_LABEL:-120} px tall.
+sheet_row() {  # sheet_row <id> <y0> [row height] [label height]
+  local h=${3:-250} l=${4:-120}
+  printf '<node resource-id="%s" bounds="[36,%s][1308,%s]"><node text="x" bounds="[84,%s][900,%s]"/></node>' \
+    "$1" "$2" "$(($2 + h))" "$(($2 + (h - l) / 2))" "$(($2 + (h + l) / 2))"
+}
+trim_nodes() {
+  printf '<node content-desc="trim" bounds="[1100,100][1300,200]"/><node content-desc="trim done" bounds="[1100,220][1300,320]"/>'
+  printf '<node resource-id="paragraph 1" bounds="[0,400][1344,800]"/>'
+  local h=${SHEET_ROW:-250} l=${SHEET_LABEL:-120}
+  sheet_row 'trim menu start here' 2000 "$h" "$l"; sheet_row 'trim menu cut after' $((2000 + h)) "$h" "$l"
+  sheet_row 'trim menu cancel' $((2000 + 2 * h)) "$h" "$l"
 }
 icon() { printf '<node content-desc="%s" bounds="[%s,%s][%s,%s]"><node text="g" bounds="[%s,%s][%s,%s]"/></node>' \
   "$1" "$2" "$3" "$(($2 + ${5:-179}))" "$(($3 + 179))" "$(($2 + 60))" "$(($3 + (179 - ${4:-160}) / 2))" \
@@ -326,13 +342,22 @@ dock_dump() {
   icon 'back paragraph' 20 2500; icon 'previous sentence' 205 2500
   printf '<node content-desc="play" bounds="[390,2515][760,2664]"><node text="Play" bounds="[480,2540][670,2640]"/></node>'
   icon 'next sentence' 770 2500; icon slower 960 2500; icon faster 1150 2500
-  printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'
+  printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/>'; trim_nodes; printf '</node></hierarchy>'
 }
 themes
 check "script: a one-row dock fails narrow's two-row check" \
   "$(grep -c '^narrow-[13]-reader FAIL dock: layout one-row, expected two-rows$' "$T/out")" 2
 check "script: and passes wide's one-row check" "$(grep -c '^wide-1-reader FAIL dock: layout' "$T/out")" 0
 check "script: the display is back after the pass" "$(state) $(file)" 'none 1.0 gone'
+check "script: the narrow pass checks Trim's sheet and it passes" \
+  "$(grep -c '^narrow-5-trim-sheet sheet: PASS$' "$T/out") $(grep -c "^FAIL: Trim's long-press sheet" "$T/out")" '1 0'
+# REA-62: a fixed 48 dp row (179 px) whose wrapped label is clipped to it fails the run.
+fresh '' 1.0
+printf 'I ReadMe: playback start item=1\nI ReadMe: playback paused item=1\n' > "$T/logcat"
+SHEET_ROW=179 SHEET_LABEL=179 themes
+check "script: a clipped sheet row fails the run" \
+  "$(grep -c "^FAIL: Trim's long-press sheet" "$T/out") $(grep -c '^device:themes FAIL$' "$T/out") $(cat "$T/rc")" '1 1 1'
+check "script: and the display is still restored" "$(state) $(file)" 'none 1.0 gone'
 
 # Source check (not behaviour): every `adb logcat -c` after the first follows a crash_check, or
 # the clear would drop a crash before the end-of-run gate reads the log.
@@ -386,6 +411,28 @@ check "--expect two-rows fails it" \
   icon 'next sentence' 900 2500; icon slower 960 2500; icon faster 1150 2500
   printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'; } > "$T/d.xml"
 check "overlapping controls fail" "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play | grep -c 'FAIL dock: next sentence overlaps slower')" 1
+# sheet-check.py (REA-62): three rows at 597 dpi on a 1344 x 2992 screen.
+SHEET_CHECK=${SHEET_CHECK:-$ROOT/scripts/sheet-check.py}
+IDS=('trim menu start here' 'trim menu cut after' 'trim menu cancel')
+sc() { { printf '<hierarchy><node bounds="[0,0][1344,2992]">'; "$@"; printf '</node></hierarchy>'; } > "$T/s.xml"
+  python3 "$SHEET_CHECK" "$T/s.xml" 597 1344 2992 "${IDS[@]}"; }
+rows3() { sheet_row "${IDS[0]}" 2000 "$@"; sheet_row "${IDS[1]}" $((2000 + ${1:-250})) "$@"; sheet_row "${IDS[2]}" $((2000 + 2 * ${1:-250})) "$@"; }
+check "sheet-check passes rows that hold their labels" "$(sc rows3 | tail -1)" 'sheet: PASS'
+check "a row below 48 dp fails" "$(sc rows3 150 100 | grep -c 'below 48 dp')" 3
+check "a label as tall as its row fails as clipped" "$(sc rows3 179 179 | grep -c 'label clipped to its row')" 3
+check "a missing row fails" "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2250' | grep -c 'trim menu cancel missing')" 1
+check "overlapping rows fail" \
+  "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2100; sheet_row "${IDS[2]}" 2500' | grep -c 'start here overlaps trim menu cut after')" 1
+check "rows sharing a pixel row (layout rounding) pass" \
+  "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2249; sheet_row "${IDS[2]}" 2498' | tail -1)" 'sheet: PASS'
+check "a row off the bottom fails" "$(sc eval 'sheet_row "${IDS[0]}" 2000; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2900' | grep -c 'cancel off screen')" 1
+check "a label reaching past its row fails" \
+  "$(sc eval 'printf "<node resource-id=\"trim menu start here\" bounds=\"[36,2000][1308,2179]\"><node text=\"x\" bounds=\"[84,1950][900,2229]\"/></node>"; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2500' | grep -c 'start here label .* outside its row')" 1
+check "a row with no label node fails" \
+  "$(sc eval 'printf "<node resource-id=\"trim menu start here\" bounds=\"[36,2000][1308,2250]\"/>"; sheet_row "${IDS[1]}" 2250; sheet_row "${IDS[2]}" 2500' | grep -c 'start here has no label node')" 1
+check "it prints no label text" "$(sc rows3 | grep -c 'text=')" 0
+printf '' > "$T/e.xml"; python3 "$SHEET_CHECK" "$T/e.xml" 597 1344 2992 "${IDS[@]}" >"$T/out"; rc=$?
+check "sheet-check: an empty dump is no capture, exit 2" "$rc $(cut -c1-17 "$T/out")" '2 sheet: no capture'
 printf '' > "$T/e.xml"; python3 "$DOCK_CHECK" "$T/e.xml" 597 2992 play >"$T/out"; rc=$?
 check "an empty dump is no capture, exit 2" "$rc $(cat "$T/out" | cut -c1-16)" '2 dock: no capture'
 exit $fail

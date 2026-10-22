@@ -29,6 +29,9 @@ export function TrimScreen({
   const [cuts, setLocalCuts] = useState<Set<number> | null>(null);
   // The paragraph whose long-press menu is open (REA-62); null: closed. Only an index, no text.
   const [menuAt, setMenuAt] = useState<number | null>(null);
+  // The same, read by the actions: two row taps before a re-render would both see the state's
+  // old value and apply two actions; the ref is cleared by the first.
+  const menuRef = useRef<number | null>(null);
 
   // R-M10, REA-50: a rejection is not "deleted". It keeps whatever was loaded (a failed reload
   // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
@@ -70,11 +73,18 @@ export function TrimScreen({
     applyCuts(id, next).catch(() => undefined);
   };
   const choose = (act: (cuts: Set<number>, i: number, count: number) => Set<number>) => {
-    const i = menuAt;
-    setMenuAt(null);
+    const i = menuRef.current;
+    close();
     if (i !== null) apply(act(current(), i, count));
   };
-  const menu = (i: number) => setMenuAt(i);
+  const menu = (i: number) => {
+    menuRef.current = i;
+    setMenuAt(i);
+  };
+  const close = () => {
+    menuRef.current = null;
+    setMenuAt(null);
+  };
 
   return (
     <View collapsable={false} style={ui.screen}>
@@ -114,7 +124,8 @@ export function TrimScreen({
           { label: 'Start here', testID: 'trim menu start here', onPress: () => choose(startHere) },
           { label: 'Cut everything after this', testID: 'trim menu cut after', onPress: () => choose(cutAfter) },
         ]}
-        onClose={() => setMenuAt(null)}
+        cancelTestID="trim menu cancel"
+        onClose={close}
       />
     </View>
   );

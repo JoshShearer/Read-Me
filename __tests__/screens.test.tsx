@@ -943,4 +943,42 @@ describe('Trim long-press sheet (REA-62)', () => {
     }
     expect(Native.setCuts).not.toHaveBeenCalled();
   });
+
+  test('two row taps before a re-render apply only the first action', async () => {
+    three();
+    (Native.setCuts as jest.Mock).mockClear();
+    const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+    await longPress(r, 'paragraph 2');
+    await ReactTestRenderer.act(async () => {
+      pressId(r, 'trim menu start here');
+      pressId(r, 'trim menu cut after');
+    });
+    expect(Native.setCuts).toHaveBeenCalledTimes(1);
+    expect(lastCuts()).toEqual([1, [0]]);
+  });
+
+  // At 360 dp and font scale 2.0 (REA-58's narrow case) "Cut everything after this" may wrap.
+  // A row of fixed height would clip a second line, so each row has a 48 dp minimum and grows
+  // with its label, and the label is not capped below the font scale Android asks for.
+  describe('at 360 dp and font scale 2.0', () => {
+    const RN = require('react-native') as typeof import('react-native');
+    let dims: jest.SpyInstance | undefined;
+    afterEach(() => dims?.mockRestore());
+    test.each(['trim menu start here', 'trim menu cut after', 'trim menu cancel'])('the %s row grows with its label', async id => {
+      dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 360, height: 800, scale: 3, fontScale: 2 });
+      three();
+      const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+      await longPress(r, 'paragraph 2');
+      const row = r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function');
+      const style = typeof row.props.style === 'function' ? row.props.style({ pressed: false }) : row.props.style;
+      const flat = RN.StyleSheet.flatten(style) ?? {};
+      expect(flat.height).toBeUndefined();
+      expect(flat.minHeight).toBe(48);
+      expect(flat.paddingVertical ?? flat.paddingTop ?? 0).toBeGreaterThan(0);
+      for (const t of row.findAllByType(RN.Text)) {
+        expect(t.props.numberOfLines).toBeUndefined();
+        expect(t.props.maxFontSizeMultiplier).toBeUndefined();
+      }
+    });
+  });
 });
