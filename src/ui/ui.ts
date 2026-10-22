@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native';
 import { read, type } from './theme';
+import { DOCK_GAP } from './model';
 
 // One small style sheet for every screen. Layout and type only: colours come from theme.ts per
 // system mode (REA-22, REA-24), applied by ./Text's tone and by each screen's backgrounds and
@@ -48,7 +49,6 @@ export const ui = StyleSheet.create({
   stack: { gap: 8 },
   // A label and its input on one line.
   field: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  play: { minWidth: 104 },
   empty: { paddingHorizontal: MARGIN, paddingVertical: 32 },
   card: { marginHorizontal: MARGIN - 8, marginVertical: 16, padding: 20, borderWidth: 1, borderRadius: 16, gap: 12 },
   paragraph: { ...read.body, paddingHorizontal: MARGIN, paddingVertical: 8 },
@@ -64,9 +64,11 @@ export const ui = StyleSheet.create({
   // The Reader's controls float above the text in a dock. surfaceContainerLow, because
   // disabled glyphs (faint) keep 3:1 on it (3.05 light, 3.92 dark) and not on
   // surfaceContainerHigh (2.78 light).
+  // REA-58: one row when model.dockOneRow says it fits, else two (dockNarrow): the transport
+  // across the dock, the rate Stepper centred under it. Within a layout, Pause takes Play's place
+  // (same minWidth), so a second tap where Play was pauses; the place differs between layouts.
   dock: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginHorizontal: 12,
     marginBottom: 8,
@@ -75,4 +77,9 @@ export const ui = StyleSheet.create({
     borderRadius: 32,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  dockWide: { columnGap: DOCK_GAP },
+  dockNarrow: { flexDirection: 'column', gap: 4 },
+  transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  transportWide: { flex: 1 },
+  transportNarrow: { alignSelf: 'stretch' },
 });
