@@ -837,6 +837,13 @@ describe('the Reader dock in a narrow window (REA-58)', () => {
     expect(flat(byTestID(r, 'dock').props.style).flexDirection).toBe('row');
   });
 
+  test('the one-row dock keeps a fixed gap between the transport and the Stepper', async () => {
+    at(448, 1);
+    mockState.detail = text(['One.']);
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(byTestID(r, 'dock').props.style).columnGap).toBe(8);
+  });
+
   test('Play and Pause are the same width at font scale 2.0, so Pause does not move', async () => {
     at(360, 2);
     mockState.detail = text(['One two. Three four.']);

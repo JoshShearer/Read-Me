@@ -7,8 +7,9 @@
 # bar from them. SystemUI demo mode fixes the status bar's contents for the run; the phone's
 # night mode and demo mode are restored on exit. Captures stay in .claude/scratch/themes/.
 #
-# REA-58: a narrow pass after light and dark (THEMES_ONLY=light|dark|narrow runs one pass). The
-# display is set to 360 dp wide (wm density 597 on the 1344 px reference phone; NARROW_DENSITY)
+# REA-58: a narrow pass after light and dark (THEMES_ONLY=light|dark|narrow runs one pass). It
+# first checks the idle Reader's dock at the phone's own density and font scale (the `wide`
+# capture: one row on the reference phone at 448 dp and 1.0). Then the display is set to 360 dp wide (wm density 597 on the 1344 px reference phone; NARROW_DENSITY)
 # with font scale 1.0, then 2.0, the largest Settings offers; the app is restarted after each
 # change (MainActivity is recreated on a density or font change). Each time the idle Reader's
 # dock is checked by scripts/dock-check.py; at 2.0 Play is tapped, the playing Reader captured,
@@ -17,26 +18,55 @@
 # Before the first change the phone's own override density and font_scale are written to
 # /data/local/tmp/readme-display.saved on the phone; every exit restores from that file and
 # deletes it only when both writes succeeded, and with no file nothing on the display is
-# touched. A file left by a dead run is restored at the next start. By hand:
+# touched. A run saves at most once, and an adb failure reading the file is never taken for "no
+# file". When a restore this run needs cannot read or write, it prints the commands below on
+# stderr and the run fails. A file left by a dead run is restored at the next start of
+# device:themes (no other device script checks for it). By hand:
 #   adb shell cat /data/local/tmp/readme-display.saved
 #   adb shell wm density reset        (or wm density <saved>)
 #   adb shell settings put system font_scale <saved>   (or settings delete system font_scale)
 #   adb shell rm /data/local/tmp/readme-display.saved
 
 DISPLAY_SAVE=/data/local/tmp/readme-display.saved
-# The saved values, "density=<n|none> font_scale=<x|null>", or nothing when no file is there.
+DISPLAY_SAVED_BY_US=0  # 1 once this run saved (or adopted a stale save): it never saves again
+DISPLAY_CHANGED=0      # 1 from this run's first display write until a restore succeeds
+# The saved values, "density=<n|none> font_scale=<x|null>"; nothing when no file is there.
+# Returns 1 when adb failed or the answer is not one of those two: "unknown" is never "absent",
+# or a blip could make display_save overwrite the owner's values with this run's own (REA-58).
 display_saved() {
-  local saved
-  saved=$(adb shell cat "$DISPLAY_SAVE" 2>/dev/null | tr -d '\r') || return 0
-  grep -qE '^density=([0-9]+|none) font_scale=([0-9.]+|null)$' <<<"$saved" && printf '%s\n' "$saved"
-  return 0
+  local out
+  out=$(adb shell "if [ -f $DISPLAY_SAVE ]; then cat $DISPLAY_SAVE; else echo absent; fi" 2>/dev/null) || return 1
+  out=$(tr -d '\r' <<<"$out")
+  [ "$out" = absent ] && return 0
+  grep -qE '^density=([0-9]+|none) font_scale=([0-9.]+|null)$' <<<"$out" || return 1
+  printf '%s\n' "$out"
+}
+# display_warn [density font_scale]: the manual restore, on stderr.
+display_warn() {
+  echo "WARNING: display NOT restored; this run changed it (wm density, font_scale). By hand:" >&2
+  if [ $# = 2 ]; then
+    echo "  adb shell wm density $([ "$1" = none ] && echo reset || echo "$1")" >&2
+    echo "  adb shell settings $([ "$2" = null ] && echo 'delete system font_scale' || echo "put system font_scale $2")" >&2
+  else
+    echo "  adb shell cat $DISPLAY_SAVE   (density=<n|none> font_scale=<x|null>)" >&2
+    echo "  adb shell wm density reset   (or wm density <n>)" >&2
+    echo "  adb shell settings put system font_scale <x>   (or settings delete system font_scale)" >&2
+  fi
+  echo "  adb shell rm $DISPLAY_SAVE" >&2
 }
 # Puts the saved display back. Runs on every exit with errexit off (lib/device.sh calls the hook
 # as `hook || true`), so every step is checked explicitly; the file goes only after both writes.
+# Returns 1, with the manual commands when this run changed the display, if it cannot.
 display_restore() {
   local saved d f ok=1
-  saved=$(display_saved)
-  [ -n "$saved" ] || return 0
+  if ! saved=$(display_saved); then
+    [ "$DISPLAY_CHANGED" = 0 ] || display_warn
+    return 1
+  fi
+  if [ -z "$saved" ]; then
+    [ "$DISPLAY_CHANGED" = 0 ] && return 0
+    display_warn; return 1
+  fi
   d=$(sed -E 's/^density=([^ ]+) .*/\1/' <<<"$saved")
   f=$(sed -E 's/.* font_scale=(.+)$/\1/' <<<"$saved")
   if [ "$d" = none ]; then adb shell wm density reset >/dev/null || ok=0
@@ -44,30 +74,59 @@ display_restore() {
   if [ "$f" = null ]; then adb shell settings delete system font_scale >/dev/null || ok=0
   else adb shell settings put system font_scale "$f" >/dev/null || ok=0; fi
   if [ "$ok" = 1 ] && adb shell rm -f "$DISPLAY_SAVE"; then
+    DISPLAY_CHANGED=0 DISPLAY_SAVED_BY_US=0
     echo "display restored (density $d, font_scale $f)"
   else
-    echo "WARNING: display NOT restored; by hand: adb shell wm density $([ "$d" = none ] && echo reset || echo "$d");" \
-      "adb shell settings $([ "$f" = null ] && echo 'delete system font_scale' || echo "put system font_scale $f");" \
-      "adb shell rm $DISPLAY_SAVE" >&2
+    display_warn "$d" "$f"
     return 1
   fi
 }
-# Saves the phone's own values once (only Override density counts: Physical is not a setting).
+# The start of a run: a save file left by a dead run is restored before anything else. An adb
+# failure reading it is an error, not "no file".
+display_recover() {
+  local saved
+  if ! saved=$(display_saved); then
+    echo "FAIL: could not read $DISPLAY_SAVE; check it by hand: adb shell cat $DISPLAY_SAVE" >&2
+    return 1
+  fi
+  [ -n "$saved" ] || return 0
+  echo "an earlier run left the display changed; restoring it first"
+  display_restore
+}
+# Saves the phone's own values once per run (only Override density counts: Physical is not a
+# setting). A save file already there holds an earlier run's originals and is kept.
 display_save() {
-  local d f
-  [ -n "$(display_saved)" ] && return 0
-  d=$(adb shell wm density | tr -d '\r' | sed -nE 's/^Override density: ([0-9]+)$/\1/p')
-  f=$(adb shell settings get system font_scale | tr -d '\r')
+  local saved out d f line
+  [ "$DISPLAY_SAVED_BY_US" = 1 ] && return 0
+  saved=$(display_saved) || { echo "FAIL: could not read $DISPLAY_SAVE over adb; display not changed" >&2; return 1; }
+  if [ -n "$saved" ]; then DISPLAY_SAVED_BY_US=1; return 0; fi
+  out=$(adb shell wm density) || { echo "FAIL: wm density did not answer; display not changed" >&2; return 1; }
+  grep -q 'Physical density:' <<<"$out" || { echo "FAIL: wm density answered oddly; display not changed" >&2; return 1; }
+  d=$(tr -d '\r' <<<"$out" | sed -nE 's/^Override density: ([0-9]+)$/\1/p')
+  f=$(adb shell settings get system font_scale) || { echo "FAIL: font_scale did not answer; display not changed" >&2; return 1; }
+  f=$(tr -d '\r' <<<"$f")
   grep -qE '^[0-9.]+$' <<<"$f" || f=null
-  printf 'density=%s font_scale=%s\n' "${d:-none}" "$f" | adb shell "cat > $DISPLAY_SAVE"
-  [ -n "$(display_saved)" ] || { echo "FAIL: could not save the display settings"; return 1; }
+  line="density=${d:-none} font_scale=$f"
+  printf '%s\n' "$line" | adb shell "cat > $DISPLAY_SAVE" || true
+  [ "$(display_saved 2>/dev/null)" = "$line" ] || { echo "FAIL: could not save the display settings; display not changed" >&2; return 1; }
+  DISPLAY_SAVED_BY_US=1
 }
 # display_set <density> <font scale>: saves first, then changes the display.
 display_set() {
   display_save || return 1
+  DISPLAY_CHANGED=1
   adb shell wm density "$1" >/dev/null && adb shell settings put system font_scale "$2" >/dev/null
 }
-# The stub-adb test sources the script for the display functions alone.
+demo() { printf '%s\n' "am broadcast -a com.android.systemui.demo $*" | adb shell >/dev/null; }
+# The EXIT hook (DEVICE_ON_EXIT). The display goes first: it is the one change that outlives a
+# reboot.
+restore() {
+  display_restore || true
+  demo -e command exit
+  [ -z "${night:-}" ] || adb shell cmd uimode night "$night" >/dev/null || true
+  adb shell rm -f /sdcard/readme-ui.xml
+}
+# The stub-adb test sources the script for the functions above alone.
 if [ -n "${DEVICE_THEMES_SOURCE_ONLY:-}" ]; then return 0; fi
 
 set -euo pipefail
@@ -80,21 +139,11 @@ device_install_release
 RAW=.claude/scratch/themes  # gitignored
 rm -rf "$RAW"; mkdir -p "$RAW"
 
-if [ -n "$(display_saved)" ]; then
-  echo "an earlier run left the display changed; restoring it first"
-  display_restore || exit 1
-fi
+display_recover || exit 1
 NARROW_DENSITY=${NARROW_DENSITY:-597}
 THEMES_ONLY=${THEMES_ONLY:-}
 case "$THEMES_ONLY" in ''|light|dark|narrow) ;; *) echo "THEMES_ONLY must be light, dark or narrow"; exit 2 ;; esac
 night=$(adb shell cmd uimode night | tr -d '\r' | awk '{print $NF}')
-demo() { printf '%s\n' "am broadcast -a com.android.systemui.demo $*" | adb shell >/dev/null; }
-restore() {
-  display_restore || true
-  demo -e command exit
-  adb shell cmd uimode night "$night" >/dev/null || true
-  adb shell rm -f /sdcard/readme-ui.xml
-}
 DEVICE_ON_EXIT=restore
 adb shell settings put global sysui_demo_allowed 1
 demo -e command enter
@@ -169,6 +218,12 @@ wait_for() {
   exit 1
 }
 # shot <name>: the screenshot and the dump it is measured against, taken back to back.
+# Every `adb logcat -c` below clears the crash buffer too, so the log is checked first: the
+# crash gate at the end then still covers the whole run.
+crashed=0
+crash_check() {
+  if adb logcat -d | device_crash_seen; then echo "FAIL: a crash in the log ($1)"; crashed=1; fi
+}
 shot() {
   sleep 1
   adb exec-out screencap -p > "$RAW/$1.png"
@@ -197,6 +252,7 @@ for mode in light dark; do
   tap_node content-desc 'trim done'
   wait_for 'content-desc="play"'
   shot "$mode-3-reader"
+  crash_check "before the $mode pass's Play"
   adb logcat -c
   tap_node content-desc 'play'
   for _ in $(seq 40); do device_has "$(adb logcat -d -s ReadMe:I)" 'playback start item=' && break; sleep 1; done
@@ -242,15 +298,24 @@ open_reader() {
   wait_for 'content-desc="play"'
 }
 dock_fail=0
-dock() {  # dock <capture> <play|pause>: the checker's lines, labels and bounds only
-  local rc=0
-  python3 scripts/dock-check.py "$RAW/$1.xml" "$NARROW_DENSITY" "$SCREEN_H" "$2" | sed "s/^/$1 /" || true
-  python3 scripts/dock-check.py "$RAW/$1.xml" "$NARROW_DENSITY" "$SCREEN_H" "$2" >/dev/null || rc=$?
+display_fail=0
+dock() {  # dock <capture> <play|pause> [density]: the checker's lines, labels and bounds only
+  local rc=0 dpi=${3:-$NARROW_DENSITY}
+  python3 scripts/dock-check.py "$RAW/$1.xml" "$dpi" "$SCREEN_H" "$2" | sed "s/^/$1 /" || true
+  python3 scripts/dock-check.py "$RAW/$1.xml" "$dpi" "$SCREEN_H" "$2" >/dev/null || rc=$?
   [ "$rc" = 0 ] || dock_fail=1
   return 0
 }
 if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
   adb shell cmd uimode night no >/dev/null
+  # The phone's own layout first (no display change): one row at 448 dp and font scale 1.0.
+  own=$(adb shell wm density | tr -d '\r')
+  own_dpi=$(sed -nE 's/^Override density: ([0-9]+)$/\1/p' <<<"$own")
+  [ -n "$own_dpi" ] || own_dpi=$(sed -nE 's/^Physical density: ([0-9]+)$/\1/p' <<<"$own")
+  echo "wide: $((SCREEN_W * 160 / own_dpi)) dp wide (density $own_dpi, the phone's own font scale)"
+  open_reader
+  shot wide-1-reader
+  dock wide-1-reader play "$own_dpi"
   echo "narrow: $((SCREEN_W * 160 / NARROW_DENSITY)) dp wide (wm density $NARROW_DENSITY)"
   display_set "$NARROW_DENSITY" 1.0
   open_reader
@@ -266,6 +331,7 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
     echo "narrow: FAIL no Play centre to tap; Pause's place not checked"
     dock_fail=1
   else
+    crash_check "the narrow pass, before Play"
     adb logcat -c
     adb shell input tap $centre
     for _ in $(seq 40); do device_has "$(adb logcat -d -s ReadMe:I)" 'playback start item=' && break; sleep 1; done
@@ -283,6 +349,7 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
       fi
     else echo "narrow-4-reading dock: no capture (the playing Reader's dump came back empty)"; fi
     # Pause must sit where Play was: tap Play's recorded centre and read the pause in logcat.
+    crash_check "the narrow pass, before Pause"
     adb logcat -c
     adb shell input tap $centre
     paused=0
@@ -291,11 +358,13 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
     else echo "narrow: FAIL a tap at Play's centre ($centre) while playing did not pause"; dock_fail=1; fi
   fi
   adb shell input keyevent KEYCODE_BACK
-  display_restore || dock_fail=1
+  display_restore || display_fail=1
 fi
 
-if adb logcat -d | device_crash_seen; then echo "FAIL: a crash in the log"; exit 1; fi
+crash_check "the end of the run"
+if [ "$crashed" = 1 ]; then echo "FAIL: a crash in the log"; exit 1; fi
 contrast=0
 python3 scripts/theme-contrast.py "$RAW" || contrast=1
-[ "$dock_fail" = 0 ] || echo "FAIL: the Reader's dock at $NARROW_DENSITY dpi (lines above)"
-if [ "$contrast" = 0 ] && [ "$dock_fail" = 0 ]; then echo "device:themes PASS"; else echo "device:themes FAIL"; exit 1; fi
+[ "$dock_fail" = 0 ] || echo "FAIL: the Reader's dock (wide or narrow, lines above)"
+[ "$display_fail" = 0 ] || echo "FAIL: the display was not restored (WARNING above has the commands)"
+if [ "$contrast" = 0 ] && [ "$dock_fail" = 0 ] && [ "$display_fail" = 0 ]; then echo "device:themes PASS"; else echo "device:themes FAIL"; exit 1; fi

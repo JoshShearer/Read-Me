@@ -149,14 +149,19 @@ export function lineTop(lines: readonly { text: string; y: number }[], offset: n
 export const formatRate = (rate: number): string => `${rate.toFixed(1)}x`;
 
 // REA-58: the Reader's dock, in dp. Fixed parts do not scale; the two texts grow with the font
-// scale. One row needs 420 dp at font scale 1.0, more than a 360 dp phone has (a Galaxy S22
+// scale. One row needs 429 dp at font scale 1.0, more than a 360 dp phone has (a Galaxy S22
 // showed "- 1.0x" and no "+").
-/** Room for Play's or Pause's label at font scale 1.0 ("Pause" measured 37 dp per unit). */
+/** Room for Play's or Pause's label at font scale 1.0. In REA-58's reproduction (reference
+ * phone, wm density 597, font scale 2.0) the Pause pill was 452 px, about 121 dp: 48 dp of
+ * padding and about 37 dp of label per unit of font scale, under the 56 kept here. */
 const PLAY_TEXT = 56;
 /** Room for the rate value at font scale 1.0, wide enough for "4.0x". */
 const RATE_TEXT = 44;
-/** Margins and padding (32), five glyph buttons (240) and Play's horizontal padding (48). */
-const DOCK_FIXED = 32 + 5 * 48 + 48;
+/** The one-row dock's fixed gap between the transport's ▶ and the Stepper's −. */
+export const DOCK_GAP = 8;
+/** Margins and padding (32), five glyph buttons (240), Play's horizontal padding (48), the gap,
+ * and 1 for the hairline border on each side (about 0.33 dp each at 3x, rounded up). */
+const DOCK_FIXED = 32 + 5 * 48 + 48 + DOCK_GAP + 1;
 
 /** Play's minimum width: Play and Pause are the same width, so the toggle never moves it. */
 export const playMinWidth = (fontScale: number): number => 48 + PLAY_TEXT * fontScale;

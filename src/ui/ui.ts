@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native';
 import { read, type } from './theme';
+import { DOCK_GAP } from './model';
 
 // One small style sheet for every screen. Layout and type only: colours come from theme.ts per
 // system mode (REA-22, REA-24), applied by ./Text's tone and by each screen's backgrounds and
@@ -75,6 +76,7 @@ export const ui = StyleSheet.create({
     borderRadius: 32,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  dockWide: { columnGap: DOCK_GAP },
   dockNarrow: { flexDirection: 'column', gap: 4 },
   transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   transportWide: { flex: 1 },

@@ -9,8 +9,9 @@ or is narrower than it is drawn. So each control must be present, have area, be 
 above the screen's bottom, and meet its size: every glyph button exactly 48 dp square (within
 2 px of rounding), Play/Pause at least 48 dp wide and 40 dp tall (its 4 dp vertical hitSlop
 makes the 48 dp target, which a dump cannot show). A text node inside a control must be
-strictly smaller than the control (a glyph in height, Play's label in width), or the text was
-clipped to the control's box.
+strictly smaller than the control (a glyph in height; Play's label strictly inside the pill on
+both sides), or the text was clipped to the control's box. It also prints the layout (one row
+or two), for information.
 No two controls overlap. The rate value must be on screen.
 
 Prints one line per finding, with labels and bounds only (no item text), then
@@ -67,9 +68,11 @@ def check(xml, density, screen_h, transport):
             cb = bounds(c)
             if c is n or cb is None or not c.get('text'):
                 continue
-            # The pill grows to its label's height, so for Play/Pause only the width tells.
-            if name == transport and cb[2] - cb[0] >= w:
-                out.append(f'FAIL dock: {name} label clipped to its box ({cb[2] - cb[0]} px of {w})')
+            # The pill grows to its label's height, so for Play/Pause only the width tells: the
+            # label must lie strictly inside the pill on both sides, or the pill was clipped
+            # (by the screen edge or a neighbour) along with it.
+            if name == transport and not (cb[0] > x0 and cb[2] < x1):
+                out.append(f'FAIL dock: {name} label clipped to its box ([{cb[0]},{cb[2]}] in [{x0},{x1}])')
             elif name != transport and cb[3] - cb[1] >= h:
                 out.append(f'FAIL dock: {name} glyph clipped to its box ({cb[3] - cb[1]} px of {h})')
         controls[name] = b
@@ -86,6 +89,10 @@ def check(xml, density, screen_h, transport):
     if transport in controls:
         x0, y0, x1, y1 = controls[transport]
         out.append(f'dock: {transport} centre {(x0 + x1) // 2},{(y0 + y1) // 2}')
+    if len(controls) == len(ICONS) + 1:
+        tops = {b[1] + (b[3] - b[1]) // 2 for b in controls.values()}
+        rows = 'one row' if max(tops) - min(tops) <= 2 else 'two rows'
+        out.append(f'dock: layout {rows}')
     for name, b in controls.items():
         out.append(f'dock: {name} [{b[0]},{b[1]}][{b[2]},{b[3]}]')
     ok = not any(line.startswith('FAIL') for line in out)

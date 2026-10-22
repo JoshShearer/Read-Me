@@ -242,7 +242,7 @@ export function ReaderScreen({
         testID="dock"
         style={[
           ui.dock,
-          oneRow ? null : ui.dockNarrow,
+          oneRow ? ui.dockWide : ui.dockNarrow,
           { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant },
         ]}>
         <View collapsable={false} testID="dock transport" style={[ui.transport, oneRow ? ui.transportWide : ui.transportNarrow]}>

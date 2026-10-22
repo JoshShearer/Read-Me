@@ -100,7 +100,7 @@ test('the stepper disables the end it has reached', () => {
 
 // REA-58: the Stepper is the Reader's rate control and Settings' "Default rate"; its value
 // grows with the font scale so "4.0x" never pushes the buttons, and glyphs stop growing at 1.5x
-// so they fit the 48 dp button (a 28 dp line at 2.0 is 56 dp, clipped by the button).
+// so they fit the 48 dp button (at 2.0 the glyph filled it, 179 px of 179, in REA-58's reproduction).
 describe('at the largest font scale (REA-58)', () => {
   let dims: jest.SpyInstance;
   beforeEach(() => {
