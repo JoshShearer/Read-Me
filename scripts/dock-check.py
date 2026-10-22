@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks the Reader's dock in a uiautomator dump (REA-58).
 
-Usage: dock-check.py <dump.xml> <density dpi> <screen height px> <play|pause>
+Usage: dock-check.py <dump.xml> <density dpi> <screen height px> <play|pause> [--expect one-row|two-rows]
 
 uiautomator reports bounds clipped to the parent views and the screen, so a control pushed
 past the right edge is not reported with x1 > width: it is missing, has no area (x0 >= x1),
@@ -10,8 +10,8 @@ above the screen's bottom, and meet its size: every glyph button exactly 48 dp s
 2 px of rounding), Play/Pause at least 48 dp wide and 40 dp tall (its 4 dp vertical hitSlop
 makes the 48 dp target, which a dump cannot show). A text node inside a control must be
 strictly smaller than the control (a glyph in height; Play's label strictly inside the pill on
-both sides), or the text was clipped to the control's box. It also prints the layout (one row
-or two), for information.
+both sides), or the text was clipped to the control's box. It prints the layout (one row or
+two); with --expect, any other layout (or none, with a control missing) is a FAIL.
 No two controls overlap. The rate value must be on screen.
 
 Prints one line per finding, with labels and bounds only (no item text), then
@@ -36,7 +36,7 @@ def bounds(node):
     return tuple(int(v) for v in m.groups()) if m else None
 
 
-def check(xml, density, screen_h, transport):
+def check(xml, density, screen_h, transport, expect=None):
     """Returns (findings, ok). findings are strings carrying labels and bounds only."""
     root = ET.fromstring(xml)
     nodes = list(root.iter('node'))
@@ -89,10 +89,13 @@ def check(xml, density, screen_h, transport):
     if transport in controls:
         x0, y0, x1, y1 = controls[transport]
         out.append(f'dock: {transport} centre {(x0 + x1) // 2},{(y0 + y1) // 2}')
+    rows = None
     if len(controls) == len(ICONS) + 1:
         tops = {b[1] + (b[3] - b[1]) // 2 for b in controls.values()}
-        rows = 'one row' if max(tops) - min(tops) <= 2 else 'two rows'
-        out.append(f'dock: layout {rows}')
+        rows = 'one-row' if max(tops) - min(tops) <= 2 else 'two-rows'
+        out.append(f'dock: layout {rows.replace("-", " ")}')
+    if expect and rows != expect:
+        out.append(f'FAIL dock: layout {rows or "unknown"}, expected {expect}')
     for name, b in controls.items():
         out.append(f'dock: {name} [{b[0]},{b[1]}][{b[2]},{b[3]}]')
     ok = not any(line.startswith('FAIL') for line in out)
@@ -100,13 +103,22 @@ def check(xml, density, screen_h, transport):
 
 
 def main(argv):
-    path, density, screen_h, transport = argv[1], int(argv[2]), int(argv[3]), argv[4]
+    args = argv[1:]
+    expect = None
+    if '--expect' in args:
+        i = args.index('--expect')
+        expect = args[i + 1]
+        if expect not in ('one-row', 'two-rows'):
+            print(f'dock-check: --expect takes one-row or two-rows, not {expect}')
+            return 2
+        del args[i:i + 2]
+    path, density, screen_h, transport = args[0], int(args[1]), int(args[2]), args[3]
     try:
         with open(path, encoding='utf-8') as f:
             xml = f.read()
         if '<node' not in xml:
             raise ValueError('empty')
-        findings, ok = check(xml, density, screen_h, transport)
+        findings, ok = check(xml, density, screen_h, transport, expect)
     except (OSError, ValueError, ET.ParseError):
         print(f'dock: no capture ({path})')
         return 2
