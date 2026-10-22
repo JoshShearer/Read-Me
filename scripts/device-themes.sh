@@ -38,7 +38,11 @@
 DISPLAY_SAVE=/data/local/tmp/readme-display.saved
 DISPLAY_WATCH=/data/local/tmp/readme-display.watchdog     # the live watchdog's id: removing it cancels
 DISPLAY_WATCH_SH=/data/local/tmp/readme-display-watchdog.sh
-DISPLAY_WATCHDOG_SECS=${DISPLAY_WATCHDOG_SECS:-360}  # a narrow pass takes about 2 min
+# A narrow pass took about 2 min before REA-62; it now also opens Trim, long-presses, captures
+# the sheet and closes it (several more dumps, each up to about 10 s on a retry). That longer
+# pass has not been timed on the phone yet: measure it before trusting 360 s, and raise this if
+# the restore line comes close.
+DISPLAY_WATCHDOG_SECS=${DISPLAY_WATCHDOG_SECS:-360}
 DISPLAY_SAVED_BY_US=0  # 1 once this run saved (or adopted a stale save): it never saves again
 DISPLAY_CHANGED=0      # 1 from this run's first display write until a restore succeeds
 DISPLAY_WATCHDOG=      # this run's watchdog id, once it runs on the phone
@@ -444,8 +448,9 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
   shot narrow-3-reader
   dock narrow-3-reader play two-rows
   # REA-62: Trim's long-press sheet at 360 dp and font scale 2.0. Each row must hold its label
-  # (a wrapped "Cut everything after this" must grow the row, not spill out of it). Cancel
-  # closes it without a change, and Trim's Done goes back to the Reader for the Play check.
+  # (a wrapped "Cut everything after this" must grow the row, not spill out of it). Cancel must
+  # close it with paragraph 1 still kept, and Trim's Done goes back to the Reader for the Play
+  # check.
   tap_node content-desc 'trim'
   wait_for 'content-desc="trim done"'
   long_press resource-id 'paragraph 1'
@@ -455,7 +460,13 @@ if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
     'trim menu start here' 'trim menu cut after' 'trim menu cancel' | sed 's/^/narrow-5-trim-sheet /' \
     || sheet_fail=1
   tap_node resource-id 'trim menu cancel'
-  sleep 1
+  after=""
+  for _ in $(seq 10); do after=$(ui); device_has "$after" 'resource-id="trim menu cancel"' || break; sleep 1; done
+  if device_has "$after" 'resource-id="trim menu cancel"'; then
+    echo "narrow-5-trim-sheet FAIL sheet: still open 10 s after Cancel"; sheet_fail=1
+  elif ! device_has "$after" 'resource-id="paragraph 1"'; then
+    echo "narrow-5-trim-sheet FAIL sheet: paragraph 1 is not kept after Cancel"; sheet_fail=1
+  else echo "narrow-5-trim-sheet sheet: Cancel closed it, paragraph 1 still kept"; fi
   tap_node content-desc 'trim done'
   wait_for 'content-desc="play"'
   centre=$(python3 scripts/dock-check.py "$RAW/narrow-3-reader.xml" "$NARROW_DENSITY" "$SCREEN_H" play \
