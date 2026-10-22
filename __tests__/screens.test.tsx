@@ -958,27 +958,29 @@ describe('Trim long-press sheet (REA-62)', () => {
   });
 
   // At 360 dp and font scale 2.0 (REA-58's narrow case) "Cut everything after this" may wrap.
-  // A row of fixed height would clip a second line, so each row has a 48 dp minimum and grows
-  // with its label, and the label is not capped below the font scale Android asks for.
-  describe('at 360 dp and font scale 2.0', () => {
+  // A row of fixed height would clip a second line, so each row's style must let it grow: a
+  // 48 dp minimum, no fixed height, and a label not capped below the font scale Android asks
+  // for. The test renderer has no layout, so the growth itself is checked on the phone
+  // (device:themes' narrow pass, scripts/sheet-check.py).
+  describe('row style', () => {
     const RN = require('react-native') as typeof import('react-native');
-    let dims: jest.SpyInstance | undefined;
-    afterEach(() => dims?.mockRestore());
-    test.each(['trim menu start here', 'trim menu cut after', 'trim menu cancel'])('the %s row grows with its label', async id => {
-      dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 360, height: 800, scale: 3, fontScale: 2 });
-      three();
-      const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
-      await longPress(r, 'paragraph 2');
-      const row = r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function');
-      const style = typeof row.props.style === 'function' ? row.props.style({ pressed: false }) : row.props.style;
-      const flat = RN.StyleSheet.flatten(style) ?? {};
-      expect(flat.height).toBeUndefined();
-      expect(flat.minHeight).toBe(48);
-      expect(flat.paddingVertical ?? flat.paddingTop ?? 0).toBeGreaterThan(0);
-      for (const t of row.findAllByType(RN.Text)) {
-        expect(t.props.numberOfLines).toBeUndefined();
-        expect(t.props.maxFontSizeMultiplier).toBeUndefined();
-      }
-    });
+    test.each(['trim menu start here', 'trim menu cut after', 'trim menu cancel'])(
+      "the %s row's style lets it grow: minHeight 48, no fixed height",
+      async id => {
+        three();
+        const r = await mount(<TrimScreen id={1} onDone={() => {}} onGone={() => {}} />);
+        await longPress(r, 'paragraph 2');
+        const row = r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function');
+        const style = typeof row.props.style === 'function' ? row.props.style({ pressed: false }) : row.props.style;
+        const flat = RN.StyleSheet.flatten(style) ?? {};
+        expect(flat.height).toBeUndefined();
+        expect(flat.minHeight).toBe(48);
+        expect(flat.paddingVertical ?? flat.paddingTop ?? 0).toBeGreaterThan(0);
+        for (const t of row.findAllByType(RN.Text)) {
+          expect(t.props.numberOfLines).toBeUndefined();
+          expect(t.props.maxFontSizeMultiplier).toBeUndefined();
+        }
+      },
+    );
   });
 });
