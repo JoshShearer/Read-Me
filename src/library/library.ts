@@ -162,6 +162,15 @@ export const setCuts = (id: number, indices: readonly number[]) =>
 export const archiveItem = (id: number) => Native.archiveItem(id);
 export const restoreItem = (id: number) => Native.restoreItem(id);
 
+/** REA-63 (ADR 0016): the unread item a share matched, once; null when there is none. */
+export const takeSharedOpen = (): Promise<number | null> => Native.takeSharedOpen();
+
+/** REA-63: a share matched an unread item while JS runs. Returns the unsubscribe. */
+export function onSharedOpen(cb: () => void): () => void {
+  const sub = new NativeEventEmitter(Native).addListener('ReadMeSharedOpen', cb);
+  return () => sub.remove();
+}
+
 export function onItemsChanged(cb: () => void): () => void {
   const sub = new NativeEventEmitter(Native).addListener('ReadMeItemsChanged', cb);
   return () => sub.remove();

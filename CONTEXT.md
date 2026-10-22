@@ -43,6 +43,8 @@ Rules of the layering:
 ```text
 share -> intake -> [link] Fetcher -> fetched (body app-private) -> extract -> library
                                                         (ready | extract-poor | fetch-failed)
+                -> [link matching an unread item; ADR 0016] no insert, no fetch ->
+                   MainActivity (item id only) -> SharedOpen -> JS: Trim/Reader, or the List
                 -> [text] split on blank lines -> library (ready)
 open item -> Trim (first time) -> Reader -> segment -> PlaybackService queue -> TTS to file
   -> Read Me's player (AudioTrack, 1.0x; ADR 0012)
@@ -97,6 +99,7 @@ src/devcheck/                devcheck bundle only: fingerprints and the DevCheck
 __tests__/                   Jest tests; fixtures/pages (real public-domain pages), fixtures/text
 android/app/src/main/java/io/loopstring/readme/   Kotlin:
   MainActivity, MainApplication (start-up recovery), ShareActivity (R-M02 share target),
+  SharedOpen (the one-shot id of the unread item a share matched, ADR 0016),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text; SharedFile and Markdown: a shared .md or .txt read
   off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions;

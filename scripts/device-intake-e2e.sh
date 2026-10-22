@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # npm run device:intake - R-M02/R-M03/R-M04 on the phone, as a user would. Clears Read Me's
 # data, then shares a link, a text and a dead link to ShareActivity with the app closed. It
-# then opens the app and checks each item's state on screen, and that no log line carries the
-# shared URL path or text (AGENTS.md 1). Uses the network: the link is weather.gov's
+# then opens the app and checks each item's state on screen. REA-63: shares the link and the dead
+# link again with Read Me in the background and checks each opens its unread item (Trim, the
+# List) and fetches nothing. Last, that no log line carries the shared URL path or text
+# (AGENTS.md 1), the second shares included. Uses the network: the link is weather.gov's
 # lightning safety page (public domain, a Phase 1 fixture source).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -57,6 +59,46 @@ device_has "$screen" 'fetch-failed: network' && { echo "FAIL: a link failed as n
 device_has "$screen" 'fetch-failed: offline' || { echo "FAIL: dead link not fetch-failed: offline"; fail=1; }
 device_has "$screen" 'fetch-failed: not-found' || { echo "FAIL: .invalid host not fetch-failed: not-found (needs the phone online)"; fail=1; }
 device_has "$screen" 'text="fetching"' && { echo "FAIL: an item still fetching"; fail=1; }
+
+# REA-63 (ADR 0016): a second share of an unread link opens that item and fetches nothing.
+# These shares go through am start, which puts ShareActivity in Read Me's own task; a share from
+# another app's sheet starts it in that app's task, so this does not exercise the cross-task
+# start of MainActivity a user's share makes.
+dump_until() { # $1: a regex; up to about 20 s; the screen is left in $screen
+  for _ in $(seq 10); do
+    adb shell uiautomator dump /sdcard/readme-ui.xml >/dev/null 2>&1 || true
+    screen=$(adb shell cat /sdcard/readme-ui.xml 2>/dev/null || true)
+    device_has "$screen" "$1" && break
+    sleep 2
+  done
+  adb shell rm -f /sdcard/readme-ui.xml
+}
+requests() { grep -c 'request id=' <<<"$(adb logcat -d -s ReadMe)" || true; }
+before=$(requests)
+adb shell input keyevent KEYCODE_HOME
+share "Lightning safety $LINK"
+dump_until 'content-desc="trim done"'
+matched=$(grep -c 'share matched item=' <<<"$(adb logcat -d -s ReadMe)" || true)
+[ "$matched" -eq 1 ] || { echo "FAIL: second link share: expected one 'share matched' line, saw $matched"; fail=1; }
+device_has "$(adb shell dumpsys activity activities)" "ResumedActivity.*$PKG/\.MainActivity" \
+  || { echo "FAIL: second link share: MainActivity is not the resumed activity"; fail=1; }
+device_has "$screen" 'content-desc="trim done"' || { echo "FAIL: second link share: Trim not shown"; fail=1; }
+adb shell input keyevent KEYCODE_BACK
+dump_until 'content-desc="settings"'
+readies=$(grep -cE 'text="(ready|extract-poor)"' <<<"${screen//\/>/$'\n'}" || true)
+[ "$readies" -ge 3 ] || { echo "FAIL: after the second link share expected 3 readable items, saw $readies"; fail=1; }
+adb shell input keyevent KEYCODE_HOME
+share "dead $DEAD"
+dump_until 'fetch-failed: offline'
+matched=$(grep -c 'share matched item=' <<<"$(adb logcat -d -s ReadMe)" || true)
+[ "$matched" -eq 2 ] || { echo "FAIL: second dead-link share: expected two 'share matched' lines, saw $matched"; fail=1; }
+offline=$(grep -c 'text="fetch-failed: offline"' <<<"${screen//\/>/$'\n'}" || true)
+[ "$offline" -eq 1 ] || { echo "FAIL: second dead-link share: expected one fetch-failed: offline row, saw $offline"; fail=1; }
+device_has "$screen" 'content-desc="retry ' || { echo "FAIL: second dead-link share: no Retry on the List"; fail=1; }
+device_has "$screen" 'content-desc="unread"' && { echo "FAIL: second dead-link share: the List is on its Archive tab"; fail=1; }
+after=$(requests)
+[ "$after" -eq "$before" ] || { echo "FAIL: a matched share fetched ($before request lines before, $after after)"; fail=1; }
+echo "second shares: matched=$matched requests before=$before after=$after"
 
 logs=$(adb logcat -d)
 if device_has "$logs" "$LINK_PATH_MARK|$TEXT_MARK|nothing-here"; then

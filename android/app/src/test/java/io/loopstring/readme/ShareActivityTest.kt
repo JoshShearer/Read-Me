@@ -16,12 +16,14 @@ import java.io.ByteArrayInputStream
 import java.util.concurrent.Executor
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowToast
 
@@ -64,6 +66,65 @@ class ShareActivityTest {
     assertEquals(1, work.size)
     assertTrue(!work.single().state.isFinished)
     assertTrue(activity.isFinishing)
+  }
+
+  // --- REA-63: a link that matches an unread item opens it ---
+
+  private fun workFor(id: Long) =
+    WorkManager.getInstance(ctx).getWorkInfosForUniqueWork(FetchWorker.uniqueName(id)).get()
+
+  @Test fun theSameLinkSharedTwiceLeavesOneItemAndOpensIt() {
+    share("Some title https://www.example.com/story?id=7")
+    val first = Store.get(ctx).items().single()
+    Shadows.shadowOf(ctx as android.app.Application).clearNextStartedActivities()
+    val activity = share("Some title https://www.example.com/story?id=7")
+    assertEquals(listOf(first.id), Store.get(ctx).items().map { it.id })
+    assertEquals(ShareActivity.ALREADY, ShadowToast.getTextOfLatestToast())
+    assertTrue(activity.isFinishing)
+    val started = shadowOf(activity).nextStartedActivity
+    assertEquals(MainActivity::class.java.name, started.component!!.className)
+    assertTrue(started.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    // The id only: no URL in any extra or in the data (AGENTS.md 1).
+    assertEquals(setOf(SharedOpen.EXTRA_ITEM), started.extras!!.keySet())
+    assertEquals(first.id, started.getLongExtra(SharedOpen.EXTRA_ITEM, -1))
+    assertNull(started.data)
+  }
+
+  @Test fun aMatchQueuesNoFetchEvenWhenTheItemFailed() {
+    // Seeded through the Store, so no work exists before the share: any work after it is new.
+    val store = Store.get(ctx)
+    val id = store.insertLink("https://www.example.com/dead", "example.com", 1)
+    store.fetchFailed(id, "offline")
+    val activity = share("https://www.example.com/dead")
+    assertEquals(listOf(id), store.items().map { it.id })
+    assertEquals(States.FETCH_FAILED, store.item(id)!!.state)
+    assertTrue(workFor(id).isEmpty())
+    assertEquals(id, shadowOf(activity).nextStartedActivity.getLongExtra(SharedOpen.EXTRA_ITEM, -1))
+  }
+
+  @Test fun aLinkMatchingOnlyAnArchivedItemIsANewFetchingItem() {
+    val store = Store.get(ctx)
+    val old = store.insertLink("https://www.example.com/read", "example.com", 1)
+    store.archive(old, 2)
+    val activity = share("https://www.example.com/read")
+    val new = store.items().map { it.id }.single { it != old }
+    assertEquals(States.FETCHING, store.item(new)!!.state)
+    assertEquals(1, workFor(new).size)
+    assertEquals(ShareActivity.SAVED, ShadowToast.getTextOfLatestToast())
+    assertNull(shadowOf(activity).nextStartedActivity)
+  }
+
+  @Test fun theSameTextSharedTwiceIsTwoItems() {
+    share("A paragraph of text.")
+    val activity = share("A paragraph of text.")
+    assertEquals(2, Store.get(ctx).items().size)
+    assertNull(shadowOf(activity).nextStartedActivity)
+  }
+
+  @Test fun theSameFileSharedTwiceIsTwoItems() {
+    open(Uri.parse("content://x/y/A.txt"), "Words.".toByteArray(), Intent.ACTION_SEND, "text/plain")
+    open(Uri.parse("content://x/y/A.txt"), "Words.".toByteArray(), Intent.ACTION_SEND, "text/plain")
+    assertEquals(2, Store.get(ctx).items().size)
   }
 
   @Test fun sharedTextIsAReadyTextItem() {

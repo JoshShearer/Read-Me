@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import io.loopstring.readme.fetch.FetchWorker
 import io.loopstring.readme.intake.Intake
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * R-M02: the share target. Classifies and stores the item, queues the request for a link, and
  * finishes at once so the user stays in the app they shared from. No JS runtime is started.
+ * REA-63 (ADR 0016): a link that exactly matches an unread link item stores and fetches nothing;
+ * Read Me comes to the front on that item instead. Text and files are never matched.
  * R-C04: also opens a shared `.md` or `.txt` file as a text item.
  */
 class ShareActivity : Activity() {
@@ -81,9 +84,21 @@ class ShareActivity : Activity() {
     val now = System.currentTimeMillis()
     return when (val share = Intake.classify(shared)) {
       is Intake.Share.Link -> {
-        val id = store.insertLink(share.url, Intake.hostTitle(share.url), now)
-        FetchWorker.enqueue(this, id)
-        SAVED
+        val link = store.findUnreadLinkOrInsert(share.url, Intake.hostTitle(share.url), now)
+        if (link.created) {
+          FetchWorker.enqueue(this, link.id)
+          SAVED
+        } else {
+          // REA-63 (ADR 0016): open the unread item instead; fetch nothing, even when it failed
+          // (Retry stays the user's). The id only, in the log and in the intent (AGENTS.md 1).
+          Log.i("ReadMe", "share matched item=${link.id}")
+          startActivity(
+            Intent(this, MainActivity::class.java)
+              .putExtra(SharedOpen.EXTRA_ITEM, link.id)
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+          )
+          ALREADY
+        }
       }
       is Intake.Share.Text -> {
         val paragraphs = Intake.splitParagraphs(share.text)
@@ -117,6 +132,7 @@ class ShareActivity : Activity() {
 
   internal companion object {
     const val SAVED = "Saved to Read Me"
+    const val ALREADY = "Already in your list"
     const val NOTHING = "Nothing to save"
     const val TOO_LARGE = "That file is too large for Read Me (over 5 MB)"
     const val UNREADABLE = "Read Me could not read that file"

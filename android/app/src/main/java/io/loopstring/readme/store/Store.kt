@@ -34,6 +34,9 @@ data class PositionRow(val paragraphIndex: Int, val charOffset: Int)
 /** R-M01: the list's length estimate and progress, over kept paragraphs only. */
 data class ItemStats(val words: Int, val keptChars: Int, val readChars: Int)
 
+/** REA-63: what [Store.findUnreadLinkOrInsert] did: matched an unread item, or created one. */
+data class LinkShare(val id: Long, val created: Boolean)
+
 object States {
   const val FETCHING = "fetching"
   const val FETCHED = "fetched"
@@ -175,19 +178,48 @@ class Store private constructor(context: Context) :
   }
 
   fun insertLink(url: String, title: String, now: Long): Long {
-    val id = writableDatabase.insertOrThrow(
-      "items",
-      null,
-      ContentValues().apply {
-        put("kind", "link")
-        put("url", url)
-        put("title", cap(title))
-        put("created_at", now)
-        put("state", States.FETCHING)
-      },
-    )
+    val id = writableDatabase.insertOrThrow("items", null, linkValues(url, title, now))
     ItemEvents.changed()
     return id
+  }
+
+  /**
+   * REA-63 (ADR 0016): a shared link that exactly matches an unread link item is that item,
+   * whatever its state; otherwise a new fetching item, as [insertLink]. Exact means the string
+   * Intake stored: no tracking parameter, fragment or trailing slash is stripped. An archived
+   * match does not count (a second share of something read may be deliberate). Several unread
+   * matches (duplicates from before this change): the newest. The lookup and the insert are one
+   * transaction, so two shares at once cannot both insert. A match writes nothing and fires
+   * nothing.
+   */
+  fun findUnreadLinkOrInsert(url: String, title: String, now: Long): LinkShare {
+    val db = writableDatabase
+    val share: LinkShare
+    db.beginTransaction()
+    try {
+      val found = db.rawQuery(
+        "SELECT id FROM items WHERE kind = 'link' AND url = ? AND archived_at IS NULL ORDER BY id DESC LIMIT 1",
+        arrayOf(url),
+      ).use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+      share = if (found != null) {
+        LinkShare(found, created = false)
+      } else {
+        LinkShare(db.insertOrThrow("items", null, linkValues(url, title, now)), created = true)
+      }
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+    if (share.created) ItemEvents.changed()
+    return share
+  }
+
+  private fun linkValues(url: String, title: String, now: Long) = ContentValues().apply {
+    put("kind", "link")
+    put("url", url)
+    put("title", cap(title))
+    put("created_at", now)
+    put("state", States.FETCHING)
   }
 
   fun insertText(title: String, paragraphs: List<String>, now: Long): Long =

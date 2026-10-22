@@ -139,6 +139,11 @@ export interface Spec extends TurboModule {
    * device:continuous reads instead of a uiautomator dump. Changes nothing.
    */
   readerShows(itemId: number, playing: boolean): void;
+  /**
+   * REA-63 (ADR 0016): the id of the unread item a share matched, at most once (null when none).
+   * Native emits "ReadMeSharedOpen" when one arrives while JS runs.
+   */
+  takeSharedOpen(): Promise<number | null>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

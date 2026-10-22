@@ -15,6 +15,7 @@ import {
   subtitle,
   trimDone,
   followHandover,
+  sharedOpen,
   visibleItems,
   type Route,
   bridgeStatus,
@@ -240,5 +241,25 @@ describe('voice options (REA-21)', () => {
   test('nothing while the engine is being checked', () => {
     expect(voiceOptions(null)).toEqual([]);
     expect(voiceValue(null)).toBeNull();
+  });
+});
+
+describe('a share that matched an unread item (REA-63, ADR 0016)', () => {
+  const list = { name: 'list' };
+  test('a ready item never opened opens Trim over the List and records the open', () => {
+    expect(sharedOpen(item({ id: 4 }))).toEqual({ stack: [list, { name: 'trim', id: 4 }], markOpened: true });
+  });
+  test('an opened ready item opens its Reader and records nothing', () => {
+    expect(sharedOpen(item({ id: 4, openedAt: 9 }))).toEqual({ stack: [list, { name: 'reader', id: 4 }], markOpened: false });
+  });
+  test('extract-poor opens as Read anyway does', () => {
+    expect(sharedOpen(item({ id: 4, state: 'extract-poor' }))).toEqual({ stack: [list, { name: 'trim', id: 4 }], markOpened: true });
+  });
+  test.each(['fetching', 'fetched', 'fetch-failed'] as const)('%s shows the List only', state => {
+    expect(sharedOpen(item({ id: 4, state }))).toEqual({ stack: [list], markOpened: false });
+  });
+  test('an item gone or archived since the share shows the List only', () => {
+    expect(sharedOpen(null)).toEqual({ stack: [list], markOpened: false });
+    expect(sharedOpen(item({ id: 4, archivedAt: 3 }))).toEqual({ stack: [list], markOpened: false });
   });
 });

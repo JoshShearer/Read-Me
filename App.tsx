@@ -3,14 +3,29 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, BackHandler, StatusBar, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { markOpened, watchFetched, type Item } from './src/library/library';
+import {
+  getItem,
+  markOpened,
+  onSharedOpen,
+  takeSharedOpen,
+  watchFetched,
+  type Item,
+} from './src/library/library';
 import { getPlayback, handedOver, onPlayback, type Playback } from './src/library/playback';
 import { LicensesScreen } from './src/ui/LicensesScreen';
 import { ListScreen } from './src/ui/ListScreen';
 import { ReaderScreen } from './src/ui/ReaderScreen';
 import { SettingsScreen } from './src/ui/SettingsScreen';
 import { TrimScreen } from './src/ui/TrimScreen';
-import { back, followHandover, openRoute, push, trimDone, type Route } from './src/ui/model';
+import {
+  back,
+  followHandover,
+  openRoute,
+  push,
+  sharedOpen,
+  trimDone,
+  type Route,
+} from './src/ui/model';
 import { palette, statusBarStyle } from './src/ui/theme';
 import { ui } from './src/ui/ui';
 
@@ -18,6 +33,9 @@ function Main() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const [stack, setStack] = useState<Route[]>([{ name: 'list' }]);
+  // REA-63: bumped by a shared open, so the List remounts on its unread tab (the tab is the
+  // List's own state).
+  const [listEpoch, setListEpoch] = useState(0);
   const top = stack[stack.length - 1];
 
   // ADR 0007's drain runs whatever screen is open (REA-50).
@@ -82,6 +100,38 @@ function Main() {
     };
   }, []);
 
+  // REA-63 (ADR 0016): a share matched an unread item. Taken on mount (a cold start from the
+  // share), on return to the foreground, and on the event when Read Me is already in front. It
+  // only replaces the route stack and records the open; no play, pause or resume (AGENTS.md 11).
+  useEffect(() => {
+    let live = true;
+    const consume = () => {
+      // Through Promise.resolve, so a synchronous throw from the native call is caught too.
+      Promise.resolve()
+        .then(() => takeSharedOpen())
+        .then(async id => {
+          if (id === null || id === undefined || !live) return;
+          const detail = await getItem(id).catch(() => null);
+          if (!live) return;
+          const next = sharedOpen(detail?.item ?? null);
+          setStack(next.stack);
+          setListEpoch(e => e + 1);
+          if (next.markOpened) markOpened(id).catch(() => undefined);
+        })
+        .catch(() => undefined);
+    };
+    const off = onSharedOpen(consume);
+    consume();
+    const app = AppState.addEventListener('change', s => {
+      if (s === 'active') consume();
+    });
+    return () => {
+      live = false;
+      off();
+      app.remove();
+    };
+  }, []);
+
   let screen: React.ReactElement;
   switch (top.name) {
     case 'list':
@@ -112,7 +162,7 @@ function Main() {
   // was inserted ("Unable to find viewState for tag ... for addViewAt", a blank screen): Trim's
   // Done on a long article blanked the Reader in 4-5 of 10 runs, 10 of 10 with view
   // preallocation off. Keyed screens: 0 of 20 (REA-26, 2026-10-03; npm run device:screens).
-  const key = 'id' in top ? `${top.name}:${top.id}` : top.name;
+  const key = 'id' in top ? `${top.name}:${top.id}` : top.name === 'list' ? `list:${listEpoch}` : top.name;
   // REA-22, REA-24: the status bar sits on this surface, so its icons follow the mode too.
   // REA-28: the bottom inset too, or the Reader's transport sits under the gesture bar (Play's
   // 48 dp target reached y 2962 of 2992 on the reference device, the home indicator across it).

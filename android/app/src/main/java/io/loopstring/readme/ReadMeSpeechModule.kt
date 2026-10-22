@@ -46,6 +46,8 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     reactApplicationContext.emitDeviceEvent(EVENT_BRIDGE, bridgeMap())
   }
 
+  private val onShared: () -> Unit = { reactApplicationContext.emitDeviceEvent(EVENT_SHARED_OPEN) }
+
   override fun getName(): String = NAME
 
   override fun initialize() {
@@ -53,12 +55,14 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     ItemEvents.add(onChange)
     PlaybackHub.addListener(onPlayback)
     PlaybackHub.addBridgeListener(onBridge)
+    SharedOpen.addListener(onShared)
   }
 
   override fun invalidate() {
     ItemEvents.remove(onChange)
     PlaybackHub.removeListener(onPlayback)
     PlaybackHub.removeBridgeListener(onBridge)
+    SharedOpen.removeListener(onShared)
     super.invalidate()
   }
 
@@ -298,6 +302,9 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     null
   }
 
+  // REA-63 (ADR 0016): the item a share matched, once; null when there is none.
+  override fun takeSharedOpen(promise: Promise) = settle(promise) { SharedOpen.take()?.toDouble() }
+
   // REA-56: device:continuous's Reader checks read this line instead of a uiautomator dump, which
   // returned nothing while the Reader played. An id and 0/1 only (AGENTS.md 1); it only logs.
   override fun readerShows(itemId: Double, playing: Boolean) {
@@ -352,5 +359,6 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     const val EVENT_CHANGED = "ReadMeItemsChanged"
     const val EVENT_PLAYBACK = "ReadMePlayback"
     const val EVENT_BRIDGE = "ReadMeBridge"
+    const val EVENT_SHARED_OPEN = "ReadMeSharedOpen"
   }
 }

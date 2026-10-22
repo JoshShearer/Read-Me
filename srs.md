@@ -93,7 +93,17 @@ The app MUST register as an `ACTION_SEND` target for `text/plain`.
 - More than one URL in shared text: text item (do not guess which link was meant).
 - The item MUST appear in the list immediately, in a `fetching` state for links.
 - Intake MUST NOT require the app to be open in the foreground afterwards; the share
-  completes and returns the user to the source app.
+  completes and returns the user to the source app, except when it matches an unread item
+  (below), which brings Read Me to the front on that item.
+- **Unread match (amended 2026-10-22, REA-63, ADR 0016):** a link whose URL is exactly the URL of
+  an **unread** link item (no stripping of tracking parameters, fragments or trailing slashes)
+  MUST NOT create an item or queue a fetch, whatever that item's state, `fetching` and
+  `fetch-failed` included. Several unread matches: the newest. The lookup and any insert MUST be
+  one Store transaction. The share shows "Already in your list" and opens the item: `ready` or
+  `extract-poor` as the List's Read does (Trim on first open, else the Reader), any other state
+  on the List's unread tab with the row's own actions (Retry). The open MUST NOT play, pause or
+  resume. Only the item id crosses to the app, and a log line carries at most the id. A link
+  matching only an archived item is a new item; shared text and shared files are never matched.
 - The fetch MUST run in native code that survives the share activity finishing (R-M03),
   not in the JS runtime.
 - **Recovery:** on every app start, any item still in `fetching` whose fetch is not
