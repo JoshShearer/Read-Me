@@ -65,7 +65,8 @@ export const ui = StyleSheet.create({
   // disabled glyphs (faint) keep 3:1 on it (3.05 light, 3.92 dark) and not on
   // surfaceContainerHigh (2.78 light).
   // REA-58: one row when model.dockOneRow says it fits, else two (dockNarrow): the transport
-  // across the dock, the rate Stepper centred under it. Play/Pause is in the same place either way.
+  // across the dock, the rate Stepper centred under it. Within a layout, Pause takes Play's place
+  // (same minWidth), so a second tap where Play was pauses; the place differs between layouts.
   dock: {
     flexDirection: 'row',
     alignItems: 'center',
