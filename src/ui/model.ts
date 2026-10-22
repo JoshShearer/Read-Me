@@ -148,6 +148,24 @@ export function lineTop(lines: readonly { text: string; y: number }[], offset: n
 
 export const formatRate = (rate: number): string => `${rate.toFixed(1)}x`;
 
+// REA-58: the Reader's dock, in dp. Fixed parts do not scale; the two texts grow with the font
+// scale. One row needs 420 dp at font scale 1.0, more than a 360 dp phone has (a Galaxy S22
+// showed "- 1.0x" and no "+").
+/** Room for Play's or Pause's label at font scale 1.0 ("Pause" measured 37 dp per unit). */
+const PLAY_TEXT = 56;
+/** Room for the rate value at font scale 1.0, wide enough for "4.0x". */
+const RATE_TEXT = 44;
+/** Margins and padding (32), five glyph buttons (240) and Play's horizontal padding (48). */
+const DOCK_FIXED = 32 + 5 * 48 + 48;
+
+/** Play's minimum width: Play and Pause are the same width, so the toggle never moves it. */
+export const playMinWidth = (fontScale: number): number => 48 + PLAY_TEXT * fontScale;
+/** The Stepper value's minimum width, so the buttons do not move as the value changes. */
+export const rateValueWidth = (fontScale: number): number => RATE_TEXT * fontScale;
+/** One row when everything fits the window; else the rate Stepper goes on a second row. */
+export const dockOneRow = (width: number, fontScale: number): boolean =>
+  width >= DOCK_FIXED + (PLAY_TEXT + RATE_TEXT) * fontScale;
+
 export type Notice = { name: string; version: string; license: string; url?: string; text?: string };
 
 export function parseNotices(json: string): Notice[] {

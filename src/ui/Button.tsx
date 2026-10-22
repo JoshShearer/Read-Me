@@ -105,7 +105,9 @@ export function IconButton({
       disabled={disabled}
       onPress={onPress}
       style={s.icon}>
-      <Text tone={disabled ? 'disabled' : 'action'} style={s.glyph}>
+      {/* REA-58: a 28 dp line at font scale 2.0 is 56 dp and was clipped by the 48 dp button;
+          at most 1.5x it is 42 dp. The button itself never shrinks. */}
+      <Text tone={disabled ? 'disabled' : 'action'} style={s.glyph} maxFontSizeMultiplier={1.5}>
         {[...glyph].map(c => `${c}︎`).join('')}
       </Text>
     </Pressable>

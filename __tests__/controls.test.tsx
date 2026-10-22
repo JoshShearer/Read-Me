@@ -98,6 +98,30 @@ test('the stepper disables the end it has reached', () => {
   expect(onStep).toHaveBeenCalledWith(-1);
 });
 
+// REA-58: the Stepper is the Reader's rate control and Settings' "Default rate"; its value
+// grows with the font scale so "4.0x" never pushes the buttons, and glyphs stop growing at 1.5x
+// so they fit the 48 dp button (a 28 dp line at 2.0 is 56 dp, clipped by the button).
+describe('at the largest font scale (REA-58)', () => {
+  let dims: jest.SpyInstance;
+  beforeEach(() => {
+    dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 360, height: 800, scale: 3, fontScale: 2 });
+  });
+  afterEach(() => dims.mockRestore());
+  const flat = (st: unknown) => RN.StyleSheet.flatten(st as never) ?? {};
+
+  test("the Stepper's value is 44 dp per unit of font scale wide, its buttons stay 48 dp", () => {
+    const r = render(<Stepper value={2} min={0.5} max={4} format={v => `${v.toFixed(1)}x`} onStep={() => {}} decreaseLabel="slower" increaseLabel="faster" />);
+    const value = r.root.findAll(n => n.type === RN.Text).find(n => flat(n.props.style).fontVariant !== undefined)!;
+    expect(flat(value.props.style).minWidth).toBe(88);
+    expect(flat(byLabel(r, 'faster').props.style)).toMatchObject({ width: 48, height: 48 });
+  });
+
+  test('an IconButton glyph scales at most 1.5x', () => {
+    const r = render(<IconButton glyph="+" accessibilityLabel="faster" onPress={() => {}} />);
+    expect(byLabel(r, 'faster').findAll(n => n.type === RN.Text)[0].props.maxFontSizeMultiplier).toBe(1.5);
+  });
+});
+
 test('the toggle is a switch whose label stays put and whose state is checked', () => {
   const onValueChange = jest.fn();
   const r = render(<Toggle label="Obsidian bridge" value onValueChange={onValueChange} />);

@@ -35,6 +35,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     })),
     getEngine: jest.fn(async () => mockState.engine),
     getRate: jest.fn(async () => 2),
+    setRate: jest.fn(async (rate: number) => rate),
     getPosition: jest.fn(async () => null),
     setCuts: jest.fn(async () => undefined),
     getBridge: jest.fn(async () => mockState.bridge),
@@ -799,4 +800,66 @@ test('the plugin link hands off to the browser with the exact URL and is a label
   });
   expect(open).toHaveBeenCalledWith(PLUGIN_URL);
   open.mockRestore();
+});
+
+// REA-58: on a 360 dp phone (a Galaxy S22) the one-row dock put "+" off the screen. A narrow
+// window, or a large font, gets two rows: the transport, then the rate Stepper. Jest runs no
+// layout, so this proves the decision and the styles; device:themes' narrow pass proves the fit.
+describe('the Reader dock in a narrow window (REA-58)', () => {
+  const RN = require('react-native') as typeof import('react-native');
+  let dims: jest.SpyInstance | undefined;
+  const at = (width: number, fontScale: number) => {
+    dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width, height: 800, scale: 3, fontScale });
+  };
+  afterEach(() => dims?.mockRestore());
+  const flat = (st: unknown) => RN.StyleSheet.flatten(st as never) ?? {};
+  const byTestID = (r: ReactTestRenderer.ReactTestRenderer, id: string) => r.root.findAll(n => n.props.testID === id)[0];
+  const control = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function' && n.props.accessibilityRole !== undefined);
+  const inside = (parent: { findAll: (f: (n: { props: { accessibilityLabel?: string } }) => boolean) => unknown[] }, label: string) =>
+    parent.findAll(n => n.props.accessibilityLabel === label).length > 0;
+
+  test.each([[360, 1], [360, 2], [448, 2]])('at %i dp and font scale %d the Stepper is on its own row', async (width, fontScale) => {
+    at(width, fontScale);
+    mockState.detail = text(['One.']);
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(byTestID(r, 'dock').props.style).flexDirection).toBe('column');
+    const transport = byTestID(r, 'dock transport');
+    for (const l of ['back paragraph', 'previous sentence', 'play', 'next sentence']) expect(inside(transport, l)).toBe(true);
+    expect(inside(transport, 'faster')).toBe(false);
+    expect(inside(byTestID(r, 'dock'), 'faster')).toBe(true);
+  });
+
+  test('at 448 dp and font scale 1.0 (the reference phone) the dock stays one row', async () => {
+    at(448, 1);
+    mockState.detail = text(['One.']);
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(byTestID(r, 'dock').props.style).flexDirection).toBe('row');
+  });
+
+  test('Play and Pause are the same width at font scale 2.0, so Pause does not move', async () => {
+    at(360, 2);
+    mockState.detail = text(['One two. Three four.']);
+    const idle = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    const play = control(idle, 'play');
+    expect(flat(play.props.style).minWidth).toBe(160);
+    // The 40 dp pill's vertical slop makes the 48 dp target.
+    expect(play.props.hitSlop).toEqual({ top: 4, bottom: 4 });
+    (Native.getPlayback as jest.Mock).mockResolvedValueOnce({
+      itemId: 1, playing: true, paragraphIndex: 0, start: 0, end: 8, rate: 2, engine: 'ready',
+    });
+    const playing = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(control(playing, 'pause').props.style).minWidth).toBe(160);
+  });
+
+  test('the rate buttons keep their 48 dp size and their steps (non-negotiable 9)', async () => {
+    at(360, 2);
+    mockState.detail = text(['One.']);
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(control(r, 'faster').props.style)).toMatchObject({ width: 48, height: 48 });
+    await press(r, 'faster');
+    expect(Native.setRate).toHaveBeenLastCalledWith(2.1);
+    await press(r, 'slower');
+    expect(Native.setRate).toHaveBeenLastCalledWith(2);
+  });
 });

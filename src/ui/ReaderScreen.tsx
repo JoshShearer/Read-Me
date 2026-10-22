@@ -3,7 +3,7 @@
 // highlight follows the service's events. R-M10: a blocking card when there is no engine or
 // no offline voice, checked on open rather than after a failed play (REA-18).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, FlatList, Linking, useColorScheme, View } from 'react-native';
+import { AppState, FlatList, Linking, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { Button, IconButton } from './Button';
 import { ItemUnavailable } from './ItemUnavailable';
 import { Stepper } from './Stepper';
@@ -23,7 +23,7 @@ import {
   type Playback,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { formatRate, lineTop, RATE_MAX, RATE_MIN, readerParagraphs, stepRate, type ReaderParagraph } from './model';
+import { dockOneRow, formatRate, lineTop, playMinWidth, RATE_MAX, RATE_MIN, readerParagraphs, stepRate, type ReaderParagraph } from './model';
 import { ui } from './ui';
 
 /** Space kept above the highlighted line when scrolling to it, in dp. */
@@ -39,6 +39,9 @@ export function ReaderScreen({
   onGone: () => void;
 }) {
   const colors = palette(useColorScheme());
+  // REA-58: the dock's layout depends only on the window and the font, never on play state.
+  const { width, fontScale } = useWindowDimensions();
+  const oneRow = dockOneRow(width, fontScale);
   const [detail, setDetail] = useState<ItemDetail | null | undefined>(undefined);
   const [playback, setPlayback] = useState<Playback | null>(null);
   const [engine, setEngine] = useState<string | undefined>(undefined);
@@ -236,20 +239,27 @@ export function ReaderScreen({
       />
       <View
         collapsable={false}
-        style={[ui.dock, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
-        {/* Sentence controls act on whatever the service holds, so they work only for this
-            item; they stay in place, disabled, so Play/Pause never moves. */}
-        <IconButton glyph="¶◀" accessibilityLabel="back paragraph" disabled={!mine} onPress={control(backParagraph)} />
-        <IconButton glyph="◀" accessibilityLabel="previous sentence" disabled={!mine} onPress={control(previous)} />
-        {/* Wide enough for "Pause", so the buttons beside it do not move when it changes. */}
-        <Button
-          appearance="filled"
-          label={mine?.playing ? 'Pause' : 'Play'}
-          accessibilityLabel={mine?.playing ? 'pause' : 'play'}
-          style={ui.play}
-          onPress={control(() => toggle(id, playback))}
-        />
-        <IconButton glyph="▶" accessibilityLabel="next sentence" disabled={!mine} onPress={control(next)} />
+        testID="dock"
+        style={[
+          ui.dock,
+          oneRow ? null : ui.dockNarrow,
+          { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant },
+        ]}>
+        <View collapsable={false} testID="dock transport" style={[ui.transport, oneRow ? ui.transportWide : ui.transportNarrow]}>
+          {/* Sentence controls act on whatever the service holds, so they work only for this
+              item; they stay in place, disabled, so Play/Pause never moves. */}
+          <IconButton glyph="¶◀" accessibilityLabel="back paragraph" disabled={!mine} onPress={control(backParagraph)} />
+          <IconButton glyph="◀" accessibilityLabel="previous sentence" disabled={!mine} onPress={control(previous)} />
+          {/* Wide enough for "Pause" at the font scale in use, so nothing moves when it changes. */}
+          <Button
+            appearance="filled"
+            label={mine?.playing ? 'Pause' : 'Play'}
+            accessibilityLabel={mine?.playing ? 'pause' : 'play'}
+            style={{ minWidth: playMinWidth(fontScale) }}
+            onPress={control(() => toggle(id, playback))}
+          />
+          <IconButton glyph="▶" accessibilityLabel="next sentence" disabled={!mine} onPress={control(next)} />
+        </View>
         <Stepper
           value={rate}
           min={RATE_MIN}

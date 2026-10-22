@@ -3,6 +3,7 @@ import {
   actions,
   back,
   badge,
+  dockOneRow,
   formatRate,
   guidance,
   openRoute,
@@ -158,6 +159,16 @@ describe('the reader', () => {
     expect(stepRate(1.3, -1)).toBe(1.2);
     expect(formatRate(2)).toBe('2.0x');
   });
+});
+
+// REA-58: 360 dp phones, and the largest font scale (2.0), put the rate Stepper on its own row.
+test('the Reader dock is one row only when it fits the window at its font scale', () => {
+  expect(dockOneRow(419, 1)).toBe(false);
+  expect(dockOneRow(420, 1)).toBe(true);
+  expect(dockOneRow(448, 1)).toBe(true);
+  expect(dockOneRow(360, 1)).toBe(false);
+  expect(dockOneRow(360, 2)).toBe(false);
+  expect(dockOneRow(448, 2)).toBe(false);
 });
 
 test('notices parse from the asset and sort by name', () => {
