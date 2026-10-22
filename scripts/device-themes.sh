@@ -107,7 +107,10 @@ display_phone() {
   { echo "# readme-display: $1"; display_phone_sh; echo "$1"; } | adb shell
 }
 # Starts the phone-side watchdog once per run, before the first display change. nohup and setsid
-# detach it from the adb session, so it outlives this script. Its id goes into $DISPLAY_WATCH
+# detach it from the adb session, so it outlives this script: on the reference phone (2026-10-21,
+# build 73ac95e) a narrow run killed with SIGKILL as a whole process group, adb sessions included,
+# left the watchdog running with PPID 1, and it restored density and font_scale and removed the
+# save file at its 20 s deadline (DISPLAY_WATCHDOG_SECS=20). Its id goes into $DISPLAY_WATCH
 # first, which also cancels a dead run's watchdog.
 display_watchdog_start() {
   local id out
