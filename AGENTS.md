@@ -449,10 +449,10 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   before the WebView check is a precondition failure, and `device:bridge` on bd8e4be, 2026-10-15,
   passed with Marmalade and with Supertonic, Obsidian included), `accept-share` (resumed at sentence 16, list "2% read"), `continuous`, and
   `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=101 p50=8 p95=17 max=27 ms, stalls 0, errors 0);
-  each signed APK equals its tested build. The MR branch carries the 1.0.5 recipe (898bbc04e);
-  its pipeline was still running when this was written.
+  each signed APK equals its tested build.
   Release 1.1.0 (REA-36, PR #63, main 9442c21; tested build 642b54f, same tree): draft GitHub
-  Release with four signed APKs and `SHA256SUMS` (signer f730c468...), not yet published.
+  Release with four signed APKs and `SHA256SUMS` (signer f730c468...), published 2026-10-19
+  (tag at 9442c21).
   2026-10-16, reference device, GrapheneOS Speech Services as default: `device:bridge`, `ui`,
   `intake`, `screens`, `themes`, `playback` (n=19 p95=17 max=17 ms), `SCREEN_OFF=1 continuous`
   (handovers 76 and 58 ms, prepared=1), `accept-share` (resumed at sentence 14, list "2% read")
@@ -461,6 +461,12 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   rerun. R-M14 run 3: a real plugin read through `/play` (REA-39, build e7f018a). Host:
   `fdroid-scan.sh` CLEAN, `repro` SAME, `fdroid:build` SAME on all four ABIs (71-74). The F-Droid
   screenshots were retaken; SystemUI's demo mode does not hide notification icons on this phone.
+  fdroiddata !51088 was merged by linsui on 2026-10-22 with the 1.1.0 recipe (71-74). It was
+  answered with list-form `init`/`prebuild` entries (PR #64) and `ReactAndroid/publish.gradle`
+  moved to `scandelete` (PR #67); its last pipeline (2964930689) passed every job, `check apk`
+  included. Two community device tests passed (Samsung SM-G998B on 1.0.5, Samsung SM-S901B on
+  1.1.0); the second's findings are REA-58 to REA-64. Not yet on f-droid.org on 2026-10-22
+  (package page 404): it appears after F-Droid's build server builds it.
 - **Continuous play (R-S05, REA-41, ADR 0011):** a Settings switch, off by default. When an
   item ends, `PlaybackQueue` hands over to the next unread item in List order with no JS:
   `ContinuousPlay` picks it and `Segmenter` (a Kotlin port of `segment`'s fallback, pinned to the
@@ -531,7 +537,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `io.loopstring.readme/.MainActivity`, JS component `ReadMe`. Log tags: `ReadMe` for native code,
   `ReactNativeJS` for the JS console, `ReadMeSpike` on spike branches only (see `CONTEXT.md`).
 - **The GitHub repo is public** (`JoshShearer/Read-Me`; `gh repo view`, 2026-10-04). The F-Droid
-  merge request is open (fdroiddata !51088, 2026-10-04; see Release above).
+  merge request (fdroiddata !51088) was merged on 2026-10-22; F-Droid picks up new tags itself
+  (`docs/release.md`, Publish step 3; see Release above).
 
 ## Style
 
