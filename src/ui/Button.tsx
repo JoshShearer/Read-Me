@@ -44,6 +44,7 @@ export function Button({
   disabled = false,
   destructive = false,
   accessibilityLabel,
+  role = 'button',
   style,
 }: {
   label: string;
@@ -54,12 +55,14 @@ export function Button({
   destructive?: boolean;
   /** Defaults to the label; the device scripts find buttons by it. */
   accessibilityLabel?: string;
+  /** 'link' for a button that hands off to the browser (REA-61). */
+  role?: 'button' | 'link';
   style?: StyleProp<ViewStyle>;
 }) {
   const l = look(palette(useColorScheme()), appearance, disabled, destructive);
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityRole={role}
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       disabled={disabled}

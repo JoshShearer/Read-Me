@@ -97,7 +97,7 @@ export function ListScreen({
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <Text style={ui.empty}>
-            {archive ? 'Nothing archived yet.' : 'Share a link or text to Read Me.'}
+            {archive ? 'Nothing archived yet.' : 'In any app, tap Share and pick Read Me Offline to add a link or text.'}
           </Text>
         }
         renderItem={({ item }) => {

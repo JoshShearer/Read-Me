@@ -63,7 +63,7 @@ for _ in $(seq 30); do
 done
 if [ -z "$b" ]; then
   echo "FAIL: the shared text is not on screen as ready; states seen:"
-  adb shell cat /sdcard/readme-ui.xml | grep -oE 'text="(ready|fetching|fetched|fetch-failed[^"]*|extract-poor|Share a link or text to Read Me.)"' | sort | uniq -c
+  adb shell cat /sdcard/readme-ui.xml | grep -oE 'text="(ready|fetching|fetched|fetch-failed[^"]*|extract-poor|In any app, tap Share and pick Read Me Offline to add a link or text.)"' | sort | uniq -c
   exit 1
 fi
 set -- $b
