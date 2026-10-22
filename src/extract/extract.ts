@@ -235,6 +235,26 @@ function hostOf(url: string | undefined): string | undefined {
   return m ? m[1].toLowerCase().replace(/^www\./, '') : undefined;
 }
 
+// REA-64: footnote markers ("[1]") and captions that Wikipedia-style markup keeps outside
+// FIGURE/FIGCAPTION. Removed from the parsed document before Readability runs, because
+// Readability strips class attributes from its output. One querySelectorAll over a list of
+// marker/caption classes; `sup.reference` only, so a prose <sup> ("km2", "1st") is kept.
+const MARKER_SELECTOR =
+  'sup.reference, .mw-ref, .thumbcaption, .gallerytext, .mw-editsection';
+
+function dropMarkers(document: ReturnType<typeof parseHTML>['document']) {
+  try {
+    for (const el of Array.from(
+      document.querySelectorAll(MARKER_SELECTOR) as ArrayLike<{
+        remove(): void;
+      }>,
+    ))
+      el.remove();
+  } catch {
+    // A selector failure must not lose the article; the markers just stay.
+  }
+}
+
 type Article = ReturnType<Readability<DomNode>['parse']>;
 
 /**
@@ -264,6 +284,7 @@ export function extractArticle(
   };
   const document = parseDocument(html);
   const pageTitle = clean(document.title);
+  dropMarkers(document);
   lap('parse');
   const tooDeep = predictedOver(
     document.documentElement as unknown as DomNode,
@@ -297,6 +318,7 @@ export function extractArticle(
     // Readability mutates the document it reads, so the fallback reads a fresh parse unless
     // Readability never ran.
     const fresh = tooDeep ? document : parseDocument(html);
+    if (!tooDeep) dropMarkers(fresh);
     lap('contentParse');
     if (fresh.body)
       collect(fresh.body as unknown as DomNode, 'p', DROP_FALLBACK, paragraphs);
