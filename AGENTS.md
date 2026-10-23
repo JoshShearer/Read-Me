@@ -38,7 +38,7 @@ scripts/fdroid-scan.sh                      # F-Droid source + APK scan, resolve
 npm run device:install                      # takes the device slot, installs the release build
 npm run device:smoke                        # takes the slot, installs, launches, checks for crashes; fails unless am start reports Status: ok (REA-13)
 npm run device:devcheck   # devcheck bundle: text pipeline on Hermes vs Node, F17 timings (replaces the phone's build)
-npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs (clears app data)
+npm run device:intake     # shares an https link, an http link, a text and a dead link on the phone; checks states on screen and logs; then shares the https link again (it must open that item, no new row or request) and the dead link again from the Archive tab (back to the unread List, one row) (REA-63) (clears app data)
 npm run device:playback   # shares a text, plays it, pauses/resumes by tap and by media key with the screen off, waits for the archive; checks logs for text and that Read Me holds the media-button session after the start and each resume (REA-31), and that `dumpsys audio` gained no new AudioHardening line for Read Me (REA-66). Runs on the phone's default engine; READ_ME_ENGINE=<package> pins one and restores the default on exit (clears app data)
 npm run device:lifecycle  # REA-25: a paused session survives 75 s in the background and headset Play resumes it (ADR 0009); a force-stopped TTS engine is rebound and reading resumes (clears app data; about 3 min)
 npm run device:gap        # gap check: 2 min at 2x on battery (simulated), forced Doze, screen off, and no new AudioHardening line for Read Me (REA-66) (about 4 min; clears app data)
@@ -505,7 +505,53 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   failure was an empty capture, never a wrong Reader or item. Since REA-56 the Reader checks read
   the Reader's own log line instead of a dump (`ReadMeSpeech.readerShows`, `reader shows
   item=<id> playing=<0|1>`, written once when its item is in front with a highlighted sentence and
-  again only when playing changes); not yet run on the phone in that form.
+  again only when playing changes; PR #65, 2326c6b). On the reference device, build 3c29196
+  (2026-10-17, Marmalade as default), `SCREEN_OFF=0 device:continuous` passed 2 of 2 (handovers
+  98 and 88, then 59 and 56 ms, all `prepared=1`); `SCREEN_OFF=1` has not run in that form.
+  On 34bd222 that day 13 of 13 dumps during playback returned the Reader in 3.1-5.2 s, so the
+  empty-dump flake was not reproduced either.
+- **Community-test follow-ups (REA-58 to REA-66, 2026-10-21 to 2026-10-23):** all on the
+  reference device (Pixel 9 Pro XL 48071FDAS004PV) unless noted.
+  - REA-59 (PR #68, 40c036f, ADR 0015): with a validated network an `UnknownHostException` is
+    `fetch-failed: not-found`, without one still `offline`; the manifest declares
+    ACCESS_NETWORK_STATE. `device:intake` passed on 99b18b3 (2026-10-21: the `.invalid` share
+    showed not-found, the dead link offline).
+  - REA-60 (PR #70, 8300bbd, srs.md R-M12 amendment): a saved-on bridge stays off while Read Me's
+    notifications are off, and Settings says why. `device:bridge` passed on 5a41500 (2026-10-21,
+    Marmalade, Obsidian ran) including the revoke and re-grant section. A voice or port change
+    while blocked is unit-tested only.
+  - REA-61 (PR #71, 4e0461e): Settings links the plugin and gives setup steps; a clearer empty
+    List hint. `device:themes` and `LOOPS=2 device:settings` passed on ac6b035 (2026-10-21); the
+    link opened a browser, the URL it opened was not captured.
+  - REA-64 (PR #69, 96e301c): citation markers, `[edit]` and image captions are dropped before
+    Readability. Not verified on the phone: `device:devcheck` stuck in its thermal wait while
+    USB charging (2026-10-21), so Hermes parity and F17 timings after it are not measured.
+  - REA-58 (PR #72, b3d370b, srs.md amendment): the Reader dock keeps every control on screen at
+    360 dp and font scale 2.0 (two rows), Pause where Play was. `THEMES_ONLY=narrow
+    device:themes` failed on 190c95a and passed on 4391ff3 (PR #72's runs); the narrow pass
+    passed again on REA-62's build below. The full `device:themes` has not run since REA-58.
+  - REA-62 (PR #73, 522b9af): Trim's long press opens the app's own bottom sheet (Start here,
+    Cut everything after this, Cancel) instead of an AlertDialog with an empty band. `device:ui`
+    and `THEMES_ONLY=narrow device:themes` (the sheet at 360 dp, font scale 2.0) passed on
+    9fda0ed (2026-10-22).
+  - REA-65 (PR #74, 7d2ef43): `device:ui` checks Settings' storage line after scrolling to
+    Licenses (it had failed at y=2920 of 2992); `device:ui` passed on d267c7b (2026-10-22).
+  - REA-63 (PR #76, 69e5a99, ADR 0016, srs.md R-M02 amendment): a link share whose URL exactly
+    matches an unread item opens that item (Trim on a first open, else the Reader) instead of
+    adding a duplicate; an archived match, a text or a file makes a new item. `ShareActivity`
+    hands the id over in process (`SharedOpen`); `MainActivity` reads no id from intents. On
+    236b232 (2026-10-23) `device:intake` passed ("second shares: matched=2 rows=5 requests
+    before=4 after=4"), and a share from Vanadium's share sheet brought `MainActivity` to the
+    front in Read Me's own task, logged `share matched item=1` and made no request; that the
+    Reader showed item 1 was not checked on screen. Open: the handed-over id never expires (a
+    refused start opens the item late) and is lost on a process death.
+  - REA-66 (PR #77, 8e117b9): `device:playback` and `device:gap` fail on a new
+    `AudioHardening` line for Read Me in `dumpsys audio` (whole lines compared with a baseline
+    taken after `device_clear_app`; `scripts/lib/audio-hardening.sh`, stub-tested by
+    `scripts/tests/audio-hardening.test.sh`). On 0d80ec6 (2026-10-23, Marmalade) both passed
+    with `before=0 after=0 new=0`; `device:gap` 2 min n=54 p50=11 p95=16 max=728 ms, stalls 0.
+    `dumpsys audio` held no AudioHardening lines for any app, so detection of a real entry has
+    not been seen on the phone. REA-57 (the mute itself) stays open for an owner session.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one

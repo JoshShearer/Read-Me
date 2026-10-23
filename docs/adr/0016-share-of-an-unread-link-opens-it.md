@@ -57,7 +57,9 @@ read may be deliberate.
 
 - R-M02's "returns the user to the source app" has an exception: a match brings Read Me to the
   front. Starting `MainActivity` from the translucent share activity is a start from a foreground
-  activity; a ROM that refused it would leave the toast and no open.
+  activity. A ROM that refused it would leave the toast, and the offered id would not be lost:
+  it does not expire, and JS takes it on the `ReadMeSharedOpen` event if it is running, else on
+  the next mount or return to the foreground, so the item opens late rather than never.
 - Variants of a URL (tracking parameters, a fragment, a trailing slash) still make new items.
 - Duplicates stored before this change are kept; the newest is the one a share opens.
 - A shared open replaces whatever screen was open (Settings, another item's Reader). Sharing an

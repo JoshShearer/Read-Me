@@ -12,8 +12,10 @@ A community test of 1.1.0 shared `https://nowebsite.invalid` while online and sa
 `UnknownHostException` to `offline`, and Android throws the same exception when there is no
 network, so the exception cannot tell the two apart. R-M09.5 said INTERNET was the only network
 permission, but the merged manifest already carried ACCESS_NETWORK_STATE (from
-`androidx.work:work-runtime` 2.12.0, and `react-android` 0.87.1; seen in
-`android/app/build/outputs/logs/manifest-merger-debug-report.txt`), so the spec was out of date.
+`androidx.work:work-runtime` 2.12.0; seen in
+`android/app/build/outputs/logs/manifest-merger-debug-report.txt`, and the release report agrees;
+corrected 2026-10-23, an earlier text also named `react-android`, which neither report lists), so
+the spec was out of date.
 
 ## Decision
 
