@@ -90,13 +90,12 @@ class ShareActivity : Activity() {
           SAVED
         } else {
           // REA-63 (ADR 0016): open the unread item instead; fetch nothing, even when it failed
-          // (Retry stays the user's). The id only, in the log and in the intent (AGENTS.md 1).
+          // (Retry stays the user's). The id only, in the log (AGENTS.md 1). It goes to JS through
+          // SharedOpen in this process, offered before the start so the app finds it however it
+          // comes up; the intent carries nothing, as MainActivity trusts no caller's extras.
           Log.i("ReadMe", "share matched item=${link.id}")
-          startActivity(
-            Intent(this, MainActivity::class.java)
-              .putExtra(SharedOpen.EXTRA_ITEM, link.id)
-              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-          )
+          SharedOpen.offer(link.id)
+          startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
           ALREADY
         }
       }

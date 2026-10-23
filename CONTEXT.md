@@ -44,7 +44,8 @@ Rules of the layering:
 share -> intake -> [link] Fetcher -> fetched (body app-private) -> extract -> library
                                                         (ready | extract-poor | fetch-failed)
                 -> [link matching an unread item; ADR 0016] no insert, no fetch ->
-                   MainActivity (item id only) -> SharedOpen -> JS: Trim/Reader, or the List
+                   SharedOpen (item id, in process) + MainActivity (no extras) -> JS: Trim/Reader,
+                   or the List
                 -> [text] split on blank lines -> library (ready)
 open item -> Trim (first time) -> Reader -> segment -> PlaybackService queue -> TTS to file
   -> Read Me's player (AudioTrack, 1.0x; ADR 0012)

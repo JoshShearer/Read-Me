@@ -23,6 +23,7 @@ import {
   openRoute,
   push,
   sharedOpen,
+  sharedOpenUnreadable,
   trimDone,
   type Route,
 } from './src/ui/model';
@@ -105,15 +106,23 @@ function Main() {
   // only replaces the route stack and records the open; no play, pause or resume (AGENTS.md 11).
   useEffect(() => {
     let live = true;
+    // Each taken id gets a number; only the newest one's answer may set the stack, so an older
+    // share whose getItem answers last cannot land on top of a newer one.
+    let seq = 0;
     const consume = () => {
       // Through Promise.resolve, so a synchronous throw from the native call is caught too.
       Promise.resolve()
         .then(() => takeSharedOpen())
         .then(async id => {
           if (id === null || id === undefined || !live) return;
-          const detail = await getItem(id).catch(() => null);
-          if (!live) return;
-          const next = sharedOpen(detail?.item ?? null);
+          const mine = ++seq;
+          // A read failure opens the Reader, whose own load shows "Could not open this item." and
+          // Retry (REA-50); a silent List would lose the open.
+          const next = await getItem(id).then(
+            detail => sharedOpen(detail?.item ?? null),
+            () => sharedOpenUnreadable(id),
+          );
+          if (!live || mine !== seq) return;
           setStack(next.stack);
           setListEpoch(e => e + 1);
           if (next.markOpened) markOpened(id).catch(() => undefined);

@@ -42,7 +42,10 @@ class ShareActivityTest {
     )
   }
 
-  @After fun tearDown() = Store.resetForTest()
+  @After fun tearDown() {
+    Store.resetForTest()
+    SharedOpen.resetForTest()
+  }
 
   @Before fun readFilesInline() {
     ShareActivity.executor = Executor { it.run() }
@@ -84,10 +87,31 @@ class ShareActivityTest {
     val started = shadowOf(activity).nextStartedActivity
     assertEquals(MainActivity::class.java.name, started.component!!.className)
     assertTrue(started.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
-    // The id only: no URL in any extra or in the data (AGENTS.md 1).
-    assertEquals(setOf(SharedOpen.EXTRA_ITEM), started.extras!!.keySet())
-    assertEquals(first.id, started.getLongExtra(SharedOpen.EXTRA_ITEM, -1))
+    // Nothing in the intent: no URL (AGENTS.md 1), and no id, which MainActivity would have to
+    // trust from any caller. The id goes through SharedOpen in this process.
+    assertTrue(started.extras == null || started.extras!!.isEmpty)
     assertNull(started.data)
+    assertEquals(first.id, SharedOpen.take())
+    assertNull(SharedOpen.take())
+  }
+
+  @Test fun theOpenIsOfferedBeforeMainActivityIsStarted() {
+    share("https://www.example.com/story")
+    val id = Store.get(ctx).items().single().id
+    val app = ctx as android.app.Application
+    Shadows.shadowOf(app).clearNextStartedActivities()
+    var startedAtOffer: Intent? = Intent()
+    SharedOpen.addListener { startedAtOffer = Shadows.shadowOf(app).peekNextStartedActivity() }
+    share("https://www.example.com/story")
+    // A warm MainActivity's JS takes the id on the event or on AppState active; either needs the
+    // slot filled before the start.
+    assertNull(startedAtOffer)
+    assertEquals(id, SharedOpen.take())
+  }
+
+  @Test fun aNewLinkOffersNoOpen() {
+    share("https://www.example.com/new")
+    assertNull(SharedOpen.take())
   }
 
   @Test fun aMatchQueuesNoFetchEvenWhenTheItemFailed() {
@@ -99,7 +123,8 @@ class ShareActivityTest {
     assertEquals(listOf(id), store.items().map { it.id })
     assertEquals(States.FETCH_FAILED, store.item(id)!!.state)
     assertTrue(workFor(id).isEmpty())
-    assertEquals(id, shadowOf(activity).nextStartedActivity.getLongExtra(SharedOpen.EXTRA_ITEM, -1))
+    assertEquals(MainActivity::class.java.name, shadowOf(activity).nextStartedActivity.component!!.className)
+    assertEquals(id, SharedOpen.take())
   }
 
   @Test fun aLinkMatchingOnlyAnArchivedItemIsANewFetchingItem() {

@@ -16,6 +16,7 @@ import {
   trimDone,
   followHandover,
   sharedOpen,
+  sharedOpenUnreadable,
   visibleItems,
   type Route,
   bridgeStatus,
@@ -261,5 +262,8 @@ describe('a share that matched an unread item (REA-63, ADR 0016)', () => {
   test('an item gone or archived since the share shows the List only', () => {
     expect(sharedOpen(null)).toEqual({ stack: [list], markOpened: false });
     expect(sharedOpen(item({ id: 4, archivedAt: 3 }))).toEqual({ stack: [list], markOpened: false });
+  });
+  test('an item that could not be read opens its Reader and records nothing', () => {
+    expect(sharedOpenUnreadable(4)).toEqual({ stack: [list, { name: 'reader', id: 4 }], markOpened: false });
   });
 });

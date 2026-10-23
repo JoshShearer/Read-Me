@@ -102,8 +102,10 @@ The app MUST register as an `ACTION_SEND` target for `text/plain`.
   one Store transaction. The share shows "Already in your list" and opens the item: `ready` or
   `extract-poor` as the List's Read does (Trim on first open, else the Reader), any other state
   on the List's unread tab with the row's own actions (Retry). The open MUST NOT play, pause or
-  resume. Only the item id crosses to the app, and a log line carries at most the id. A link
-  matching only an archived item is a new item; shared text and shared files are never matched.
+  resume. Only the item id crosses to the app, in process: never in an intent, since the launcher
+  activity is exported and MUST NOT take an item id from any caller (amended 2026-10-23). A log
+  line carries at most the id. A link matching only an archived item is a new item; shared text
+  and shared files are never matched.
 - The fetch MUST run in native code that survives the share activity finishing (R-M03),
   not in the JS runtime.
 - **Recovery:** on every app start, any item still in `fetching` whose fetch is not

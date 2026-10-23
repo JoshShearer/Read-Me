@@ -177,7 +177,12 @@ class Store private constructor(context: Context) :
     throw IllegalStateException("no migration from $oldVersion to $newVersion")
   }
 
-  fun insertLink(url: String, title: String, now: Long): Long {
+  /**
+   * Tests only: a link insert that skips REA-63's match. Intake inserts links through
+   * [findUnreadLinkOrInsert], so a production caller here would bring the duplicates back.
+   */
+  @VisibleForTesting
+  internal fun insertLink(url: String, title: String, now: Long): Long {
     val id = writableDatabase.insertOrThrow("items", null, linkValues(url, title, now))
     ItemEvents.changed()
     return id
@@ -185,7 +190,7 @@ class Store private constructor(context: Context) :
 
   /**
    * REA-63 (ADR 0016): a shared link that exactly matches an unread link item is that item,
-   * whatever its state; otherwise a new fetching item, as [insertLink]. Exact means the string
+   * whatever its state; otherwise a new fetching item. Exact means the string
    * Intake stored: no tracking parameter, fragment or trailing slash is stripped. An archived
    * match does not count (a second share of something read may be deliberate). Several unread
    * matches (duplicates from before this change): the newest. The lookup and the insert are one

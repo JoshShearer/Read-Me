@@ -1,7 +1,5 @@
 package io.loopstring.readme
 
-import android.content.Intent
-import android.os.Bundle
 import android.util.Log
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -26,19 +24,6 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
-
-  // REA-63 (ADR 0016): a share that matched an unread item brings this activity (singleTask) up
-  // with the item's id; JS takes it from SharedOpen.
-  override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
-    SharedOpen.fromIntent(intent, savedInstanceState != null)
-  }
-
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    setIntent(intent)
-    SharedOpen.fromIntent(intent, false)
-  }
 
   /**
    * R-M12: after a reboot or process death the bridge returns when Read Me is next opened, if

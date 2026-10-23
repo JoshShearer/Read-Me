@@ -436,6 +436,51 @@ describe('a share that matched an unread item (REA-63, ADR 0016)', () => {
     noTransport();
   });
 
+  test('an item that cannot be read opens the Reader, which says so, and records no open', async () => {
+    mockState.unopened = [2];
+    mockState.shared = [2];
+    const getItem = Native.getItem as jest.Mock;
+    const real = getItem.getMockImplementation()!;
+    getItem.mockImplementation(async () => {
+      throw new Error('disk');
+    });
+    try {
+      const r = await render();
+      expect(shown(r)).toContain('Could not open this item.');
+      expect(Native.markOpened).not.toHaveBeenCalled();
+      noTransport();
+    } finally {
+      getItem.mockImplementation(real); // clearAllMocks keeps implementations
+    }
+  });
+
+  test('of two opens close together, the newer stays on top even when the older answers last', async () => {
+    const r = await render();
+    let answerOlder!: () => void;
+    const real = (Native.getItem as jest.Mock).getMockImplementation()!;
+    (Native.getItem as jest.Mock).mockImplementationOnce(
+      (id: number) => new Promise(res => { answerOlder = () => res(real(id)); }),
+    );
+    mockState.unopened = [2];
+    mockState.shared = [2];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    mockState.shared = [3];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    expect(readerOf(r).title).toBe(3);
+    await act(async () => answerOlder());
+    await flush();
+    expect(readerOf(r).title).toBe(3);
+    expect(isTrim(r)).toBe(false);
+    expect(Native.markOpened).not.toHaveBeenCalled();
+    noTransport();
+  });
+
   test('nothing pending changes nothing', async () => {
     const r = await render();
     await act(async () => appStateHandler('active'));
