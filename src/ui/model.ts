@@ -56,6 +56,31 @@ export function followHandover(stack: Route[], from: number, to: number): Route[
 export const openRoute = (item: Item): Route =>
   item.openedAt === undefined ? { name: 'trim', id: item.id } : { name: 'reader', id: item.id };
 
+/**
+ * REA-63 (ADR 0016): a share matched this unread item. Ready or extract-poor opens it as the
+ * List's Read does (Trim on first open, else the Reader; `markOpened` says whether to record the
+ * open). Any other state (still fetching, fetched, fetch-failed), or an item gone or archived
+ * since the share, shows the List's unread tab, where the row keeps its own actions (Retry).
+ */
+export function sharedOpen(item: Item | null): { stack: Route[]; markOpened: boolean } {
+  const list: Route = { name: 'list' };
+  if (item === null || item.archivedAt !== undefined) return { stack: [list], markOpened: false };
+  if (item.state === 'ready' || item.state === 'extract-poor') {
+    return { stack: [list, openRoute(item)], markOpened: item.openedAt === undefined };
+  }
+  return { stack: [list], markOpened: false };
+}
+
+/**
+ * REA-63: a share matched item `id`, but reading it failed. Its Reader loads it again and shows
+ * "Could not open this item." with Retry if that fails too; no open is recorded, since whether
+ * this was the first open is unknown.
+ */
+export const sharedOpenUnreadable = (id: number): { stack: Route[]; markOpened: boolean } => ({
+  stack: [{ name: 'list' }, { name: 'reader', id }],
+  markOpened: false,
+});
+
 export const visibleItems = (items: readonly Item[], archive: boolean): Item[] =>
   items.filter(i => (i.archivedAt !== undefined) === archive);
 

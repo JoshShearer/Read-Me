@@ -12,6 +12,9 @@ const mockState = {
   playback: { itemId: null as number | null, playing: false, waitingItemId: null as number | null },
   // Items never opened by the user (continuous play keeps opened_at NULL): their open shows Trim.
   unopened: [] as number[],
+  // REA-63: item states other than ready, and the ids takeSharedOpen hands out, once each.
+  states: {} as Record<number, string>,
+  shared: [] as number[],
 };
 const mockSnapshot = (itemId: number | null, playing: boolean, waitingItemId: number | null = null) => ({
   itemId,
@@ -25,7 +28,7 @@ const mockSnapshot = (itemId: number | null, playing: boolean, waitingItemId: nu
 });
 const mockItem = (id: number) => ({
   id, kind: 'text', url: null, title: TITLES[id], site: null, byline: null, createdAt: 10 - id,
-  state: 'ready', failReason: null, openedAt: mockState.unopened.includes(id) ? null : 5, archivedAt: null, words: 4, progress: 0,
+  state: mockState.states[id] ?? 'ready', failReason: null, openedAt: mockState.unopened.includes(id) ? null : 5, archivedAt: null, words: 4, progress: 0,
 });
 
 jest.mock('../src/native/NativeReadMeSpeech', () => ({
@@ -49,6 +52,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     resume: jest.fn(async () => true),
     stop: jest.fn(async () => true),
     readerShows: jest.fn(),
+    takeSharedOpen: jest.fn(async () => mockState.shared.shift() ?? null),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
     getEngine: jest.fn(async () => ({ status: 'ready', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] })),
@@ -115,6 +119,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockState.playback = { itemId: null, playing: false, waitingItemId: null };
   mockState.unopened = [];
+  mockState.states = {};
+  mockState.shared = [];
   backHandlers = [];
   appStateHandlers = [];
   currentState = Object.getOwnPropertyDescriptor(AppState, 'currentState');
@@ -351,5 +357,136 @@ describe('the Reader follows a continuous-play handover (REA-55)', () => {
     await service(1, true, 2);
     await service(2, true);
     expect(readerOf(r).title).toBe(1);
+  });
+});
+
+describe('a share that matched an unread item (REA-63, ADR 0016)', () => {
+  const noTransport = () => {
+    expect(Native.play).not.toHaveBeenCalled();
+    expect(Native.pause).not.toHaveBeenCalled();
+    expect(Native.resume).not.toHaveBeenCalled();
+  };
+  const isTrim = (r: ReactTestRenderer.ReactTestRenderer) => shown(r).includes('"trim done"');
+  const isList = (r: ReactTestRenderer.ReactTestRenderer) => shown(r).includes('"settings"');
+
+  test('on a cold start, a never-opened ready item opens Trim and is marked opened', async () => {
+    mockState.unopened = [2];
+    mockState.shared = [2];
+    const r = await render();
+    expect(isTrim(r)).toBe(true);
+    expect(Native.getItem).toHaveBeenCalledWith(2);
+    expect(Native.markOpened).toHaveBeenCalledWith(2);
+    await back();
+    expect(isList(r)).toBe(true);
+    noTransport();
+  });
+
+  test('an opened item opens its Reader and records no open', async () => {
+    mockState.shared = [3];
+    const r = await render();
+    expect(readerOf(r).title).toBe(3);
+    expect(Native.markOpened).not.toHaveBeenCalled();
+    noTransport();
+  });
+
+  test('a fetch-failed item shows the unread List with its Retry, and opens nothing', async () => {
+    mockState.states = { 2: 'fetch-failed' };
+    const r = await render();
+    await pressLabel(r, 'archive');
+    expect(shown(r)).toContain('"unread"');
+    mockState.shared = [2];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    const s = shown(r);
+    expect(s).toContain('"archive"'); // the unread tab, whichever tab was showing
+    expect(s).toContain(`"retry ${TITLES[2]}"`);
+    expect(Native.markOpened).not.toHaveBeenCalled();
+    noTransport();
+  });
+
+  test('a share taken on return to the foreground replaces the open screen', async () => {
+    const r = await render();
+    await openRow(r, 2);
+    expect(readerOf(r).title).toBe(2);
+    mockState.unopened = [1];
+    mockState.shared = [1];
+    await act(async () => appStateHandler('active'));
+    await flush();
+    expect(isTrim(r)).toBe(true);
+    expect(Native.markOpened).toHaveBeenLastCalledWith(1);
+    await back();
+    expect(isList(r)).toBe(true); // the Reader it replaced is gone
+    noTransport();
+  });
+
+  test('the event opens the item while Read Me is in front, and only once', async () => {
+    const r = await render();
+    mockState.shared = [3];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    expect(readerOf(r).title).toBe(3);
+    await back();
+    await act(async () => appStateHandler('active'));
+    await flush();
+    expect(isList(r)).toBe(true);
+    noTransport();
+  });
+
+  test('an item that cannot be read opens the Reader, which says so, and records no open', async () => {
+    mockState.unopened = [2];
+    mockState.shared = [2];
+    const getItem = Native.getItem as jest.Mock;
+    const real = getItem.getMockImplementation()!;
+    getItem.mockImplementation(async () => {
+      throw new Error('disk');
+    });
+    try {
+      const r = await render();
+      expect(shown(r)).toContain('Could not open this item.');
+      expect(Native.markOpened).not.toHaveBeenCalled();
+      noTransport();
+    } finally {
+      getItem.mockImplementation(real); // clearAllMocks keeps implementations
+    }
+  });
+
+  test('of two opens close together, the newer stays on top even when the older answers last', async () => {
+    const r = await render();
+    let answerOlder!: () => void;
+    const real = (Native.getItem as jest.Mock).getMockImplementation()!;
+    (Native.getItem as jest.Mock).mockImplementationOnce(
+      (id: number) => new Promise(res => { answerOlder = () => res(real(id)); }),
+    );
+    mockState.unopened = [2];
+    mockState.shared = [2];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    mockState.shared = [3];
+    await act(async () => {
+      DeviceEventEmitter.emit('ReadMeSharedOpen');
+    });
+    await flush();
+    expect(readerOf(r).title).toBe(3);
+    await act(async () => answerOlder());
+    await flush();
+    expect(readerOf(r).title).toBe(3);
+    expect(isTrim(r)).toBe(false);
+    expect(Native.markOpened).not.toHaveBeenCalled();
+    noTransport();
+  });
+
+  test('nothing pending changes nothing', async () => {
+    const r = await render();
+    await act(async () => appStateHandler('active'));
+    await flush();
+    expect(isList(r)).toBe(true);
+    expect(Native.getItem).not.toHaveBeenCalled();
+    expect(Native.markOpened).not.toHaveBeenCalled();
   });
 });

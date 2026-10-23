@@ -81,4 +81,73 @@ class StoreTest {
     }
     assertEquals(2, n)
   }
+
+  // --- REA-63 (ADR 0016): a shared link that matches an unread item ---
+
+  @Test fun anUnreadMatchIsTheExistingItemAndAddsNoRow() {
+    val id = store.insertLink("https://example.com/a?x=1", "example.com", 1000)
+    assertEquals(LinkShare(id, created = false), store.findUnreadLinkOrInsert("https://example.com/a?x=1", "example.com", 2000))
+    assertEquals(listOf(id), store.items().map { it.id })
+  }
+
+  @Test fun noMatchInsertsAFetchingLink() {
+    val share = store.findUnreadLinkOrInsert("https://example.com/a", "example.com", 1000)
+    assertTrue(share.created)
+    val item = store.item(share.id)!!
+    assertEquals("link", item.kind)
+    assertEquals("https://example.com/a", item.url)
+    assertEquals(States.FETCHING, item.state)
+  }
+
+  @Test fun aFetchFailedOrReadyUnreadItemMatchesToo() {
+    val failed = store.insertLink("https://example.com/f", "example.com", 1000)
+    store.fetchFailed(failed, "offline")
+    assertEquals(LinkShare(failed, false), store.findUnreadLinkOrInsert("https://example.com/f", "x", 2000))
+    assertEquals(States.FETCH_FAILED, store.item(failed)!!.state)
+  }
+
+  @Test fun anArchivedOnlyMatchIsANewItem() {
+    val old = store.insertLink("https://example.com/a", "example.com", 1000)
+    store.archive(old, 1500)
+    val share = store.findUnreadLinkOrInsert("https://example.com/a", "example.com", 2000)
+    assertTrue(share.created)
+    assertTrue(share.id != old)
+    assertEquals(2, store.items().size)
+  }
+
+  @Test fun severalUnreadMatchesGiveTheNewest() {
+    val a = store.insertLink("https://example.com/a", "example.com", 1000)
+    val b = store.insertLink("https://example.com/a", "example.com", 1000)
+    assertTrue(b > a)
+    assertEquals(LinkShare(b, false), store.findUnreadLinkOrInsert("https://example.com/a", "example.com", 2000))
+    assertEquals(2, store.items().size)
+  }
+
+  @Test fun theMatchIsExact() {
+    store.insertLink("https://example.com/a?q=1", "example.com", 1000)
+    for (variant in listOf("https://example.com/a?q=1/", "https://example.com/a?q=1#top", "https://example.com/a?q=2", "https://example.com/a")) {
+      assertTrue(variant, store.findUnreadLinkOrInsert(variant, "example.com", 2000).created)
+    }
+    assertEquals(5, store.items().size)
+  }
+
+  @Test fun aTextItemIsNeverMatched() {
+    store.insertText("https://example.com/a", listOf("https://example.com/a"), 1000)
+    assertTrue(store.findUnreadLinkOrInsert("https://example.com/a", "example.com", 2000).created)
+  }
+
+  @Test fun aMatchFiresNoChangeAndAnInsertFiresOne() {
+    store.insertLink("https://example.com/a", "example.com", 1000)
+    var n = 0
+    val l: () -> Unit = { n++ }
+    ItemEvents.add(l)
+    try {
+      store.findUnreadLinkOrInsert("https://example.com/a", "example.com", 2000)
+      assertEquals(0, n)
+      store.findUnreadLinkOrInsert("https://example.com/b", "example.com", 2000)
+      assertEquals(1, n)
+    } finally {
+      ItemEvents.remove(l)
+    }
+  }
 }
