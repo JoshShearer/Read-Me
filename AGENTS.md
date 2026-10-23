@@ -551,7 +551,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
     `scripts/tests/audio-hardening.test.sh`). On 0d80ec6 (2026-10-23, Marmalade) both passed
     with `before=0 after=0 new=0`; `device:gap` 2 min n=54 p50=11 p95=16 max=728 ms, stalls 0.
     `dumpsys audio` held no AudioHardening lines for any app, so detection of a real entry has
-    not been seen on the phone. REA-57 (the mute itself) stays open for an owner session.
+    not been seen on the phone. REA-57 (the six mutes of Read Me on 2026-10-15) was closed on
+    2026-10-22 without a reproduction; its cause is unknown.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
