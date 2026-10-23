@@ -11,6 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
+. scripts/lib/audio-hardening.sh
 device_take gap
 device_require_unlocked
 device_install_release
@@ -44,6 +45,9 @@ restore() {
 DEVICE_ON_EXIT=restore
 
 device_clear_app
+# REA-66: no new AudioHardening line for Read Me between here and the final pause.
+ah_failed=
+audio_hardening_baseline || ah_failed=1
 adb logcat -c
 # The device's shell expands the file into the extra; nothing long rides the adb argv.
 # Two runs started 2 s after an unlock ended with an empty list (2026-10-02); the same share
@@ -106,9 +110,11 @@ adb shell cmd media_session dispatch pause
 for _ in $(seq 10); do device_has "$(rlog)" 'playback gaps n=' && break; sleep 1; done
 line=$(grep -oE 'playback gaps n=.*' <<<"$(rlog)" | tail -1 || true)
 echo "$line"
+# Before the early exit, so a run without a gaps line still prints the mute evidence.
+[ -n "$ah_failed" ] || audio_hardening_check || ah_failed=1
 [ -n "$line" ] || { echo "device:gap FAIL: no gaps line"; exit 1; }
 num() { grep -oE "$1=[0-9]+" <<<"$line" | cut -d= -f2; }
-fail=0
+fail=${ah_failed:-0}
 log=$(rlog)
 device_has "$log" 'request id=' && { echo "FAIL: the share was downloaded as a link, not read as text"; fail=1; }
 device_has "$log" 'playback finished' && { echo "FAIL: the text ran out before $MINUTES min; not a $MINUTES-minute measurement"; fail=1; }

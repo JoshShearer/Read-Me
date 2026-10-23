@@ -13,6 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
+. scripts/lib/audio-hardening.sh
 device_take interactive
 device_require_unlocked
 prev_engine=$(adb shell settings get secure tts_default_synth | tr -d '\r')
@@ -44,6 +45,9 @@ Paragraph $i begins here. It has a second sentence for the queue. A third one ke
 done
 
 device_clear_app
+# REA-66: no new AudioHardening line for Read Me between here and the finish (no force-stop in between).
+ah_failed=
+audio_hardening_baseline || ah_failed=1
 adb logcat -c
 # The text goes on stdin, not the adb argv, which adbd logs (AGENTS.md, SPIKE-01).
 printf '%s\n' "am start -W -n $PKG/.ShareActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT $(printf '%q' "$text")" \
@@ -93,7 +97,7 @@ on_screen() {
   echo "FAIL: '$1' not on screen"; return 1
 }
 
-fail=0
+fail=${ah_failed:-0}
 # The session Android sends media keys to: "Media button session is <package>/<tag>/<id> ...".
 button_session() {
   local d
@@ -148,6 +152,7 @@ sleep 3
 expect_button_session "after the media-key resume"
 wait_count 'playback finished item=1' 1 180 || fail=1
 wait_count 'playback gaps n=' 1 5 || fail=1
+[ -n "$ah_failed" ] || audio_hardening_check || fail=1
 logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine|first-audio)' | sed 's/^/  /' || true
 
 all=$(adb logcat -d)
