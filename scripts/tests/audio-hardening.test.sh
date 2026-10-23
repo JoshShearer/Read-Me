@@ -72,5 +72,41 @@ STUB_FAIL=1; out=$(audio_hardening_check 2>&1); rc=$?
 check "(k) failed after-snapshot fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
 STUB_FAIL=; printf '' > "$STUB_DUMP"; out=$(audio_hardening_check 2>&1); rc=$?
 check "(l) empty after-snapshot fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
-check "(m) the output never carries a dumpsys line" "$(has 'AudioHardening')" no
+
+# (m) No dumpsys line reaches the output. Run the cases that DO have lines to print (new entries
+# present, old entry in the baseline) and look for tokens only a dumpsys line carries.
+leak() { printf '%s' "$out" | grep -cE 'USAGE_MEDIA|level: partial|reason: 6|10357|10-22 1[01]:|muted for|10-22 10:42' || true; }
+run "$NOISE\n$OLD\n" "$NOISE\n$OLD\n$NEWM\n$NEWW\n"
+check "(m1) both new entries are counted (so lines were available to print)" "$(has 'before=1 after=3 new=2')" yes
+check "(m1) FAIL output carries no dumpsys text" "$(leak)" 0
+run "$NOISE\n$OLD\n" "$NOISE\n$OLD\n"
+check "(m2) PASS output carries no dumpsys text" "$(leak)" 0
+run "$NOISE\n$OLD\n" "$NOISE\n$NEWM\n"
+check "(m3) evicted-plus-new output carries no dumpsys text" "$(leak)" 0
+
+# (n) CRLF input (an adb shell with a pty) reads the same as LF.
+run "$NOISE\r\n$OLD\r\n" "$NOISE\r\n$OLD\r\n"
+check "(n) CRLF unchanged passes" "$rc" 0
+check "(n) CRLF counts the entry" "$(has 'before=1 after=1 new=0')" yes
+run "$NOISE\r\n$OLD\r\n" "$NOISE\r\n$OLD\r\n$NEWM\r\n"
+check "(n) CRLF new entry fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
+
+# (o) A truncated dump (dumpsys's per-service timeout marker) is unreadable, not "no new mute".
+TMO="*** SERVICE 'audio' DUMP TIMEOUT (10000ms) EXPIRED ***"
+run "$NOISE\n$OLD\n" "$NOISE\n$TMO\n"
+check "(o) timed-out after-dump fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
+run "$TMO\n" "$NOISE\n"
+check "(o) timed-out baseline fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
+
+# (p) A grep error (exit 2) while comparing is a failure, not "no new line".
+mkdir -p "$T/gbin"
+cat > "$T/gbin/grep" <<'G'
+#!/bin/sh
+case "$*" in *-vxFf*) exit 2 ;; esac
+exec /usr/bin/grep "$@"
+G
+chmod +x "$T/gbin/grep"
+printf '%b' "$NOISE\n$OLD\n" > "$STUB_DUMP"; audio_hardening_baseline >/dev/null 2>&1
+out=$(PATH="$T/gbin:$PATH" audio_hardening_check 2>&1); rc=$?
+check "(p) grep error fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
 exit $fail

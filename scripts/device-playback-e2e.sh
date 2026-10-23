@@ -46,6 +46,7 @@ done
 
 device_clear_app
 # REA-66: no new AudioHardening line for Read Me between here and the finish (no force-stop in between).
+ah_failed=
 audio_hardening_baseline || ah_failed=1
 adb logcat -c
 # The text goes on stdin, not the adb argv, which adbd logs (AGENTS.md, SPIKE-01).
@@ -151,7 +152,7 @@ sleep 3
 expect_button_session "after the media-key resume"
 wait_count 'playback finished item=1' 1 180 || fail=1
 wait_count 'playback gaps n=' 1 5 || fail=1
-[ -n "${ah_failed:-}" ] || audio_hardening_check || fail=1
+[ -n "$ah_failed" ] || audio_hardening_check || fail=1
 logs | grep -E 'playback (start|paused|resumed|gaps|finished|resume refused|engine|first-audio)' | sed 's/^/  /' || true
 
 all=$(adb logcat -d)

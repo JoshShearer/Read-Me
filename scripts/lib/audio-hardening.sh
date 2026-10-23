@@ -20,6 +20,9 @@ audio_hardening_snapshot() {
   local s
   s=$(adb shell dumpsys audio) || { echo "FAIL: dumpsys audio failed" >&2; return 1; }
   [ -n "$(tr -d '[:space:]' <<<"$s")" ] || { echo "FAIL: dumpsys audio returned nothing" >&2; return 1; }
+  # dumpsys's per-service timeout marker: the dump was cut and may lack the hardening entries.
+  # (No section header was confirmed on the phone, so non-empty without the marker is readable.)
+  ! grep -qF "DUMP TIMEOUT" <<<"$s" || { echo "FAIL: dumpsys audio timed out (truncated dump)" >&2; return 1; }
   printf '%s\n' "$s"
 }
 
@@ -42,7 +45,10 @@ audio_hardening_check() {
   [ -n "$AUDIO_HARDENING_HAVE_BASELINE" ] || { echo "FAIL: no audio hardening baseline was taken"; return 1; }
   s=$(audio_hardening_snapshot) || return 1
   after=$(audio_hardening_lines <<<"$s")
-  new=$(grep -vxFf <(printf '%s\n' "$AUDIO_HARDENING_BASELINE") <<<"$after" || true)
+  local rc=0
+  new=$(grep -vxFf <(printf '%s\n' "$AUDIO_HARDENING_BASELINE") <<<"$after") || rc=$?
+  # grep: 0 = some new line, 1 = none; anything above 1 is an error, never "no new line".
+  [ "$rc" -le 1 ] || { echo "FAIL: audio hardening comparison errored (grep exit $rc)"; return 1; }
   [ -z "$after" ] && new=
   local n; n=$(_ah_count "$new")
   echo "audio hardening: before=$(_ah_count "$AUDIO_HARDENING_BASELINE") after=$(_ah_count "$after") new=$n"

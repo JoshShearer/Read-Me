@@ -46,6 +46,7 @@ DEVICE_ON_EXIT=restore
 
 device_clear_app
 # REA-66: no new AudioHardening line for Read Me between here and the final pause.
+ah_failed=
 audio_hardening_baseline || ah_failed=1
 adb logcat -c
 # The device's shell expands the file into the extra; nothing long rides the adb argv.
@@ -109,10 +110,11 @@ adb shell cmd media_session dispatch pause
 for _ in $(seq 10); do device_has "$(rlog)" 'playback gaps n=' && break; sleep 1; done
 line=$(grep -oE 'playback gaps n=.*' <<<"$(rlog)" | tail -1 || true)
 echo "$line"
+# Before the early exit, so a run without a gaps line still prints the mute evidence.
+[ -n "$ah_failed" ] || audio_hardening_check || ah_failed=1
 [ -n "$line" ] || { echo "device:gap FAIL: no gaps line"; exit 1; }
 num() { grep -oE "$1=[0-9]+" <<<"$line" | cut -d= -f2; }
 fail=${ah_failed:-0}
-[ -n "${ah_failed:-}" ] || audio_hardening_check || fail=1
 log=$(rlog)
 device_has "$log" 'request id=' && { echo "FAIL: the share was downloaded as a link, not read as text"; fail=1; }
 device_has "$log" 'playback finished' && { echo "FAIL: the text ran out before $MINUTES min; not a $MINUTES-minute measurement"; fail=1; }
