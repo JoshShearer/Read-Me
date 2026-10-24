@@ -109,4 +109,58 @@ chmod +x "$T/gbin/grep"
 printf '%b' "$NOISE\n$OLD\n" > "$STUB_DUMP"; audio_hardening_baseline >/dev/null 2>&1
 out=$(PATH="$T/gbin:$PATH" audio_hardening_check 2>&1); rc=$?
 check "(p) grep error fails" "$([ "$rc" -ne 0 ] && echo fail || echo pass)" fail
+
+# ---- wiring (REA-68) ----
+# The cases above test the helper. These check that device-playback-e2e.sh and device-gap.sh
+# actually source it, take the baseline after device_clear_app, run the check after the run's
+# last pause/finish, and let a failed check reach the exit status. Static: line numbers and order
+# of lines in the scripts, no device and no adb. WIRING_ROOT points at another tree (a temp copy
+# with a mutation) to prove each check goes red; it defaults to the repo.
+WR=${WIRING_ROOT:-$ROOT}
+wfail() { echo "FAIL wiring $1"; fail=1; }
+# lineno <file> <ERE> <one|last>: the code line (comments ignored) matching, or nothing.
+lineno() {
+  local hits
+  hits=$(grep -nE "$2" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1)
+  [ -n "$hits" ] || return 1
+  if [ "$3" = last ]; then tail -1 <<<"$hits"; else [ "$(wc -l <<<"$hits")" -eq 1 ] && echo "$hits"; fi
+}
+# before <name> <a> <b>: both found and a < b.
+before() { if [ -n "$2" ] && [ -n "$3" ] && [ "$2" -lt "$3" ]; then echo "ok   wiring $1"; else wfail "$1 (lines '$2' '$3')"; fi; }
+wiring() { # script-name anchor-ERE anchor-mode check-ERE
+  local f="$WR/scripts/$1" S C B A X H E w
+  if [ ! -f "$f" ]; then wfail "$1: script not found"; return; fi
+  S=$(lineno "$f" '^\. scripts/lib/audio-hardening\.sh$' one) || S=
+  C=$(lineno "$f" '^device_clear_app$' one) || C=
+  B=$(lineno "$f" '^audio_hardening_baseline \|\| ah_failed=1$' one) || B=
+  A=$(lineno "$f" "$2" "$3") || A=
+  X=$(lineno "$f" "$4" one) || X=
+  H=$(lineno "$f" '^fail=\$\{ah_failed:-0\}$' one) || H=
+  E=$(lineno "$f" '^exit \$fail$' last) || E=
+  for w in S C B A X H E; do [ -n "${!w}" ] || wfail "$1: $w line missing or not unique"; done
+  before "$1: source before baseline" "$S" "$B"
+  before "$1: baseline after device_clear_app" "$C" "$B"
+  before "$1: check after baseline" "$B" "$X"
+  before "$1: check after the final pause/finish" "$A" "$X"
+  before "$1: final exit after check" "$X" "$E"
+  if [ -n "$X" ] && [ -n "$E" ]; then
+    # Nothing between the check and the final exit may forget a detected mute.
+    if sed -n "$((X + 1)),$((E - 1))p" "$f" | grep -vE '^[[:space:]]*#' | grep -qE '(^|[^[:alnum:]_])(ah_failed=|fail=0)'; then
+      wfail "$1: ah_failed or fail=0 reassigned between the check and the exit"
+    else echo "ok   wiring $1: no reset after the check"; fi
+  fi
+  if [ "$1" = device-playback-e2e.sh ]; then
+    # fail starts from the baseline's result, and the check feeds fail directly.
+    before "$1: fail hand-off after baseline" "$B" "$H"
+    before "$1: fail hand-off before check" "$H" "$X"
+  else
+    # ah_failed is handed to fail only after the check.
+    before "$1: fail hand-off after check" "$X" "$H"
+    before "$1: final exit after fail hand-off" "$H" "$E"
+  fi
+}
+wiring device-playback-e2e.sh "^wait_count 'playback finished item=1' 1 180 \|\| fail=1$" one \
+  '^\[ -n "\$ah_failed" \] \|\| audio_hardening_check \|\| fail=1$'
+wiring device-gap.sh '^adb shell cmd media_session dispatch pause$' last \
+  '^\[ -n "\$ah_failed" \] \|\| audio_hardening_check \|\| ah_failed=1$'
 exit $fail
