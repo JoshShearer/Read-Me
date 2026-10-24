@@ -37,6 +37,12 @@ read may be deliberate.
   item deleted or archived since the share, shows the List's unread tab, where the row keeps its
   own actions (Retry). The open replaces the route stack and never plays, pauses or resumes
   (AGENTS.md 11).
+- The offered id expires 30 s after the offer (REA-67), measured on `elapsedRealtime` and checked
+  at `take()`, with no timer. 30 s is the owner's bound (2026-10-23): a start from a share takes
+  well under a second, and an open hours later over whatever the user opened is worse than none.
+  Age under 30 000 ms keeps the id, 30 000 ms or more drops it; a drop logs
+  `shared open expired item=<id> ageMs=<n>` (an id and a duration only). A newer offer restarts
+  the clock.
 - A link matching only an archived item is a new item, as before. Shared text and shared files
   are never matched.
 
@@ -57,9 +63,10 @@ read may be deliberate.
 
 - R-M02's "returns the user to the source app" has an exception: a match brings Read Me to the
   front. Starting `MainActivity` from the translucent share activity is a start from a foreground
-  activity. A ROM that refused it would leave the toast, and the offered id would not be lost:
-  it does not expire, and JS takes it on the `ReadMeSharedOpen` event if it is running, else on
-  the next mount or return to the foreground, so the item opens late rather than never.
+  activity. A ROM that refused it would leave the toast; the offered id is dropped after 30 s (REA-67) and the item does not open
+  by itself, so the user opens it from the List. JS takes the id on the `ReadMeSharedOpen` event
+  if it is running, else on the next mount or return to the foreground within that bound. Keeping
+  the id across a process death is out of scope.
 - Variants of a URL (tracking parameters, a fragment, a trailing slash) still make new items.
 - Duplicates stored before this change are kept; the newest is the one a share opens.
 - A shared open replaces whatever screen was open (Settings, another item's Reader). Sharing an
