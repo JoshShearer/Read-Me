@@ -510,7 +510,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   98 and 88, then 59 and 56 ms, all `prepared=1`); `SCREEN_OFF=1` has not run in that form.
   On 34bd222 that day 13 of 13 dumps during playback returned the Reader in 3.1-5.2 s, so the
   empty-dump flake was not reproduced either.
-- **Community-test follow-ups (REA-58 to REA-66, 2026-10-21 to 2026-10-23):** all on the
+- **Community-test follow-ups (REA-58 to REA-68, 2026-10-21 to 2026-10-23):** all on the
   reference device (Pixel 9 Pro XL 48071FDAS004PV) unless noted.
   - REA-59 (PR #68, 40c036f, ADR 0015): with a validated network an `UnknownHostException` is
     `fetch-failed: not-found`, without one still `offline`; the manifest declares
@@ -543,8 +543,8 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
     236b232 (2026-10-23) `device:intake` passed ("second shares: matched=2 rows=5 requests
     before=4 after=4"), and a share from Vanadium's share sheet brought `MainActivity` to the
     front in Read Me's own task, logged `share matched item=1` and made no request; that the
-    Reader showed item 1 was not checked on screen. Open: the handed-over id never expires (a
-    refused start opens the item late) and is lost on a process death.
+    Reader showed item 1 was not checked on screen. Open: the handed-over id is lost on a process
+    death (its expiry is REA-67, below).
   - REA-66 (PR #77, 8e117b9): `device:playback` and `device:gap` fail on a new
     `AudioHardening` line for Read Me in `dumpsys audio` (whole lines compared with a baseline
     taken after `device_clear_app`; `scripts/lib/audio-hardening.sh`, stub-tested by
@@ -553,6 +553,17 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
     `dumpsys audio` held no AudioHardening lines for any app, so detection of a real entry has
     not been seen on the phone. REA-57 (the six mutes of Read Me on 2026-10-15) was closed on
     2026-10-22 without a reproduction; its cause is unknown.
+  - REA-67 (PR #78, d4313b0, ADR 0016, srs.md R-M02 amendment): `SharedOpen` drops a handed-over
+    id 30 s after the share if `MainActivity` has not taken it (`SystemClock.elapsedRealtime`;
+    log `shared open expired item=<id> ageMs=<n>`), so a refused start no longer opens the item
+    later. Unit-tested only (29 999 ms taken, 30 000 ms and 1 h dropped, a newer share restarts
+    the clock): on the phone only `device:install` ran (581f6d5, 2026-10-23; the phone was
+    locked for the rest), so `device:smoke`, `device:intake` and a browser re-share are due.
+  - REA-68 (PR #79, 37799b1): `scripts/tests/audio-hardening.test.sh` (in `npm run
+    test:scripts`) fails when the AudioHardening baseline or check call is removed from, or
+    moved in, `device-playback-e2e.sh` or `device-gap.sh` (static line order; mutations on temp
+    copies all turned it red). Its guard between the check and the final exit matches only the
+    literal `ah_failed=` and `fail=0`, so other resets there (`unset fail`, `exit 0`) stay green.
 - **All six spikes have answers** (`srs.md`, "Spikes", 2026-10-01, reference device). Probe code
   stays on its `spike/rea-0-*` branch.
   - SPIKE-01: the bridge synthesizes with Read Me backgrounded behind Obsidian; one
