@@ -465,8 +465,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   answered with list-form `init`/`prebuild` entries (PR #64) and `ReactAndroid/publish.gradle`
   moved to `scandelete` (PR #67); its last pipeline (2964930689) passed every job, `check apk`
   included. Two community device tests passed (Samsung SM-G998B on 1.0.5, Samsung SM-S901B on
-  1.1.0); the second's findings are REA-58 to REA-64. Not yet on f-droid.org on 2026-10-22
-  (package page 404): it appears after F-Droid's build server builds it.
+  1.1.0); the second's findings are REA-58 to REA-64. On f-droid.org since
+  2026-10-25 (index published 15:27 UTC, versions 71-74 of 1.1.0, per REA-69); the package page
+  returned 200 on 2026-10-26 (it was 404 on 2026-10-22).
 - **Continuous play (R-S05, REA-41, ADR 0011):** a Settings switch, off by default. When an
   item ends, `PlaybackQueue` hands over to the next unread item in List order with no JS:
   `ContinuousPlay` picks it and `Segmenter` (a Kotlin port of `segment`'s fallback, pinned to the
