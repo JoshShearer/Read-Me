@@ -276,8 +276,8 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           "Read this note aloud".
         </Text>
         <Text tone="secondary" style={ui.small}>
-          Reading with the screen off needs a Local TTS Reader version newer than 0.2.1. With 0.2.1, Android
-          can stop Obsidian&apos;s audio a few seconds after Obsidian leaves the screen, so keep Obsidian open.
+          Reading with the screen off needs Local TTS Reader 0.3.0 or newer. With an older version, Android can
+          stop Obsidian&apos;s audio a few seconds after Obsidian leaves the screen, so keep Obsidian open.
         </Text>
       </View>
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
