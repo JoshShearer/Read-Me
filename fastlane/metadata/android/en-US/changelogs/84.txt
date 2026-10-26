@@ -1,0 +1,1 @@
+Reading a note from Obsidian with the screen off needs a Local TTS Reader plugin version newer than 0.2.1. With 0.2.1, Android can stop Obsidian's audio a few seconds after Obsidian leaves the screen, so keep Obsidian open. Settings > Obsidian bridge now says so.
