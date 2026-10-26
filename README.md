@@ -102,7 +102,7 @@ The plugin is a separate install. Follow these steps in order, on the phone:
 3. Copy that token. In Obsidian, open Settings > Local TTS Reader, expand Advanced, and under
    Read Me Offline bridge paste it into the Pairing token field. Leave Speech engine on
    Automatic and the plugin picks Read Me. On Android the Read Me Offline bridge section is
-   inside the collapsed Advanced section (plugin 0.2.1). Its Status row, in that same section,
+   inside the collapsed Advanced section (plugin 0.3.0). Its Status row, in that same section,
    reads "Connected: <engine>, voice <voice>." once the bridge answers; "Check again" re-tests it.
    Status checks that the bridge answers and that a token is filled in, not that the token is
    correct.
@@ -110,8 +110,8 @@ The plugin is a separate install. Follow these steps in order, on the phone:
    ribbon's "Read this note aloud".
 
 **Screen off.** Reading with the screen off from Obsidian needs the plugin to hand the text to
-Read Me as a bridge session (`POST /play`, ADR 0014). Plugin 0.2.1, the latest plugin release
-(2026-10-04), does not do that. With 0.2.1, Android 17 mutes Obsidian's own audio about 5 s
+Read Me as a bridge session (`POST /play`, ADR 0014). Plugin 0.3.0 (2026-10-26) is the first
+release that does that. With an older plugin, Android 17 mutes Obsidian's own audio about 5 s
 after Obsidian leaves the foreground (REA-39, ADR 0014), so keep Obsidian in front.
 
 ### Why it exists
