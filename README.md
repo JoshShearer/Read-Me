@@ -12,7 +12,7 @@ text-to-speech voice already on your phone. Share a link from your browser or se
 from any app, cut the parts you don't want, and listen at speed with the screen off.
 
 It has a second job: an on-device speech bridge for **Obsidian**. Obsidian's Android app gives
-plugins no way to reach the phone's speech engine, so Read Me Offline will serve that engine to
+plugins no way to reach the phone's speech engine, so Read Me Offline serves that engine to
 the [`local-tts-reader`](https://github.com/JoshShearer/Note-Reader-Local) plugin over a
 loopback connection that only the phone itself can reach. Your notes get read aloud by an
 offline voice and never leave the device. See [The Obsidian bridge](#the-obsidian-bridge).
@@ -103,7 +103,9 @@ The plugin is a separate install. Follow these steps in order, on the phone:
    Read Me Offline bridge paste it into the Pairing token field. Leave Speech engine on
    Automatic and the plugin picks Read Me. On Android the Read Me Offline bridge section is
    inside the collapsed Advanced section (plugin 0.2.1). Its Status row, in that same section,
-   reads "Connected." once the bridge answers; "Check again" re-tests it.
+   reads "Connected: <engine>, voice <voice>." once the bridge answers; "Check again" re-tests it.
+   Status checks that the bridge answers and that a token is filled in, not that the token is
+   correct.
 4. In Obsidian, open a note and run "Read note aloud" from the command palette, or tap the
    ribbon's "Read this note aloud".
 
@@ -269,8 +271,8 @@ from `npm run device:screenshots`, and the store listing text lives in
 | 6 | Release: on-device acceptance runs, F-Droid metadata and reproducible build, signed APK | Done |
 | 7 | Voice and engine picker with preview, sleep timer, Markdown export, bridge deep link | Planned |
 
-Later, after v1: save items to an Obsidian vault, per-site trim rules, shared files (`.txt`,
-`.md`, `.html`, `.epub`), and possibly iOS.
+Later, after v1: save items to an Obsidian vault, per-site trim rules, shared `.html` and
+`.epub` files (`.txt` and `.md` shipped in 1.0.1), and possibly iOS.
 
 ## License
 
