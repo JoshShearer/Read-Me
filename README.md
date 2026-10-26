@@ -24,10 +24,13 @@ offline voice and never leave the device. See [The Obsidian bridge](#the-obsidia
 <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="23%" alt="Settings">
 </p>
 
-> **Status:** in development, not yet released. The reader is built and verified on a real
+> **Status:** released. Install it from
+> [F-Droid](https://f-droid.org/en/packages/io.loopstring.readme/) or from
+> [GitHub Releases](https://github.com/JoshShearer/Read-Me/releases). Both carry the same
+> signed APK (same signing key, checked 2026-10-26). The reader is built and verified on a real
 > phone: share, extract, trim, play in the background, the four screens, and the Obsidian
-> bridge, called from inside Obsidian on the same phone. The plugin side of the bridge is still
-> in progress (NRL-130). The roadmap is in
+> bridge. To use it from Obsidian, see [Set up with Obsidian](#set-up-with-obsidian). The
+> roadmap is in
 > [`docs/superpowers/plans/2026-10-01-roadmap.md`](docs/superpowers/plans/2026-10-01-roadmap.md).
 
 ---
@@ -87,8 +90,27 @@ says so and links to Android's speech settings.
 ## The Obsidian bridge
 
 > **Built in Phase 5.** The design below is the contract in [`srs.md`](srs.md) (R-M12,
-> "Bridge contract"), verified on the reference device by `npm run device:bridge`. The plugin
-> side is still in progress (NRL-130).
+> "Bridge contract"), verified on the reference device by `npm run device:bridge`.
+
+### Set up with Obsidian
+
+The plugin is a separate install. Follow these steps in order, on the phone:
+
+1. In Obsidian, search Local TTS Reader in Community plugins, then install and enable it.
+2. In Read Me, open Settings > Obsidian bridge, turn on "Use the bridge" and allow the
+   notification. A token appears below the switch.
+3. Copy that token. In Obsidian, open Settings > Local TTS Reader, expand Advanced, and under
+   Read Me Offline bridge paste it into the Pairing token field. Leave Speech engine on
+   Automatic and the plugin picks Read Me. On Android the Read Me Offline bridge section is
+   inside the collapsed Advanced section (plugin 0.2.1). Its Status row, in that same section,
+   reads "Connected." once the bridge answers; "Check again" re-tests it.
+4. In Obsidian, open a note and run "Read note aloud" from the command palette, or tap the
+   ribbon's "Read this note aloud".
+
+**Screen off.** Reading with the screen off from Obsidian needs the plugin to hand the text to
+Read Me as a bridge session (`POST /play`, ADR 0014). Plugin 0.2.1, the latest plugin release
+(2026-10-04), does not do that. With 0.2.1, Android 17 mutes Obsidian's own audio about 5 s
+after Obsidian leaves the foreground (REA-39, ADR 0014), so keep Obsidian in front.
 
 ### Why it exists
 
@@ -148,8 +170,6 @@ audio/wav  ──►  the plugin's Player plays it and applies your speed
 - Two `TextToSpeech` instances in one app serialize rather than run in parallel (SPIKE-06),
   which is why the bridge answers 503 while the reader is playing (ADR 0004).
 
-The plugin side is tracked in the plugin repo as NRL-130.
-
 ---
 
 ## Privacy
@@ -181,8 +201,9 @@ These are promises the project treats as release blockers, not preferences:
 
 ## Install
 
-Not released yet. v1 will ship as a signed APK on GitHub Releases, then on F-Droid; there are no
-plans for Google Play. To try it now, build it from source.
+Install from [F-Droid](https://f-droid.org/en/packages/io.loopstring.readme/), or download a
+signed APK from [GitHub Releases](https://github.com/JoshShearer/Read-Me/releases). There are no
+plans for Google Play. You can also build it from source, below.
 
 ## Build from source
 
@@ -245,7 +266,7 @@ from `npm run device:screenshots`, and the store listing text lives in
 | 3 | Playback service, media session, gapless queue | Done |
 | 4 | List, Trim, Reader and Settings screens | Done |
 | 5 | Obsidian bridge | Done |
-| 6 | Release: on-device acceptance runs, F-Droid metadata and reproducible build, signed APK | Planned |
+| 6 | Release: on-device acceptance runs, F-Droid metadata and reproducible build, signed APK | Done |
 | 7 | Voice and engine picker with preview, sleep timer, Markdown export, bridge deep link | Planned |
 
 Later, after v1: save items to an Obsidian vault, per-site trim rules, shared files (`.txt`,
