@@ -386,7 +386,16 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   phone vault: a 40-sentence note read from Obsidian kept going with the screen off for 61 s
   (chunk 8 to 32, then all 40), pause, resume and stop from Obsidian reached the session;
   `device:bridge` and `device:playback` passed. `device:bridge` does not exercise `/play`; the
-  audio by ear and the plugin's highlight were not observed.
+  audio by ear and the plugin's highlight were not observed. 4a10231 was first released in
+  plugin 0.3.0 (published 2026-10-26T15:36:17Z; `git tag --contains 4a10231` is `0.3.0` only),
+  which Obsidian's community install serves (the plugin repo's main manifest is 0.3.0), so 1.1.0's
+  changelogs 71-74 "(with the plugin's new version)" are now backed by a release. REA-70 (PR #81,
+  6d8f0d0) and REA-71 (PR #82, d0f60b8): Settings > Obsidian bridge says, after step 4, that
+  reading with the screen off needs Local TTS Reader 0.3.0 or newer; the unreleased 1.1.1
+  changelogs 81-84 say the same, and README's setup steps cite 0.3.0. The Settings line was seen
+  on the reference device on 58877a0 (REA-70 wording) and bac878b (REA-71), 2026-10-26. A
+  screen-off read with the released 0.3.0 has not been run (the 61 s above used 4a10231 before its
+  release); on 2026-10-26 the phone's Notes vault held 0.3.0, byte-identical to the release asset.
 - **Release 1.0.0 (Phase 6b, REA-26):** R-M13 notices complete: npm, Maven (including the
   substituted react-android and hermes-android), the native libraries in `libreactnative.so`
   (folly, glog, double-conversion, fast_float, fmt, boost), libjpeg-turbo 2.1.5.1 inside Fresco's
