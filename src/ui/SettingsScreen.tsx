@@ -275,6 +275,10 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
           4. In Obsidian, open a note and run "Read note aloud" from the command palette, or tap the ribbon's
           "Read this note aloud".
         </Text>
+        <Text tone="secondary" style={ui.small}>
+          Reading with the screen off needs a Local TTS Reader version newer than 0.2.1. With 0.2.1, Android
+          can stop Obsidian&apos;s audio a few seconds after Obsidian leaves the screen, so keep Obsidian open.
+        </Text>
       </View>
         <View collapsable={false} style={[ui.row, ui.stack, { backgroundColor: colors.surfaceContainerLow }]}>
           <Toggle

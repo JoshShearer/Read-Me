@@ -779,6 +779,16 @@ test('the bridge section gives four ordered setup steps a fresh install can foll
   expect(out.lastIndexOf('Use the bridge')).toBeGreaterThan(out.indexOf('4. In Obsidian'));
 });
 
+// REA-70: the screen-off caveat sits after step 4, before the switch.
+test('the bridge section says screen-off reading needs a newer plugin than 0.2.1 (REA-70)', async () => {
+  const out = await render(<SettingsScreen onLicenses={() => {}} />);
+  const caveat =
+    "Reading with the screen off needs a Local TTS Reader version newer than 0.2.1. With 0.2.1, Android can stop Obsidian's audio a few seconds after Obsidian leaves the screen, so keep Obsidian open.";
+  expect(out).toContain(caveat);
+  expect(out.indexOf(caveat)).toBeGreaterThan(out.indexOf('4. In Obsidian'));
+  expect(out.indexOf(caveat)).toBeLessThan(out.lastIndexOf('Use the bridge'));
+});
+
 test('the plugin link is a plain text link, not a tonal fill, and does not stretch (REA-61)', async () => {
   const r = await settings();
   const link = r.root.find(n => n.props.accessibilityLabel === 'open plugin page' && n.props.accessibilityRole !== undefined);
