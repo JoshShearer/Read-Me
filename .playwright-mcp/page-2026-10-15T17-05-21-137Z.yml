@@ -1,0 +1,838 @@
+- generic [ref=f1e1]:
+  - banner [active] [ref=f1e2]:
+    - link "Skip to main content" [ref=f1e3] [cursor=pointer]:
+      - /url: "#content-body"
+    - generic [ref=f1e5]:
+      - link "Homepage" [ref=f1e6] [cursor=pointer]:
+        - /url: /
+      - list [ref=f1e15]:
+        - listitem [ref=f1e16]:
+          - link "Why GitLab" [ref=f1e17] [cursor=pointer]:
+            - /url: https://about.gitlab.com/why-gitlab
+        - listitem [ref=f1e19]:
+          - link "Pricing" [ref=f1e20] [cursor=pointer]:
+            - /url: https://about.gitlab.com/pricing
+        - listitem [ref=f1e22]:
+          - link "Explore" [ref=f1e23] [cursor=pointer]:
+            - /url: /explore
+    - button "Search or go to… /" [ref=f1e25] [cursor=pointer]:
+      - generic [ref=f1e26]:
+        - generic [ref=f1e29]: Search or go to…
+        - generic [ref=f1e30]: /
+    - generic [ref=f1e31]:
+      - link "Get free trial" [ref=f1e32] [cursor=pointer]:
+        - /url: /-/trial_registrations/new
+      - link "Sign in" [ref=f1e34] [cursor=pointer]:
+        - /url: /users/sign_in?redirect_to_referer=yes
+  - generic [ref=f1e36]:
+    - navigation [ref=f1e38]:
+      - heading "Primary navigation" [level=2] [ref=f1e39]
+      - generic [ref=f1e40]:
+        - generic [ref=f1e41]: Project
+        - generic [ref=f1e44]:
+          - list [ref=f1e45]:
+            - listitem [ref=f1e46]:
+              - link "Data" [ref=f1e47] [cursor=pointer]:
+                - /url: /fdroid/fdroiddata
+                - img "Data" [ref=f1e50]
+          - generic [ref=f1e53]:
+            - button "Pinned" [expanded] [ref=f1e54] [cursor=pointer]
+            - list "Pinned" [ref=f1e63]:
+              - listitem [ref=f1e64]:
+                - link "Members" [ref=f1e65] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/project_members
+              - listitem [ref=f1e70]:
+                - link "Work items" [ref=f1e71] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/work_items
+                  - generic [ref=f1e76]: "-"
+              - listitem [ref=f1e78]:
+                - link "Branches" [ref=f1e79] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/branches
+              - listitem [ref=f1e84]:
+                - link "Merge requests" [ref=f1e85] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/merge_requests
+                  - generic [ref=f1e90]: "-"
+              - listitem [ref=f1e92]:
+                - link "Pipelines" [ref=f1e93] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/pipelines
+          - button "Feature catalog" [ref=f1e98] [cursor=pointer]
+          - separator [aria-hidden] [ref=f1e103]
+          - list "Project" [ref=f1e104]:
+            - listitem [ref=f1e105]:
+              - button "Manage" [ref=f1e106] [cursor=pointer]
+            - listitem [ref=f1e114]:
+              - button "Plan" [ref=f1e115] [cursor=pointer]
+            - listitem [ref=f1e123]:
+              - button "Code" [expanded] [ref=f1e124] [cursor=pointer]
+              - list "Code" [ref=f1e133]:
+                - listitem [ref=f1e134]:
+                  - link "Merge requests" [ref=f1e135] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests
+                    - generic [ref=f1e140]: "-"
+                - listitem [ref=f1e142]:
+                  - link "Repository" [ref=f1e143] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/tree/master
+                - listitem [ref=f1e148]:
+                  - link "Branches" [ref=f1e149] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/branches
+                - listitem [ref=f1e154]:
+                  - link "Commits" [ref=f1e155] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/commits/master?ref_type=heads
+                - listitem [ref=f1e160]:
+                  - link "Tags" [ref=f1e161] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/tags
+                - listitem [ref=f1e166]:
+                  - link "Repository graph" [ref=f1e167] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/network/master?ref_type=heads
+                - listitem [ref=f1e172]:
+                  - link "Compare revisions" [ref=f1e173] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/compare?from=master&to=master
+                - listitem [ref=f1e178]:
+                  - link "Locked files" [ref=f1e179] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/path_locks
+            - listitem [ref=f1e184]:
+              - button "Build" [ref=f1e185] [cursor=pointer]
+            - listitem [ref=f1e193]:
+              - button "Deploy" [ref=f1e194] [cursor=pointer]
+            - listitem [ref=f1e202]:
+              - button "Analyze" [ref=f1e203] [cursor=pointer]
+        - button "Help" [ref=f1e214] [cursor=pointer]
+        - button "Collapse sidebar" [ref=f1e220] [cursor=pointer]
+    - generic [ref=f1e227]:
+      - generic [ref=f1e229]:
+        - navigation "Breadcrumb" [ref=f1e231]:
+          - list [ref=f1e232]:
+            - listitem [ref=f1e233]:
+              - link "F-Droid" [ref=f1e234] [cursor=pointer]:
+                - /url: /fdroid
+              - text: /
+            - listitem [ref=f1e236]:
+              - link "Data" [ref=f1e237] [cursor=pointer]:
+                - /url: /fdroid/fdroiddata
+              - text: /
+            - listitem [ref=f1e239]:
+              - link "Merge requests" [ref=f1e240] [cursor=pointer]:
+                - /url: /fdroid/fdroiddata/-/merge_requests
+              - text: /
+            - listitem [ref=f1e241]:
+              - link "!51088" [ref=f1e242] [cursor=pointer]:
+                - /url: /fdroid/fdroiddata/-/merge_requests/51088
+        - button "Code" [ref=f1e247] [cursor=pointer]
+      - main [ref=f1e255]:
+        - generic [ref=f1e256]:
+          - generic [ref=f1e257]:
+            - 'heading "New app: Read Me" [level=1] [ref=f1e258]'
+            - button "Expand sidebar" [ref=f1e260] [cursor=pointer]
+          - generic [ref=f1e264]:
+            - generic [ref=f1e265]:
+              - generic [ref=f1e266]:
+                - generic "Open" [ref=f1e268]
+                - generic [ref=f1e272]:
+                  - link "Josh shearer" [ref=f1e273] [cursor=pointer]:
+                    - /url: /Joshshearer
+                  - text: requested to merge
+                - link [ref=f1e274] [cursor=pointer]:
+                  - /url: /Joshshearer/fdroiddata/-/tree/io.loopstring.readme
+                  - generic "The source project is a fork" [ref=f1e275]
+                  - text: Joshshearer/fdroiddata:io.loopstring.readme
+                - button "Copy branch name" [ref=f1e278] [cursor=pointer]
+                - text: into
+                - link "master" [ref=f1e281] [cursor=pointer]:
+                  - /url: /fdroid/fdroiddata/-/tree/master
+                - time [ref=f1e282]: 1 week ago
+              - list [ref=f1e284]:
+                - listitem [ref=f1e285]:
+                  - link "Overview 9" [ref=f1e286] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests/51088
+                    - text: Overview
+                    - generic [ref=f1e287]: "9"
+                - listitem [ref=f1e290]:
+                  - link "Commits 7" [ref=f1e291] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests/51088/commits
+                    - text: Commits
+                    - generic [ref=f1e292]: "7"
+                - listitem [ref=f1e295]:
+                  - link "Pipelines 9" [ref=f1e296] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests/51088/pipelines
+                    - text: Pipelines
+                    - generic [ref=f1e297]: "9"
+                - listitem [ref=f1e300]:
+                  - link "Reports 1" [ref=f1e301] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests/51088/reports
+                    - text: Reports
+                    - generic [ref=f1e302]: "1"
+                - listitem [ref=f1e305]:
+                  - link "Changes 1" [ref=f1e306] [cursor=pointer]:
+                    - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs
+                    - text: Changes
+                    - generic [ref=f1e307]: "1"
+            - generic [ref=f1e314]:
+              - generic [ref=f1e316]:
+                - generic [ref=f1e318]:
+                  - paragraph [ref=f1e319]: Read Me reads shared articles and text aloud with the phone's on-device text-to-speech (offline voices only, no network voices), and serves a loopback TTS bridge for the local-tts-reader Obsidian plugin. I am the author.
+                  - heading [level=2] [ref=f1e320]:
+                    - text: Checklist
+                    - link "Link to heading 'Checklist'" [ref=f1e321] [cursor=pointer]:
+                      - /url: "#checklist"
+                  - heading [level=3] [ref=f1e322]:
+                    - text: Policy
+                    - link "Link to heading 'Policy'" [ref=f1e323] [cursor=pointer]:
+                      - /url: "#policy"
+                  - list [ref=f1e324]:
+                    - listitem [ref=f1e325]:
+                      - 'checkbox "Check option: The app complies with the inclusion criteria." [checked] [disabled] [ref=f1e326]'
+                      - text: The app complies with the
+                      - link "inclusion criteria" [ref=f1e327] [cursor=pointer]:
+                        - /url: https://f-droid.org/docs/Inclusion_Policy
+                      - text: .
+                    - listitem [ref=f1e328]:
+                      - 'checkbox "Check option: The original app author has been notified (and does not oppose the inclusion). If you are not the…" [checked] [disabled] [ref=f1e329]'
+                      - text: The original app author has been notified (and does not oppose the inclusion). If you are not the author, please paste the link of the reply from the author. (I am the author.)
+                    - listitem [ref=f1e330]:
+                      - 'checkbox "Check option: The upstream app source code repo contains the app metadata in a Fastlane or Triple-T folder…" [checked] [disabled] [ref=f1e331]'
+                      - text: The upstream app source code repo contains the app metadata in a
+                      - link "Fastlane" [ref=f1e332] [cursor=pointer]:
+                        - /url: https://gitlab.com/snippets/1895688
+                      - text: or
+                      - link "Triple-T" [ref=f1e333] [cursor=pointer]:
+                        - /url: https://gitlab.com/snippets/1901490
+                      - text: folder structure. The summary and description must be included and images, icon, and changelog should also be provided for better user experience. The
+                      - code [ref=f1e334]: en-US
+                      - text: locale must be included.
+                  - heading [level=3] [ref=f1e335]:
+                    - text: Docs
+                    - link "Link to heading 'Docs'" [ref=f1e336] [cursor=pointer]:
+                      - /url: "#docs"
+                  - list [ref=f1e337]:
+                    - listitem [ref=f1e338]:
+                      - 'checkbox "Check option: Please read the guide first if this is your first contribution." [checked] [disabled] [ref=f1e339]'
+                      - text: Please read
+                      - link "the guide" [ref=f1e340] [cursor=pointer]:
+                        - /url: https://gitlab.com/fdroid/fdroiddata/-/blob/master/CONTRIBUTING.md
+                      - text: first if this is your first contribution.
+                    - listitem [ref=f1e341]:
+                      - 'checkbox "Check option: Please make sure your metadata follows the best practice in our templates." [checked] [disabled] [ref=f1e342]'
+                      - text: Please make sure your metadata follows the best practice in
+                      - link "our templates" [ref=f1e343] [cursor=pointer]:
+                        - /url: https://gitlab.com/fdroid/fdroiddata/tree/master/templates
+                      - text: .
+                    - listitem [ref=f1e344]:
+                      - 'checkbox "Check option: Please read the Build Metadata Reference and make sure your metadata is valid." [checked] [disabled] [ref=f1e345]'
+                      - text: Please read the
+                      - link "Build Metadata Reference" [ref=f1e346] [cursor=pointer]:
+                        - /url: https://f-droid.org/docs/Build_Metadata_Reference/
+                      - text: and make sure your metadata is valid.
+                    - listitem [ref=f1e347]:
+                      - 'checkbox "Check option: Please read the Quick Start Guide." [checked] [disabled] [ref=f1e348]'
+                      - text: Please read the
+                      - link "Quick Start Guide" [ref=f1e349] [cursor=pointer]:
+                        - /url: https://f-droid.org/en/docs/Submitting_to_F-Droid_Quick_Start_Guide/
+                      - text: .
+                  - heading [level=3] [ref=f1e350]:
+                    - text: Merge Request Setup
+                    - link "Link to heading 'Merge Request Setup'" [ref=f1e351] [cursor=pointer]:
+                      - /url: "#merge-request-setup"
+                  - list [ref=f1e352]:
+                    - listitem [ref=f1e353]:
+                      - 'checkbox "Check option: The title of this merge request should follow \"New app: app name\" format." [checked] [disabled] [ref=f1e354]'
+                      - text: "The title of this merge request should follow \"New app: app name\" format."
+                    - listitem [ref=f1e355]:
+                      - 'checkbox "Check option: Please make sure your fdroiddata fork is public and your branch is not protected. See…" [checked] [disabled] [ref=f1e356]'
+                      - text: Please make sure your fdroiddata fork is public and your branch is not protected. See
+                      - link "https://docs.gitlab.com/user/project/repository/branches/protected/" [ref=f1e357] [cursor=pointer]:
+                        - /url: https://docs.gitlab.com/user/project/repository/branches/protected/
+                      - text: .
+                    - listitem [ref=f1e358]:
+                      - 'checkbox "Check option: Please read our Git guide if you don''t know how to rebase your branch. Don''t rebase your branch if…" [checked] [disabled] [ref=f1e359]'
+                      - text: Please read
+                      - link "our Git guide" [ref=f1e360] [cursor=pointer]:
+                        - /url: https://gitlab.com/fdroid/wiki/-/wikis/Tips-for-fdroiddata-contributors/Git-Usage
+                      - text: if you don't know how to rebase your branch. Don't rebase your branch if there is no conflict.
+                    - listitem [ref=f1e361]:
+                      - 'checkbox "Check option: All related fdroiddata and RFP issues have been referenced in this merge request (there are none)." [checked] [disabled] [ref=f1e362]'
+                      - text: All related
+                      - link "fdroiddata" [ref=f1e363] [cursor=pointer]:
+                        - /url: https://gitlab.com/fdroid/fdroiddata/issues
+                      - text: and
+                      - link "RFP issues" [ref=f1e364] [cursor=pointer]:
+                        - /url: https://gitlab.com/fdroid/rfp/issues
+                      - text: have been referenced in this merge request (there are none).
+                    - listitem [ref=f1e365]:
+                      - 'checkbox "Check option: Please only submit one app in one MR." [checked] [disabled] [ref=f1e366]'
+                      - text: Please only submit one app in one MR.
+                  - heading [level=3] [ref=f1e367]:
+                    - text: Metadata
+                    - link "Link to heading 'Metadata'" [ref=f1e368] [cursor=pointer]:
+                      - /url: "#metadata"
+                  - list [ref=f1e369]:
+                    - listitem [ref=f1e370]:
+                      - 'checkbox "Check option: Metadata must be put in metadata/<applicationId>.yml." [checked] [disabled] [ref=f1e371]'
+                      - text: Metadata must be put in
+                      - code [ref=f1e372]: metadata/<applicationId>.yml
+                      - text: .
+                    - listitem [ref=f1e373]:
+                      - 'checkbox "Check option: Metadata must be a valid YAML file." [checked] [disabled] [ref=f1e374]'
+                      - text: Metadata must be a valid YAML file.
+                    - listitem [ref=f1e375]:
+                      - 'checkbox "Check option: Metadata must use LF as line ending." [checked] [disabled] [ref=f1e376]'
+                      - text: Metadata must use LF as line ending.
+                    - listitem [ref=f1e377]:
+                      - 'checkbox "Check option: Don''t add summary/description/changelog/images or anything that should be provided in upstream…" [checked] [disabled] [ref=f1e378]'
+                      - text: Don't add summary/description/changelog/images or anything that should be provided in upstream repo. Please check the Changes tab to make sure there is no other unrelated files added in the MR.
+                    - listitem [ref=f1e379]:
+                      - 'checkbox "Check option: Releases are tagged and auto update is enabled unless there is a special reason." [checked] [disabled] [ref=f1e380]'
+                      - text: Releases are tagged and auto update is enabled unless there is a special reason.
+                    - listitem [ref=f1e381]:
+                      - 'checkbox "Check option: There is an issue tracker and contact info of the author so that we can report bugs and contact the…" [checked] [disabled] [ref=f1e382]'
+                      - text: There is an issue tracker and contact info of the author so that we can report bugs and contact the author. (The issue tracker.)
+                    - listitem [ref=f1e383]:
+                      - 'checkbox "Check option: An AuthorName must be added. It doesn''t need to be the real name." [checked] [disabled] [ref=f1e384]'
+                      - text: An AuthorName must be added. It doesn't need to be the real name.
+                    - listitem [ref=f1e385]:
+                      - 'checkbox "Check option: External repos are added as git submodules instead of srclibs. You can update git submodules…" [checked] [disabled] [ref=f1e386]'
+                      - text: External repos are added as git submodules instead of srclibs. You can update git submodules without opening an MR in this repo and the submodule is covered by our scanner. (Hermes is the
+                      - code [ref=f1e387]: external/hermes
+                      - text: submodule, used to build hermesc from source.)
+                    - listitem [ref=f1e388]:
+                      - 'checkbox "Check option: Enable Reproducible Builds. We''ll use your signature for improved security/reliability, also…" [checked] [disabled] [ref=f1e389]'
+                      - text: Enable
+                      - link "Reproducible Builds" [ref=f1e390] [cursor=pointer]:
+                        - /url: https://f-droid.org/docs/Reproducible_Builds
+                      - text: . We'll use your signature for improved security/reliability, also allowing users to switch between different channels. Do note that if you don't enable reproducible build then the apk will be signed with our key so you can't enable it later. If you can't enable this, please add the reasons here.
+                    - listitem [ref=f1e391]:
+                      - 'checkbox "Check option: Setup abi split if the APK is large and the splitted ones can be much smaller. (One build per ABI,…" [checked] [disabled] [ref=f1e392]'
+                      - text: Setup abi split if the APK is large and the splitted ones can be much smaller. (One build per ABI, 16-21 MB each instead of 55 MB.)
+                    - listitem [ref=f1e393]:
+                      - 'checkbox "Check option: Only the latest versions should be kept in the metadata before it''s merged. If you update the…" [checked] [disabled] [ref=f1e394]'
+                      - text: Only the latest versions should be kept in the metadata before it's merged. If you update the metadata, please replace the old versions with the new ones.
+                    - listitem [ref=f1e395]:
+                      - 'checkbox "Check option: Don''t add any disabled versions in the metadata." [checked] [disabled] [ref=f1e396]'
+                      - text: Don't add any disabled versions in the metadata.
+                    - listitem [ref=f1e397]:
+                      - 'checkbox "Check option: The commit field should be the full hash. Please don''t use tag or branch in commit." [checked] [disabled] [ref=f1e398]'
+                      - text: The
+                      - code [ref=f1e399]: commit
+                      - text: field should be the full hash. Please don't use tag or branch in commit.
+                  - heading [level=3] [ref=f1e400]:
+                    - text: Pipeline
+                    - link "Link to heading 'Pipeline'" [ref=f1e401] [cursor=pointer]:
+                      - /url: "#pipeline"
+                  - list [ref=f1e402]:
+                    - listitem [ref=f1e403]:
+                      - 'checkbox "Check option: All pipelines should pass." [checked] [disabled] [ref=f1e404]'
+                      - text: All pipelines should pass.
+                    - listitem [ref=f1e405]:
+                      - 'checkbox "Check option: All warnings and errors in the Reports tab should be fixed or explained. (See the notes below.)" [checked] [disabled] [ref=f1e406]'
+                      - text: All warnings and errors in the Reports tab should be fixed or explained. (See the notes below.)
+                    - listitem [ref=f1e407]:
+                      - 'checkbox "Check option: F-Droid CI runners are under GitLab''s FOSS program, so there''s no need for you to pay for any CI…" [checked] [disabled] [ref=f1e408]'
+                      - text: F-Droid CI runners are under GitLab's FOSS program, so there's no need for you to pay for any CI time. If Gitlab starts asking for phone numbers or credit cards don't submit anything, just leave a note in the MR so we know we need to trigger the CI.
+                  - heading [level=2] [ref=f1e409]:
+                    - text: Notes
+                    - link "Link to heading 'Notes'" [ref=f1e410] [cursor=pointer]:
+                      - /url: "#notes"
+                  - list [ref=f1e411]:
+                    - listitem [ref=f1e412]: "Reproducible build: each ABI's APK in the GitHub release (v1.0.4) is signed with the key in AllowedAPKSigningKeys. Before the release, this recipe was run through fdroiddata's own build job in registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie, and each ABI's output matched our APK apart from the signature."
+                    - listitem [ref=f1e413]:
+                      - text: hermesc is built from source from the Hermes submodule (pinned at tag hermes-v250829098.0.17), outside the source tree, and the prebuilt one is scandeleted. Hermes's own Android library (
+                      - code [ref=f1e414]: external/hermes/android
+                      - text: ", whose Maven publishing script the scanner flags) is scandeleted; hermesc does not use it, and prebuild has already built hermesc by then."
+                    - listitem [ref=f1e415]: Node.js and npm come from Debian forky (24.21.0); trixie's 20.19 is below React Native's ^22.13 || ^24.3. R8 is on since 1.0.4.
+                    - listitem [ref=f1e416]:
+                      - text: The app uses React Native's released
+                      - code [ref=f1e417]: react-android
+                      - text: and
+                      - code [ref=f1e418]: hermes-android
+                      - text: AARs from Maven Central.
+                    - listitem [ref=f1e419]:
+                      - text: prebuild runs at the repo root (fdroidserver joins the entries into one shell after the cd). gradle.properties has no final newline, hence the leading \n. The appended
+                      - code [ref=f1e420]: reactNativeArchitectures
+                      - text: selects the ABI for both React Native's native build and the ABI split.
+                    - listitem [ref=f1e421]: "scandelete: node_modules/fb-dotslash/bin (the dotslash launcher) and react-native/React/I18n/strings (iOS-only) are not used by the Android build."
+                    - listitem [ref=f1e422]: "scanignore: ReactAndroid/publish.gradle is React Native's own publishing config (the app uses the released AARs). safe-area-context's build.gradle references a local directory repo, not a remote one."
+                    - listitem [ref=f1e423]:
+                      - text: "Reports tab:"
+                      - list [ref=f1e424]:
+                        - listitem [ref=f1e425]: "\"Cleartext Traffic Permitted\" (major): intentional. The app accepts shared http:// links as well as https:// ones and fetches the page the user shared; a single fetcher class is the only network call site, and it runs only on a share or an explicit Retry."
+                        - listitem [ref=f1e426]: "INTERNET (minor): used only for that fetch. No analytics, crash reporting or update checks."
+                        - listitem [ref=f1e427]: "RECEIVE_BOOT_COMPLETED (info): from AndroidX WorkManager, which runs the fetch; it reschedules pending work after a reboot."
+                - generic [ref=f1e428]:
+                  - text: Edited
+                  - time [ref=f1e429]: 6 days ago
+                  - text: by
+                  - link "Josh shearer" [ref=f1e430] [cursor=pointer]:
+                    - /url: /Joshshearer
+              - generic [ref=f1e433]:
+                - button "👍 0" [ref=f1e434]:
+                  - generic "thumbs up" [ref=f1e436]: 👍
+                  - generic [ref=f1e437]: "0"
+                - button "👎 0" [ref=f1e438]:
+                  - generic "thumbs down" [ref=f1e440]: 👎
+                  - generic [ref=f1e441]: "0"
+              - heading "Merge request reports" [level=2] [ref=f1e442]
+              - generic [ref=f1e443]:
+                - status [ref=f1e444]:
+                  - generic [ref=f1e448]: Members who can merge are allowed to add commits.
+                - generic [ref=f1e453]:
+                  - 'link "Status: Passed" [ref=f1e454] [cursor=pointer]':
+                    - /url: /Joshshearer/fdroiddata/-/pipelines/2932178589
+                  - generic [ref=f1e460]:
+                    - generic [ref=f1e461]:
+                      - paragraph [ref=f1e462]:
+                        - text: Merge request pipeline
+                        - link "#2932178589" [ref=f1e463] [cursor=pointer]:
+                          - /url: /Joshshearer/fdroiddata/-/pipelines/2932178589
+                        - text: passed
+                      - generic [ref=f1e464]:
+                        - generic [ref=f1e467]:
+                          - 'generic "View Stage: build" [ref=f1e469]':
+                            - button "Status:" [ref=f1e471] [cursor=pointer]
+                          - 'generic "View Stage: test" [ref=f1e479]':
+                            - button "Status:" [ref=f1e481] [cursor=pointer]
+                        - generic "Artifacts" [ref=f1e488]:
+                          - button "Artifacts" [ref=f1e489] [cursor=pointer]
+                    - generic [ref=f1e496]:
+                      - paragraph [ref=f1e497]:
+                        - text: Merge request pipeline passed for
+                        - link "3f26d1ca" [ref=f1e498] [cursor=pointer]:
+                          - /url: /fdroid/fdroiddata/-/commit/3f26d1ca049e7f4615c408e03bf88da395936955
+                        - time [ref=f1e499]: 5 days ago
+                      - button "What is a merge request pipeline? Merge request pipeline runs on the contents of the merge request's source branch, not the target branch." [ref=f1e501] [cursor=pointer]
+                - region "Merge request reports" [ref=f1e504]:
+                  - generic [ref=f1e507]:
+                    - status "Loading" [ref=f1e509]
+                    - generic [ref=f1e511]:
+                      - generic [ref=f1e512]: Code Quality is loading
+                      - link "View report" [ref=f1e516] [cursor=pointer]:
+                        - /url: /fdroid/fdroiddata/-/merge_requests/51088/reports/code-quality
+                - generic [ref=f1e519]:
+                  - generic [ref=f1e521]:
+                    - img "Success" [ref=f1e528]
+                    - generic [ref=f1e530]:
+                      - generic [ref=f1e531]: Ready to merge by members who can write to the target branch.
+                      - button "Expand merge checks" [ref=f1e534] [cursor=pointer]
+                  - img "Loading" [ref=f1e542]
+              - generic [ref=f1e544]:
+                - generic [ref=f1e545]:
+                  - heading "Activity" [level=2] [ref=f1e546]
+                  - group [ref=f1e549]:
+                    - combobox "All activity" [ref=f1e552] [cursor=pointer]
+                    - 'button "Sort direction: Ascending" [ref=f1e556] [cursor=pointer]'
+                - list [ref=f1e559]:
+                  - listitem [ref=f1e560]:
+                    - generic [ref=f1e563]:
+                      - generic [ref=f1e565]:
+                        - link "Josh shearer" [ref=f1e566] [cursor=pointer]:
+                          - /url: /Joshshearer
+                        - generic [ref=f1e567]:
+                          - generic [ref=f1e568]: added 1 commit
+                          - link "Sunday, October 4, 2026 at 9:22:19 AM CDT" [ref=f1e569] [cursor=pointer]:
+                            - /url: "#note_3951384222"
+                            - time [ref=f1e570]: 1 week ago
+                      - generic [ref=f1e572]:
+                        - list [ref=f1e573]:
+                          - listitem [ref=f1e574]:
+                            - link "0af85759" [ref=f1e575] [cursor=pointer]:
+                              - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=0af857591489fe1cf25fdaa32ac4642da6b86104
+                            - text: "- Read Me: build 1.0.1 (2) instead of 1.0.0"
+                        - paragraph [ref=f1e576]:
+                          - link "Compare with previous version" [ref=f1e577] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?diff_id=2074681521&start_sha=6c22df123fd7fd08c7e9ad8f88a97248e26f9ade
+                  - listitem [ref=f1e578]:
+                    - generic [ref=f1e583]:
+                      - link "Josh shearer" [ref=f1e584] [cursor=pointer]:
+                        - /url: /Joshshearer
+                      - generic [ref=f1e585]:
+                        - generic [ref=f1e586]: changed the description
+                        - link "Sunday, October 4, 2026 at 9:24:28 AM CDT" [ref=f1e587] [cursor=pointer]:
+                          - /url: "#note_3951387251"
+                          - time [ref=f1e588]: 1 week ago
+                        - button "Compare with previous version" [ref=f1e589] [cursor=pointer]
+                  - listitem [ref=f1e593]:
+                    - generic [ref=f1e596]:
+                      - generic [ref=f1e598]:
+                        - link "Josh shearer" [ref=f1e599] [cursor=pointer]:
+                          - /url: /Joshshearer
+                        - generic [ref=f1e600]:
+                          - generic [ref=f1e601]: added 1 commit
+                          - link "Sunday, October 4, 2026 at 10:04:06 AM CDT" [ref=f1e602] [cursor=pointer]:
+                            - /url: "#note_3951440456"
+                            - time [ref=f1e603]: 1 week ago
+                      - generic [ref=f1e605]:
+                        - list [ref=f1e606]:
+                          - listitem [ref=f1e607]:
+                            - link "5abc18ef" [ref=f1e608] [cursor=pointer]:
+                              - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=5abc18ef3050a7ef28dd43a2973ace198bf9f925
+                            - text: "- Read Me: build 1.0.2 (3)"
+                        - paragraph [ref=f1e609]:
+                          - link "Compare with previous version" [ref=f1e610] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?diff_id=2074710502&start_sha=0af857591489fe1cf25fdaa32ac4642da6b86104
+                  - listitem [ref=f1e611]:
+                    - generic [ref=f1e616]:
+                      - link "Josh shearer" [ref=f1e617] [cursor=pointer]:
+                        - /url: /Joshshearer
+                      - generic [ref=f1e618]:
+                        - generic [ref=f1e619]: changed the description
+                        - link "Sunday, October 4, 2026 at 12:09:58 PM CDT" [ref=f1e620] [cursor=pointer]:
+                          - /url: "#note_3951630541"
+                          - time [ref=f1e621]: 1 week ago
+                        - button "Compare with previous version" [ref=f1e622] [cursor=pointer]
+                  - listitem [ref=f1e626]:
+                    - generic [ref=f1e627]:
+                      - link [ref=f1e629] [cursor=pointer]:
+                        - /url: /linsui
+                        - img "linsui" [ref=f1e630]
+                      - generic [ref=f1e631]:
+                        - generic [ref=f1e632]:
+                          - generic [ref=f1e633]:
+                            - link "linsui" [ref=f1e634] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "@linsui" [ref=f1e636] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "Sunday, October 4, 2026 at 12:35:51 PM CDT" [ref=f1e638] [cursor=pointer]:
+                              - /url: "#note_3951671124"
+                              - time [ref=f1e639]: 1 week ago
+                          - generic [ref=f1e640]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e641]: Developer
+                            - generic "More actions" [ref=f1e644]:
+                              - 'button "More actions for @linsui: ''Closing because Merge Request template is not…''" [ref=f1e645] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e652]: Closing because Merge Request template is not followed.
+                  - listitem [ref=f1e653]:
+                    - generic [ref=f1e660]:
+                      - link "linsui" [ref=f1e661] [cursor=pointer]:
+                        - /url: /linsui
+                      - generic [ref=f1e662]:
+                        - generic [ref=f1e663]: closed
+                        - link "Sunday, October 4, 2026 at 12:35:52 PM CDT" [ref=f1e664] [cursor=pointer]:
+                          - /url: "#note_6a20b89317b1aaab083ccc428b44bd2fd8123b4b"
+                          - time [ref=f1e665]: 1 week ago
+                  - listitem [ref=f1e666]:
+                    - generic [ref=f1e671]:
+                      - link "Josh shearer" [ref=f1e672] [cursor=pointer]:
+                        - /url: /Joshshearer
+                      - generic [ref=f1e673]:
+                        - generic [ref=f1e674]: reopened
+                        - link "Thursday, October 8, 2026 at 12:25:47 PM CDT" [ref=f1e675] [cursor=pointer]:
+                          - /url: "#note_1eb8bb968132de7c1708a0dd2cf4501489d0caad"
+                          - time [ref=f1e676]: 6 days ago
+                  - listitem [ref=f1e677]:
+                    - generic [ref=f1e682]:
+                      - link "Josh shearer" [ref=f1e683] [cursor=pointer]:
+                        - /url: /Joshshearer
+                      - generic [ref=f1e684]:
+                        - generic [ref=f1e685]: changed the description
+                        - link "Thursday, October 8, 2026 at 12:33:42 PM CDT" [ref=f1e686] [cursor=pointer]:
+                          - /url: "#note_3979629804"
+                          - time [ref=f1e687]: 6 days ago
+                        - button "Compare with previous version" [ref=f1e688] [cursor=pointer]
+                  - listitem [ref=f1e692]:
+                    - generic [ref=f1e693]:
+                      - link [ref=f1e695] [cursor=pointer]:
+                        - /url: /seekme-seekyou
+                        - img "duckniii / seeker" [ref=f1e696]
+                      - generic [ref=f1e697]:
+                        - generic [ref=f1e698]:
+                          - generic [ref=f1e699]:
+                            - link "duckniii / seeker" [ref=f1e700] [cursor=pointer]:
+                              - /url: /seekme-seekyou
+                            - link "@seekme-seekyou" [ref=f1e702] [cursor=pointer]:
+                              - /url: /seekme-seekyou
+                            - link "Thursday, October 8, 2026 at 12:35:46 PM CDT" [ref=f1e704] [cursor=pointer]:
+                              - /url: "#note_3979641586"
+                              - time [ref=f1e705]: 6 days ago
+                          - generic [ref=f1e706]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e707]: Developer
+                            - generic "More actions" [ref=f1e710]:
+                              - 'button "More actions for @seekme-seekyou: ''install node from debian''" [ref=f1e711] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e718]: install node from debian
+                  - listitem [ref=f1e719]:
+                    - generic [ref=f1e720]:
+                      - link [ref=f1e722] [cursor=pointer]:
+                        - /url: /linsui
+                        - img "linsui" [ref=f1e723]
+                      - generic [ref=f1e724]:
+                        - generic [ref=f1e725]:
+                          - generic [ref=f1e726]:
+                            - link "linsui" [ref=f1e727] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "@linsui" [ref=f1e729] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "Thursday, October 8, 2026 at 1:14:43 PM CDT" [ref=f1e731] [cursor=pointer]:
+                              - /url: "#note_3979875290"
+                              - time [ref=f1e732]: 6 days ago
+                          - generic [ref=f1e733]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e734]: Developer
+                            - generic "More actions" [ref=f1e737]:
+                              - 'button "More actions for @linsui: ''Please enable R8.''" [ref=f1e738] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e745]: Please enable R8.
+                  - listitem [ref=f1e746]:
+                    - generic [ref=f1e751]:
+                      - link "linsui" [ref=f1e752] [cursor=pointer]:
+                        - /url: /linsui
+                      - generic [ref=f1e753]:
+                        - generic [ref=f1e755]:
+                          - text: added
+                          - link "New App" [ref=f1e757] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests?label_name=New+App
+                          - link "waiting-on-response" [ref=f1e760] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests?label_name=waiting-on-response
+                          - text: labels
+                        - link "Thursday, October 8, 2026 at 1:14:43 PM CDT" [ref=f1e762] [cursor=pointer]:
+                          - /url: "#note_fae665b063363012289c0d7a621c36cfbef8ac7a"
+                          - time [ref=f1e763]: 6 days ago
+                  - listitem [ref=f1e764]:
+                    - generic [ref=f1e767]:
+                      - generic [ref=f1e769]:
+                        - link "Josh shearer" [ref=f1e770] [cursor=pointer]:
+                          - /url: /Joshshearer
+                        - generic [ref=f1e771]:
+                          - generic [ref=f1e772]: added 1 commit
+                          - link "Thursday, October 8, 2026 at 6:18:44 PM CDT" [ref=f1e773] [cursor=pointer]:
+                            - /url: "#note_3981343548"
+                            - time [ref=f1e774]: 6 days ago
+                      - generic [ref=f1e776]:
+                        - list [ref=f1e777]:
+                          - listitem [ref=f1e778]:
+                            - link "2806f532" [ref=f1e779] [cursor=pointer]:
+                              - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=2806f5323036a9469e6f66b260b4d54938824a7e
+                            - text: "- Read Me: build 1.0.4 (51-54): R8 on, Node.js from Debian forky"
+                        - paragraph [ref=f1e780]:
+                          - link "Compare with previous version" [ref=f1e781] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?diff_id=2089023789&start_sha=9053702525cf6d38c3454ce57c6f8462dda49e88
+                  - listitem [ref=f1e782]:
+                    - generic [ref=f1e787]:
+                      - link "Josh shearer" [ref=f1e788] [cursor=pointer]:
+                        - /url: /Joshshearer
+                      - generic [ref=f1e789]:
+                        - generic [ref=f1e790]: changed the description
+                        - link "Thursday, October 8, 2026 at 7:48:56 PM CDT" [ref=f1e791] [cursor=pointer]:
+                          - /url: "#note_3981569199"
+                          - time [ref=f1e792]: 6 days ago
+                        - button "Compare with previous version" [ref=f1e793] [cursor=pointer]
+                  - listitem [ref=f1e797]:
+                    - generic [ref=f1e798]:
+                      - link [ref=f1e800] [cursor=pointer]:
+                        - /url: /Joshshearer
+                        - img "Josh shearer" [ref=f1e801]
+                      - generic [ref=f1e802]:
+                        - generic [ref=f1e803]:
+                          - generic [ref=f1e804]:
+                            - link "Josh shearer" [ref=f1e805] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "@Joshshearer" [ref=f1e807] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "Thursday, October 8, 2026 at 7:49:26 PM CDT" [ref=f1e809] [cursor=pointer]:
+                              - /url: "#note_3981570526"
+                              - time [ref=f1e810]: 6 days ago
+                          - generic [ref=f1e811]:
+                            - generic "This user is the author of this merge request." [ref=f1e812]: Author
+                            - generic "More actions" [ref=f1e815]:
+                              - 'button "More actions for @Joshshearer: ''Thanks, both done in 1.0.4:...''" [ref=f1e816] [cursor=pointer]':
+                                - generic: More actions
+                        - generic [ref=f1e822]:
+                          - paragraph [ref=f1e823]: "Thanks, both done in 1.0.4:"
+                          - list [ref=f1e824]:
+                            - listitem [ref=f1e825]:
+                              - text: "Node.js now comes from Debian:"
+                              - code [ref=f1e826]: apt-get install -y -t forky nodejs npm
+                              - text: (24.21.0). Trixie's 20.19 is below React Native's
+                              - code [ref=f1e827]: ^22.13 || ^24.3
+                              - text: .
+                            - listitem [ref=f1e828]: R8 is enabled; every APK has an R8 marker.
+                          - paragraph [ref=f1e829]: The recipe was checked with fdroiddata's build job in the buildserver-trixie image before the release, and all four ABIs matched the published APKs apart from the signature.
+                  - listitem [ref=f1e830]:
+                    - generic [ref=f1e831]:
+                      - link [ref=f1e833] [cursor=pointer]:
+                        - /url: /linsui
+                        - img "linsui" [ref=f1e834]
+                      - generic [ref=f1e835]:
+                        - generic [ref=f1e836]:
+                          - generic [ref=f1e837]:
+                            - link "linsui" [ref=f1e838] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "@linsui" [ref=f1e840] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "Friday, October 9, 2026 at 1:30:59 AM CDT" [ref=f1e842] [cursor=pointer]:
+                              - /url: "#note_3982500931"
+                              - time [ref=f1e843]: 6 days ago
+                          - generic [ref=f1e844]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e845]: Developer
+                            - generic "More actions" [ref=f1e848]:
+                              - 'button "More actions for @linsui: ''Can you use jdk 21?''" [ref=f1e849] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e856]: Can you use jdk 21?
+                  - listitem [ref=f1e857]:
+                    - generic [ref=f1e858]:
+                      - link [ref=f1e860] [cursor=pointer]:
+                        - /url: /Joshshearer
+                        - img "Josh shearer" [ref=f1e861]
+                      - generic [ref=f1e862]:
+                        - generic [ref=f1e863]:
+                          - generic [ref=f1e864]:
+                            - link "Josh shearer" [ref=f1e865] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "@Joshshearer" [ref=f1e867] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "Friday, October 9, 2026 at 8:09:02 AM CDT" [ref=f1e869] [cursor=pointer]:
+                              - /url: "#note_3984799948"
+                              - time [ref=f1e870]: 6 days ago
+                          - generic [ref=f1e871]:
+                            - generic "This user is the author of this merge request." [ref=f1e872]: Author
+                            - generic "More actions" [ref=f1e875]:
+                              - 'button "More actions for @Joshshearer: ''Yes. React Native 0.87''s Gradle plugin hardcodes…''" [ref=f1e876] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e883]: Yes. React Native 0.87's Gradle plugin hardcodes a JDK 17 toolchain (still true in 0.88-rc and nightly), so the next release patches it to 21 in our own build as well as in the recipe; a recipe-only patch would change a path embedded in one native library and break reproducibility with our signed APK. I'll update the MR with 1.0.5.
+                  - listitem [ref=f1e884]:
+                    - generic [ref=f1e887]:
+                      - generic [ref=f1e889]:
+                        - link "Josh shearer" [ref=f1e890] [cursor=pointer]:
+                          - /url: /Joshshearer
+                        - generic [ref=f1e891]:
+                          - generic [ref=f1e892]: added 1 commit
+                          - link "Friday, October 9, 2026 at 4:12:54 PM CDT" [ref=f1e893] [cursor=pointer]:
+                            - /url: "#note_3987521704"
+                            - time [ref=f1e894]: 5 days ago
+                      - generic [ref=f1e896]:
+                        - list [ref=f1e897]:
+                          - listitem [ref=f1e898]:
+                            - link "898bbc04" [ref=f1e899] [cursor=pointer]:
+                              - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=898bbc04edc06e3a15cbb0f7e18a87572d4dee4f
+                            - text: "- Read Me: build 1.0.5 (61-64) on the image's JDK 21"
+                        - paragraph [ref=f1e900]:
+                          - link "Compare with previous version" [ref=f1e901] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?diff_id=2091951170&start_sha=2806f5323036a9469e6f66b260b4d54938824a7e
+                  - listitem [ref=f1e902]:
+                    - generic [ref=f1e905]:
+                      - generic [ref=f1e907]:
+                        - link "Josh shearer" [ref=f1e908] [cursor=pointer]:
+                          - /url: /Joshshearer
+                        - generic [ref=f1e909]:
+                          - generic [ref=f1e910]: added 1 commit
+                          - link "Friday, October 9, 2026 at 4:26:59 PM CDT" [ref=f1e911] [cursor=pointer]:
+                            - /url: "#note_3987570465"
+                            - time [ref=f1e912]: 5 days ago
+                      - generic [ref=f1e914]:
+                        - list [ref=f1e915]:
+                          - listitem [ref=f1e916]:
+                            - link "3f26d1ca" [ref=f1e917] [cursor=pointer]:
+                              - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=3f26d1ca049e7f4615c408e03bf88da395936955
+                            - text: "- Read Me: rewritemeta (wrap the long binary lines)"
+                        - paragraph [ref=f1e918]:
+                          - link "Compare with previous version" [ref=f1e919] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?diff_id=2091976583&start_sha=898bbc04edc06e3a15cbb0f7e18a87572d4dee4f
+                  - listitem [ref=f1e920]:
+                    - generic [ref=f1e921]:
+                      - link [ref=f1e923] [cursor=pointer]:
+                        - /url: /Joshshearer
+                        - img "Josh shearer" [ref=f1e924]
+                      - generic [ref=f1e925]:
+                        - generic [ref=f1e926]:
+                          - generic [ref=f1e927]:
+                            - link "Josh shearer" [ref=f1e928] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "@Joshshearer" [ref=f1e930] [cursor=pointer]:
+                              - /url: /Joshshearer
+                            - link "Tuesday, October 13, 2026 at 3:55:13 PM CDT" [ref=f1e932] [cursor=pointer]:
+                              - /url: "#note_4008028481"
+                              - time [ref=f1e933]: 1 day ago
+                          - generic [ref=f1e934]:
+                            - generic "This user is the author of this merge request." [ref=f1e935]: Author
+                            - generic "More actions" [ref=f1e938]:
+                              - 'button "More actions for @Joshshearer: ''@linsui Done in 1.0.5: the build now…''" [ref=f1e939] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e946]:
+                          - link "@linsui" [ref=f1e947] [cursor=pointer]:
+                            - /url: /linsui
+                          - text: "Done in 1.0.5: the build now uses the image's JDK 21, with no JDK downloaded. React Native's Gradle plugin hardcodes a JDK 17 toolchain (still true in 0.88 and nightly), so scripts/patch-rn-jdk21.mjs sets it to 21 in prebuild, keeping the bytecode target at 17. Our own release builds run the same script, and the MR pipeline passes on"
+                          - link "3f26d1ca" [ref=f1e948] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests/51088/diffs?commit_id=3f26d1ca049e7f4615c408e03bf88da395936955
+                          - text: ", including fdroid build and check apk. Ready for another look."
+                  - listitem [ref=f1e949]:
+                    - generic [ref=f1e950]:
+                      - link [ref=f1e952] [cursor=pointer]:
+                        - /url: /linsui
+                        - img "linsui" [ref=f1e953]
+                      - generic [ref=f1e954]:
+                        - generic [ref=f1e955]:
+                          - generic [ref=f1e956]:
+                            - link "linsui" [ref=f1e957] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "@linsui" [ref=f1e959] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "Wednesday, October 14, 2026 at 2:39:42 AM CDT" [ref=f1e961] [cursor=pointer]:
+                              - /url: "#note_4010375076"
+                              - time [ref=f1e962]: 1 day ago
+                          - generic [ref=f1e963]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e964]: Developer
+                            - generic "More actions" [ref=f1e967]:
+                              - 'button "More actions for @linsui: ''This MR is mostly ready. We''ll test…''" [ref=f1e968] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e975]:
+                          - text: This MR is mostly ready. We'll test it later. If everything works well we'll merge it. Meantime if you release a new version please update this MR. Currently we have
+                          - link "lots of MRs waiting for test" [ref=f1e976] [cursor=pointer]:
+                            - /url: https://gitlab.com/fdroid/fdroiddata/-/merge_requests/?sort=created_asc&state=opened&label_name%5B%5D=review-requested
+                          - text: so it will take a long time. Please help
+                          - link "test those MRs" [ref=f1e977] [cursor=pointer]:
+                            - /url: https://gitlab.com/fdroid/wiki/-/wikis/Internal/Reviewing-new-apps
+                          - text: if you want to help speed up the review, thanks!
+                  - listitem [ref=f1e978]:
+                    - generic [ref=f1e983]:
+                      - link "linsui" [ref=f1e984] [cursor=pointer]:
+                        - /url: /linsui
+                      - generic [ref=f1e985]:
+                        - generic [ref=f1e987]:
+                          - text: added
+                          - link "review-requested" [ref=f1e989] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests?label_name=review-requested
+                          - text: label and removed
+                          - link "waiting-on-response" [ref=f1e992] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests?label_name=waiting-on-response
+                          - text: label
+                        - link "Wednesday, October 14, 2026 at 2:39:42 AM CDT" [ref=f1e994] [cursor=pointer]:
+                          - /url: "#note_1ca89b05a17bd177960147c8fb8c52068be5436f"
+                          - time [ref=f1e995]: 1 day ago
+                  - listitem [ref=f1e996]:
+                    - generic [ref=f1e997]:
+                      - link [ref=f1e999] [cursor=pointer]:
+                        - /url: /linsui
+                        - img "linsui" [ref=f1e1000]
+                      - generic [ref=f1e1001]:
+                        - generic [ref=f1e1002]:
+                          - generic [ref=f1e1003]:
+                            - link "linsui" [ref=f1e1004] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "@linsui" [ref=f1e1006] [cursor=pointer]:
+                              - /url: /linsui
+                            - link "Wednesday, October 14, 2026 at 2:39:50 AM CDT" [ref=f1e1008] [cursor=pointer]:
+                              - /url: "#note_4010375744"
+                              - time [ref=f1e1009]: 1 day ago
+                          - generic [ref=f1e1010]:
+                            - generic "This user has the developer role in the Data project." [ref=f1e1011]: Developer
+                            - generic "More actions" [ref=f1e1014]:
+                              - 'button "More actions for @linsui: ''Don''t connect the commands with ; or…''" [ref=f1e1015] [cursor=pointer]':
+                                - generic: More actions
+                        - paragraph [ref=f1e1022]: Don't connect the commands with ; or &&. Use a list of strings instead.
+                  - listitem [ref=f1e1023]:
+                    - generic [ref=f1e1028]:
+                      - link "linsui" [ref=f1e1029] [cursor=pointer]:
+                        - /url: /linsui
+                      - generic [ref=f1e1030]:
+                        - generic [ref=f1e1032]:
+                          - text: added
+                          - link "reproducible-builds" [ref=f1e1034] [cursor=pointer]:
+                            - /url: /fdroid/fdroiddata/-/merge_requests?label_name=reproducible-builds
+                          - text: label
+                        - link "Wednesday, October 14, 2026 at 2:39:50 AM CDT" [ref=f1e1036] [cursor=pointer]:
+                          - /url: "#note_1fb93dbe5693ff1183b46d73da2c308b8a0f5fee"
+                          - time [ref=f1e1037]: 1 day ago
+                - generic [ref=f1e1039]:
+                  - text: Please
+                  - link "register" [ref=f1e1040] [cursor=pointer]:
+                    - /url: /users/sign_up?redirect_to_referer=yes
+                  - text: or
+                  - link "sign in" [ref=f1e1041] [cursor=pointer]:
+                    - /url: /users/sign_in?redirect_to_referer=yes
+                  - text: to reply
