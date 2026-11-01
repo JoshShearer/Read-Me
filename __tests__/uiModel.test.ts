@@ -18,6 +18,8 @@ import {
   sharedOpen,
   sharedOpenUnreadable,
   visibleItems,
+  moves,
+  A11Y_MOVE,
   type Route,
   bridgeStatus,
   parsePort,
@@ -265,5 +267,19 @@ describe('a share that matched an unread item (REA-63, ADR 0016)', () => {
   });
   test('an item that could not be read opens its Reader and records nothing', () => {
     expect(sharedOpenUnreadable(4)).toEqual({ stack: [list, { name: 'reader', id: 4 }], markOpened: false });
+  });
+});
+
+describe('moves (REA-72)', () => {
+  test('only the moves that change something', () => {
+    expect(moves(0, 1)).toEqual([]);
+    expect(moves(0, 0)).toEqual([]);
+    expect(moves(0, 3)).toEqual(['down', 'bottom']);
+    expect(moves(1, 3)).toEqual(['top', 'up', 'down', 'bottom']);
+    expect(moves(2, 3)).toEqual(['top', 'up']);
+    expect(moves(0, 2)).toEqual(['down', 'bottom']);
+  });
+  test('accessibility action names map to moves', () => {
+    expect(A11Y_MOVE).toEqual({ moveToTop: 'top', moveUp: 'up', moveDown: 'down', moveToBottom: 'bottom' });
   });
 });

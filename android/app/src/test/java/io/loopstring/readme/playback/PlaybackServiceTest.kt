@@ -647,8 +647,8 @@ class PlaybackServiceTest {
   @Test fun withContinuousPlayTheNextUnreadItemStartsAfterTheArchive() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val store = Store.get(ctx)
-    val older = store.insertText("Second title", listOf("Never opened. Read as is."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val older = store.insertText("Second title", listOf("Never opened. Read as is."), 100L)
     Settings(ctx).continuousPlay = true
     val c = playingItem(first)
     val seen = mutableListOf<PlaybackSnapshot>()
@@ -674,8 +674,8 @@ class PlaybackServiceTest {
   @Test fun withContinuousPlayOffTheItemArchivesAndPlaybackStops() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val store = Store.get(ctx)
-    val older = store.insertText("Second title", listOf("Not read."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val older = store.insertText("Second title", listOf("Not read."), 100L)
     val c = playingItem(first)
     finishCurrent(c, 1, 1)
     assertEquals(null, PlaybackHub.queue?.snapshot()?.itemId)
@@ -688,8 +688,8 @@ class PlaybackServiceTest {
   @Test fun theChainStopsAfterTheLastUnreadItem() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val store = Store.get(ctx)
-    val older = store.insertText("Second title", listOf("Only one."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val older = store.insertText("Second title", listOf("Only one."), 100L)
     Settings(ctx).continuousPlay = true
     val c = playingItem(first)
     finishCurrent(c, 1, 1)
@@ -711,8 +711,8 @@ class PlaybackServiceTest {
     // stop, play or deletion first). The title follows the queue's item, not the offer.
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val store = Store.get(ctx)
-    store.insertText("Second title", listOf("Never read."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
+    store.insertText("Second title", listOf("Never read."), 100L)
     Settings(ctx).continuousPlay = true
     val c = playingItem(first)
     assertTrue(c.get().nextItem(first, emptySet()) != null)
@@ -728,8 +728,8 @@ class PlaybackServiceTest {
     // its title, and the switch is read at each ask.
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     val store = Store.get(ctx)
-    val older = store.insertText("Second title", listOf("Never read."), 100L)
     val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val older = store.insertText("Second title", listOf("Never read."), 100L)
     val c = playingItem(first)
     assertNull(c.get().peekNext(first, emptySet()))
     Settings(ctx).continuousPlay = true
@@ -739,6 +739,22 @@ class PlaybackServiceTest {
     assertNull(c.get().peekNext(first, setOf(older)))
     idle()
     assertEquals("First title", shownTitle(c))
+    c.destroy()
+  }
+
+  @Test fun aMoveAfterPeekNextChangesWhatTheHandoverNames() {
+    // REA-72 (ADR 0017, clarification 6): the next item is decided at the handover from the
+    // stored order, so an item moved just below the playing one after preparation wins.
+    val ctx = ApplicationProvider.getApplicationContext<Context>()
+    val store = Store.get(ctx)
+    val first = store.insertText("First title", listOf("Hello World"), 200L)
+    val b = store.insertText("B title", listOf("Bee."), 100L)
+    val moved = store.insertText("C title", listOf("Cee."), 300L)
+    Settings(ctx).continuousPlay = true
+    val c = playingItem(first)
+    assertEquals(b, c.get().peekNext(first, emptySet())!!.itemId)
+    assertTrue(store.move(moved, io.loopstring.readme.store.Move.UP))
+    assertEquals(moved, c.get().nextItem(first, emptySet())!!.itemId)
     c.destroy()
   }
 

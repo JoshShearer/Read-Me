@@ -38,6 +38,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     setRate: jest.fn(async (rate: number) => rate),
     getPosition: jest.fn(async () => null),
     setCuts: jest.fn(async () => undefined),
+    moveUnreadItem: jest.fn(async () => true),
     getBridge: jest.fn(async () => mockState.bridge),
     setBridgeEnabled: jest.fn(async (on: boolean) => {
       mockState.bridge = { ...mockState.bridge, enabled: on, state: on ? 'on' : 'off', token: on ? '0123456789abcdef0123456789abcdef' : null };
@@ -992,5 +993,106 @@ describe('Trim long-press sheet (REA-62)', () => {
         }
       },
     );
+  });
+});
+
+describe('List order: Move sheet and accessibility actions (REA-72)', () => {
+  const three = () => {
+    mockState.items = [
+      { ...base, id: 1, title: 'One' },
+      { ...base, id: 2, title: 'Two' },
+      { ...base, id: 3, title: 'Three' },
+    ];
+  };
+  // The List's only Modal is the Move sheet; a hidden Modal renders no children.
+  const sheet = (r: ReactTestRenderer.ReactTestRenderer) => r.root.findByType(Modal);
+  const sheetIds = (r: ReactTestRenderer.ReactTestRenderer) =>
+    sheet(r)
+      .findAll(n => typeof n.props.testID === 'string' && n.props.testID.startsWith('move ') && typeof n.props.onPress === 'function')
+      .map(n => n.props.testID as string);
+  const pressLabel = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    ReactTestRenderer.act(async () => {
+      r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function').props.onPress();
+    });
+  const pressId = (r: ReactTestRenderer.ReactTestRenderer, id: string) =>
+    ReactTestRenderer.act(async () => {
+      r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function').props.onPress();
+    });
+  const row = (r: ReactTestRenderer.ReactTestRenderer, title: string) =>
+    r.root.find(n => n.props.testID === `row ${title}` && typeof n.props.onAccessibilityAction === 'function');
+
+  beforeEach(() => (Native.moveUnreadItem as jest.Mock).mockClear());
+
+  test('each unread row has Move only when there are two or more; the Archive has none', async () => {
+    mockState.items = [{ ...base, id: 1, title: 'Alone' }];
+    expect(await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />)).not.toContain('"move Alone"');
+    three();
+    const out = await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    expect(out).toContain('"move One"');
+    expect(out).toContain('"move Three"');
+    mockState.items = [
+      { ...base, id: 1, title: 'Old one', archivedAt: 5 },
+      { ...base, id: 2, title: 'Old two', archivedAt: 6 },
+    ];
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await pressLabel(r, 'archive');
+    const archived = strings(r.toJSON()).join('\n');
+    expect(archived).toContain('"open Old one"');
+    expect(archived).not.toContain('"move Old one"');
+  });
+
+  test('the sheet lists only the moves that apply and calls the native move, then closes', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    expect(sheet(r).props.visible).toBe(false);
+    await pressLabel(r, 'move One');
+    expect(sheet(r).props.visible).toBe(true);
+    expect(sheetIds(r)).toEqual(['move down', 'move bottom', 'move cancel']);
+    await pressLabel(r, 'move Two');
+    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move down', 'move bottom', 'move cancel']);
+    await pressLabel(r, 'move Three');
+    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move cancel']);
+    await pressId(r, 'move top');
+    expect(Native.moveUnreadItem).toHaveBeenCalledWith(3, 'top');
+    expect(sheet(r).props.visible).toBe(false);
+  });
+
+  test('Cancel and Back close the sheet without a move', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await pressLabel(r, 'move Two');
+    await pressId(r, 'move cancel');
+    expect(sheet(r).props.visible).toBe(false);
+    await pressLabel(r, 'move Two');
+    await ReactTestRenderer.act(async () => sheet(r).props.onRequestClose());
+    expect(sheet(r).props.visible).toBe(false);
+    expect(Native.moveUnreadItem).not.toHaveBeenCalled();
+  });
+
+  test('each unread row exposes its applicable moves as accessibility actions (TalkBack)', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    const names = (t: string) => (row(r, t).props.accessibilityActions as { name: string; label: string }[]).map(a => a.name);
+    expect(names('One')).toEqual(['moveDown', 'moveToBottom']);
+    expect(names('Two')).toEqual(['moveToTop', 'moveUp', 'moveDown', 'moveToBottom']);
+    expect(names('Three')).toEqual(['moveToTop', 'moveUp']);
+    expect((row(r, 'Two').props.accessibilityActions as { label: string }[]).map(a => a.label)).toEqual([
+      'Move to top', 'Move up', 'Move down', 'Move to bottom',
+    ]);
+    await ReactTestRenderer.act(async () => row(r, 'Two').props.onAccessibilityAction({ nativeEvent: { actionName: 'moveUp' } }));
+    expect(Native.moveUnreadItem).toHaveBeenCalledWith(2, 'up');
+    await ReactTestRenderer.act(async () => row(r, 'One').props.onAccessibilityAction({ nativeEvent: { actionName: 'moveToBottom' } }));
+    expect(Native.moveUnreadItem).toHaveBeenCalledWith(1, 'bottom');
+    await ReactTestRenderer.act(async () => row(r, 'One').props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+    expect(Native.moveUnreadItem).toHaveBeenCalledTimes(2);
+  });
+
+  test('the List shows unread items in the order native gives them, without re-sorting', async () => {
+    mockState.items = [
+      { ...base, id: 9, title: 'First in queue', createdAt: 900 },
+      { ...base, id: 2, title: 'Second in queue', createdAt: 100 },
+    ];
+    const out = await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    expect(out.indexOf('First in queue')).toBeLessThan(out.indexOf('Second in queue'));
   });
 });

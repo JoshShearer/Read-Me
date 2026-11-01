@@ -1,21 +1,30 @@
 // R-M01 List: unread items or the Archive; R-M10 states with their actions. Never logs.
+// REA-72 (ADR 0017): unread rows are a stored queue; each can be moved with the Move sheet or
+// with the row's accessibility actions (TalkBack), never only by dragging.
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, useColorScheme, View } from 'react-native';
+import { ActionSheet } from './ActionSheet';
 import { Button } from './Button';
 import { Text } from './Text';
 import {
   deleteItem,
   drainFetched,
   listItems,
+  moveItem,
   onItemsChanged,
   restoreItem,
   retryFetch,
   type Item,
+  type Move,
 } from '../library/library';
 import { getPlayback, marker, onPlayback, type Playback } from '../library/playback';
 import {
+  A11Y_MOVE,
+  A11Y_NAME,
   ACTION_LABEL,
+  MOVE_LABEL,
   actions,
+  moves,
   badge,
   guidance,
   subtitle,
@@ -43,6 +52,8 @@ export function ListScreen({
   const [items, setItems] = useState<Item[]>([]);
   const [archive, setArchive] = useState(false);
   const [playback, setPlayback] = useState<Playback | null>(null);
+  // The unread row whose Move sheet is open, with its index when it was opened.
+  const [moving, setMoving] = useState<{ item: Item; index: number } | null>(null);
 
   const refresh = useCallback(() => {
     listItems().then(setItems, () => setItems([]));
@@ -79,7 +90,13 @@ export function ListScreen({
     }
   };
 
+  const move = (item: Item, to: Move) => {
+    // Relative to the stored order at the write (ADR 0017); the List refreshes on the change.
+    moveItem(item.id, to).catch(() => undefined);
+  };
+
   const shown = visibleItems(items, archive);
+  const sheetMoves = moving ? moves(moving.index, shown.length) : [];
   return (
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
@@ -100,14 +117,21 @@ export function ListScreen({
             {archive ? 'Nothing archived yet.' : 'In any app, tap Share and pick Read Me Offline to add a link or text.'}
           </Text>
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const acts = actions(item);
+          const rowMoves = archive ? [] : moves(index, shown.length);
           const mark = marker(item, playback);
           const sub = subtitle(item);
           const help = guidance(item);
           return (
             <Pressable
+              testID={`row ${item.title}`}
               style={ui.entry}
+              accessibilityActions={rowMoves.map(m => ({ name: A11Y_NAME[m], label: MOVE_LABEL[m] }))}
+              onAccessibilityAction={e => {
+                const to = A11Y_MOVE[e.nativeEvent.actionName];
+                if (to && rowMoves.includes(to)) move(item, to);
+              }}
               onPress={() => {
                 if (acts.includes('open')) onOpen(item);
               }}>
@@ -140,10 +164,32 @@ export function ListScreen({
                       onPress={() => run(a, item)}
                     />
                   ))}
+                {rowMoves.length > 0 ? (
+                  <Button
+                    appearance="tonal"
+                    label="Move"
+                    accessibilityLabel={`move ${item.title}`}
+                    onPress={() => setMoving({ item, index })}
+                  />
+                ) : null}
               </View>
             </Pressable>
           );
         }}
+      />
+      <ActionSheet
+        visible={moving !== null}
+        title="Move"
+        actions={sheetMoves.map(m => ({
+          label: MOVE_LABEL[m],
+          testID: `move ${m}`,
+          onPress: () => {
+            if (moving) move(moving.item, m);
+            setMoving(null);
+          },
+        }))}
+        cancelTestID="move cancel"
+        onClose={() => setMoving(null)}
       />
     </View>
   );

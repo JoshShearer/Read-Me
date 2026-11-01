@@ -13,6 +13,11 @@
 # installed for the phone's current user (GrapheneOS Speech Services on the reference phone,
 # REA-31), or READ_ME_ENGINE when set. The cold-start section needs a slow-starting engine and
 # switches to the previous default (see there). UI_ONLY=coldstart runs only that section; UI_ONLY=trim only the first Trim open and its long-press steps (REA-62).
+# REA-72 (ADR 0017), before the List checks: the List order section shares three one-paragraph
+# texts and checks (a) they land at the bottom in share order, (b) Move to top from the bottom,
+# (c) Move down twice from the top to the middle, (d) the order holds after a force-stop and
+# reopen; then deletes the three. UI_ONLY=order runs only that section. Rows print as symbols
+# (A the text, D the dead link, 1-3 the test texts, X anything else), never as titles.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
@@ -114,6 +119,60 @@ on_screen() {
 logs() { adb logcat -d -s ReadMe:I; }
 
 fail=0
+
+# --- List order (REA-72, ADR 0017, R-M01 as amended) ---
+P=('Plover order one.' 'Plover order two.' 'Plover order three.')
+# order_now: the unread rows top to bottom as symbols, from each row's delete button.
+order_now() {
+  { grep -oE 'content-desc="delete [^"]*"' <<<"$(ui)" || true; } | sed -E 's/^content-desc="delete //; s/"$//' | while IFS= read -r t; do
+    case "$t" in
+      Alpha*) printf A ;;
+      127.0.0.1) printf D ;;
+      "${P[0]}") printf 1 ;;
+      "${P[1]}") printf 2 ;;
+      "${P[2]}") printf 3 ;;
+      *) printf X ;;
+    esac
+  done
+}
+# order_is <step> <symbols>: waits up to 10 s for the List to show <symbols>; RUN/PASS or RUN/FAIL.
+order_is() {
+  local now=""
+  for _ in $(seq 10); do now=$(order_now); [ "$now" = "$2" ] && break; sleep 1; done
+  if [ "$now" = "$2" ]; then echo "$1: RUN/PASS ($now)"; else echo "$1: RUN/FAIL (expected $2, saw ${now:-nothing})"; fail=1; fi
+}
+# move_row <test index> <move testID>: opens the row's Move sheet and picks the move.
+move_row() {
+  tap_node content-desc "move ${P[$1]//./[.]}"
+  tap_node resource-id "move $2"
+}
+if [ -z "${UI_ONLY:-}" ] || [ "${UI_ONLY:-}" = order ]; then
+  for t in "${P[@]}"; do share "$t"; sleep 1; done
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+  order_is "order (a) shares land at the bottom in share order" AD123
+  move_row 2 top
+  order_is "order (b) bottom to top" 3AD12
+  move_row 2 down
+  order_is "order (c) top to middle, first step" A3D12
+  move_row 2 down
+  order_is "order (c) top to middle" AD312
+  adb shell am force-stop "$PKG"
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+  on_screen 'content-desc="settings"' || fail=1
+  order_is "order (d) holds after a force-stop and reopen" AD312
+  for i in 0 1 2; do
+    tap_node content-desc "delete ${P[$i]//./[.]}"
+    tap_node text '(Delete|DELETE)'
+    sleep 1
+  done
+  order_is "order: the three test texts deleted" AD
+  if [ "${UI_ONLY:-}" = order ]; then
+    echo "UI_ONLY=order: stopping after the List order section"
+    echo "device:ui $([ $fail -eq 0 ] && echo PASS || echo FAIL)"
+    exit "$fail"
+  fi
+fi
+
 if [ "${UI_ONLY:-}" = coldstart ]; then
   echo "UI_ONLY=coldstart: only the cold-start section runs"
 else
@@ -503,7 +562,7 @@ else
 fi
 
 all=$(adb logcat -d)
-if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|Echo one|Foxtrot one|Golf one|nothing-here'; then
+if device_has "$all" 'Alpha one|Beta two|Gamma one|Delta sentence|Echo one|Foxtrot one|Golf one|Plover order|nothing-here'; then
   echo "FAIL: a log line carries shared text or a URL path"; fail=1
 fi
 pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)

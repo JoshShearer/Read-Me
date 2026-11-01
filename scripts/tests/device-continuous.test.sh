@@ -38,6 +38,9 @@ case "$*" in
   "shell input tap"*) if [ -n "${STUB_OVERLAY:-}" ] && [ "$(cat "$STUB_OVERLAY" 2>/dev/null || echo 0)" -gt 0 ]; then :
     elif [ -n "${STUB_TAPQ:-}" ] && [ -s "$STUB_TAPQ" ]; then
       head -1 "$STUB_TAPQ" >> "$STUB_LOG"; sed -i 1d "$STUB_TAPQ"; fi ;;
+  # REA-72: a swipe towards the List's bottom serves STUB_UI_NEXT (once) as the next dump.
+  "shell input swipe 670 2000"*) if [ -n "${STUB_UI_NEXT:-}" ] && [ -s "$STUB_UI_NEXT" ]; then
+      cp "$STUB_UI_NEXT" "$STUB_UI"; : > "$STUB_UI_NEXT"; fi ;;
   *) : ;;
 esac
 STUB
@@ -85,17 +88,19 @@ check "the windows do not admit each other's counts" \
   "$(src 'count_ok 0 51 || count_ok 1 4 || count_ok 2 51 || count_ok 2 101 || count_ok 1 101 || echo none')" none
 check "T2's window is 50-52 (long enough for the Reader checks)" \
   "$(src 'count_ok 1 50 && count_ok 1 52 && echo yes'),$(src 'count_ok 1 49 || count_ok 1 53 || echo no')" "yes,no"
-L3='I ReadMe  : playback continue from=12 item=11 sentences=51 start=0 ms=3
-I ReadMe  : playback continue from=11 item=10 sentences=101 start=0 ms=3'
+L3='I ReadMe  : playback continue from=10 item=11 sentences=51 start=0 ms=3
+I ReadMe  : playback continue from=11 item=12 sentences=101 start=0 ms=3'
 check "the item after T3 and the item after T2 are test items before next_test records them" \
-  "$(src 'TEST_IDS=12; ID3=12; ID2=11; next_seen "$1" "$ID3" 1; next_seen "$1" "$ID2" 0; foreign_ids "$1" "$TEST_IDS" | tr "\n" " "; echo "[$TEST_IDS]"' _ "$L3")" "[12 11 10]"
+  "$(src 'TEST_IDS=10; ID3=10; ID2=11; next_seen "$1" "$ID3" 1; next_seen "$1" "$ID2" 0; foreign_ids "$1" "$TEST_IDS" | tr "\n" " "; echo "[$TEST_IDS]"' _ "$L3")" "[10 11 12]"
 printf '%s\n' "$L3" > "$STUB_LOG"
 check "guard: a run that dies on T2's checks does not call T1 a non-test item" \
-  "$(src 'CLEARED=1; TEST_IDS=12; ID3=12; ID2=11; guard && echo clean')" clean
+  "$(src 'CLEARED=1; TEST_IDS=10; ID3=10; ID2=11; guard && echo clean')" clean
 : > "$STUB_LOG"
 check "but not one with another count, from a later start, or newer" \
-  "$(src 'TEST_IDS=12; next_seen "$1" 12 1; next_seen "$1" 11 0; echo "[$TEST_IDS]"' _ 'I ReadMe  : playback continue from=12 item=11 sentences=60 start=0 ms=3
-I ReadMe  : playback continue from=11 item=10 sentences=101 start=9 ms=3')" "[12]"
+  "$(src 'TEST_IDS=10; next_seen "$1" 10 1; next_seen "$1" 11 0; echo "[$TEST_IDS]"' _ 'I ReadMe  : playback continue from=10 item=11 sentences=60 start=0 ms=3
+I ReadMe  : playback continue from=11 item=12 sentences=101 start=9 ms=3')" "[10]"
+check "an item older than the one before it is not the next test item (REA-72: shares go to the bottom)" \
+  "$(src 'TEST_IDS=10; next_seen "$1" 10 1; echo "[$TEST_IDS]"' _ 'I ReadMe  : playback continue from=10 item=9 sentences=51 start=0 ms=3')" "[10]"
 check "a two-sentence owner item matches no window" "$(src 'count_ok 0 2 || count_ok 1 2 || count_ok 2 2 || echo none')" none
 DUMP='<node content-desc="delete Kestrel test item three." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item two." bounds="[0,0][1,1]"/><node content-desc="delete Kestrel test item one." bounds="[0,0][1,1]"/><node content-desc="delete Owner thing" bounds="[0,0][1,1]"/>'
 check "row titles come top to bottom" "$(src "row_titles \"\$1\" | head -3 | tr '\n' '|'" _ "$DUMP")" \
@@ -402,10 +407,19 @@ check "and never cleared the app" "$(grep -c 'pm clear' "$STUB_CALLS")" 0
 # ===================== REA-47: the buffer item, the chain watcher, a stale state file =====================
 # T1's continue line naming a buffer-like item (161 sentences: the buffer's window), and one
 # naming an owner-like item.
-BUF='I ReadMe  : playback continue from=10 item=9 sentences=161 start=0 ms=3'
-OWN='I ReadMe  : playback continue from=10 item=4 sentences=2 start=0 ms=2'
+BUF='I ReadMe  : playback continue from=12 item=13 sentences=161 start=0 ms=3'
+OWN='I ReadMe  : playback continue from=12 item=14 sentences=2 start=0 ms=2'
 
-# --- a fourth test item: the buffer, shared first, so it sits directly below T1 ---
+# REA-72: shares go to the bottom, so T3 < T2 < T1 < buffer by id and the owner's rows sit above.
+LOGN='I ReadMe  : playback start item=10 sentences=4 from=0 rate=2.0
+I ReadMe  : playback finished item=10
+I ReadMe  : playback continue from=10 item=11 sentences=51 start=0 ms=3
+I ReadMe  : playback handover from=10 item=11 ms=180
+I ReadMe  : playback continue from=11 item=12 sentences=101 start=0 ms=9
+I ReadMe  : playback finished item=12
+I ReadMe  : playback continue from=12 item=14 sentences=2 start=0 ms=2'
+
+# --- a fourth test item: the buffer, shared last, so it sits directly below T1 ---
 check "four test items" "$(src 'echo ${#TITLES[@]} ${#BODY[@]}')" "4 4"
 check "the buffer's window takes 160-162 sentences" \
   "$(src 'count_ok 3 160 && count_ok 3 162 && echo yes'),$(src 'count_ok 3 159 || count_ok 3 163 || echo no')" "yes,no"
@@ -413,67 +427,73 @@ check "the buffer's window admits no other item's count, nor they its" \
   "$(src 'count_ok 3 101 || count_ok 3 51 || count_ok 3 4 || count_ok 0 161 || echo none')" none
 : > "$STUB_CALLS"
 src share_all >"$T/out" 2>&1
-check "the shares go buffer, T1, T2, T3 (List order: T3, T2, T1, buffer)" \
+check "the shares go T3, T2, T1, buffer (each to the bottom: List order T3, T2, T1, buffer)" \
   "$(grep -oE 'test item (buffer|one|two|three)' "$STUB_CALLS" | tr '\n' '|')" \
-  "test item buffer|test item one|test item two|test item three|"
+  "test item three|test item two|test item one|test item buffer|"
 check "every share's text goes on stdin, never in the adb argv" \
   "$(grep -c '^shell .*Kestrel' "$STUB_CALLS")" 0
 
-# --- the List check: exactly T3, T2, T1, buffer on top, each one ready ---
-row() { printf '<node text="%s" bounds="[0,0][1,1]"/><node text="Shared text · 20 words" bounds="[0,0][1,1]"/><node text="%s" bounds="[0,0][1,1]"/><node content-desc="open %s" bounds="[0,0][1,1]"/><node content-desc="delete %s" bounds="[0,0][1,1]"/>' "$1" "$2" "$1" "$1"; }
+# --- the List check: exactly T3, T2, T1, buffer at the bottom, each one ready (REA-72) ---
+row() { printf '<node text="%s" bounds="[0,0][1,1]"/><node text="Shared text · 20 words" bounds="[0,0][1,1]"/><node text="%s" bounds="[0,0][1,1]"/><node content-desc="open %s" bounds="[0,0][1,1]"/><node content-desc="delete %s" bounds="[0,0][1,1]"/><node content-desc="move %s" bounds="[0,0][1,1]"/>' "$1" "$2" "$1" "$1" "$1"; }
 HEAD='<node content-desc="settings" bounds="[0,0][1,1]"/>'
-D_OK="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)$(row 'Owner thing' ready)"
+D_OK="$HEAD$(row 'Owner thing' ready)$(row 'Owner other' fetching)$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)"
 D_OWNER4="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Owner thing' ready)$(row 'Kestrel test item buffer.' ready)"
-D_NOTREADY="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' fetching)$(row 'Owner thing' ready)"
+D_BELOW="$HEAD$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)$(row 'Owner thing' ready)"
+D_NOTREADY="$HEAD$(row 'Owner thing' ready)$(row 'Kestrel test item three.' ready)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' fetching)"
+D_T3NOTREADY="$HEAD$(row 'Owner thing' ready)$(row 'Kestrel test item three.' fetching)$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)"
+D_THREE="$HEAD$(row 'Kestrel test item two.' ready)$(row 'Kestrel test item one.' ready)$(row 'Kestrel test item buffer.' ready)"
 rows_verdict() { src 'if rows_ok "$1" && rows_ready "$1"; then echo accepted; else echo refused; fi' _ "$1"; }
-check "T3, T2, T1, buffer, all ready, is accepted" "$(rows_verdict "$D_OK")" accepted
-check "an owner item as the fourth row is refused (the chain would reach it after T1)" "$(rows_verdict "$D_OWNER4")" refused
+check "owner rows above, then T3, T2, T1, buffer, all ready, is accepted" "$(rows_verdict "$D_OK")" accepted
+check "an owner item between T1 and the buffer is refused (the chain would reach it after T1)" "$(rows_verdict "$D_OWNER4")" refused
+check "an owner item below the buffer is refused (the buffer must be the last row)" "$(rows_verdict "$D_BELOW")" refused
 check "the old three-row dump (owner item fourth, no buffer) is refused" "$(rows_verdict "$DUMP")" refused
-check "a buffer not ready is refused, even with a ready owner row below it" "$(rows_verdict "$D_NOTREADY")" refused
+check "a buffer not ready is refused" "$(rows_verdict "$D_NOTREADY")" refused
+check "a T3 not ready is refused (its badge is read from its own row)" "$(rows_verdict "$D_T3NOTREADY")" refused
+check "fewer than four rows is refused" "$(rows_verdict "$D_THREE")" refused
 
 # --- the watcher: stops Read Me as soon as the chain goes past T1 ---
-printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
-src "watch_chain 10 '$T/mark' 3" >"$T/out" 2>&1
+printf '%s\n%s\n' "$LOGN" "$BUF" | grep -v 'from=12 item=14' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+src "watch_chain 12 '$T/mark' 3" >"$T/out" 2>&1
 check "the watcher force-stops Read Me on T1's continue line" "$(grep -c 'shell am force-stop io.loopstring.readme' "$STUB_CALLS")" 1
-check "and notes the item, its count and start" "$(cut -d' ' -f1-3 "$T/mark" 2>/dev/null)" "9 161 0"
+check "and notes the item, its count and start" "$(cut -d' ' -f1-3 "$T/mark" 2>/dev/null)" "13 161 0"
 check "its output carries ids and counts only" "$(grep -cE 'Kestrel|hovers|grass' "$T/out" "$T/mark" | awk -F: '{s+=$2} END {print s}')" 0
-printf '%s\n' "$LOG" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
-src "watch_chain 10 '$T/mark' 2" >"$T/out" 2>&1
+printf '%s\n' "$LOGN" | grep -v 'from=12 item=14' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+src "watch_chain 12 '$T/mark' 2" >"$T/out" 2>&1
 check "with no continue line from T1 it stops nothing" "$(grep -c 'force-stop' "$STUB_CALLS"),$([ -e "$T/mark" ] && echo marked || echo none)" "0,none"
 printf '%s\n' "$BUF" > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"; : > "$T/logcat-fail"
-STUB_LOGCAT_FAIL="$T/logcat-fail" src "watch_chain 10 '$T/mark' 3" >"$T/out" 2>&1
+STUB_LOGCAT_FAIL="$T/logcat-fail" src "watch_chain 12 '$T/mark' 3" >"$T/out" 2>&1
 check "a failed logcat read leaves the watcher polling (errexit off in it)" \
   "$([ -e "$T/logcat-fail" ] && echo unread || echo read),$(grep -c 'force-stop' "$STUB_CALLS")" "read,1"
 
 # --- the buffer is recognised from the log itself, not from the watcher's marker ---
-printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r ids=\$TEST_IDS played=\$BUFFER_PLAYED")
-check "a played buffer is a test item for guard, with no marker file" "$(grep -oE 'rc=[0-9]+ ids=.* played=[0-9]+' <<<"$out")" "rc=0 ids=12 11 10 9 played=1"
+printf '%s\n%s\n' "$LOGN" "$BUF" | grep -v 'from=12 item=14' > "$STUB_LOG"; : > "$STUB_CALLS"; rm -f "$T/mark"
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; if guard; then r=0; else r=1; fi; echo rc=\$r ids=\$TEST_IDS played=\$BUFFER_PLAYED")
+check "a played buffer is a test item for guard, with no marker file" "$(grep -oE 'rc=[0-9]+ ids=.* played=[0-9]+' <<<"$out")" "rc=0 ids=10 11 12 13 played=1"
 check "and no NON-TEST alarm, no stop by guard" "$(grep -c 'NON-TEST' <<<"$out"),$(grep -c force-stop "$STUB_CALLS")" "0,0"
-printf '%s\n' "$LOG" > "$STUB_LOG"; : > "$STUB_CALLS"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
-check "an owner-like item after T1 stays foreign: guard fails loudly" "$(grep -oE 'rc=[0-9]+' <<<"$out"),$(grep -c 'NON-TEST ITEM PLAYED: id(s) 4' <<<"$out")" "rc=1,1"
-printf '%s\n' 'I ReadMe  : playback continue from=10 item=11 sentences=161 start=0 ms=3' > "$STUB_LOG"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
-check "a buffer-sized item newer than T1 is not the buffer" "$(grep -oE 'rc=[0-9]+' <<<"$out")" "rc=1"
-printf '%s\n' 'I ReadMe  : playback continue from=10 item=9 sentences=161 start=40 ms=3' > "$STUB_LOG"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+printf '%s\n' "$LOGN" > "$STUB_LOG"; : > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+check "an owner-like item after T1 stays foreign: guard fails loudly" "$(grep -oE 'rc=[0-9]+' <<<"$out"),$(grep -c 'NON-TEST ITEM PLAYED: id(s) 14' <<<"$out")" "rc=1,1"
+printf '%s\n' 'I ReadMe  : playback continue from=12 item=11 sentences=161 start=0 ms=3' > "$STUB_LOG"
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 12'; if guard; then r=0; else r=1; fi; echo rc=\$r")
+check "a buffer-sized item older than T1 is not the buffer (REA-72: the buffer is shared after T1)" "$(grep -oE 'rc=[0-9]+' <<<"$out")" "rc=1"
+printf '%s\n' 'I ReadMe  : playback continue from=12 item=13 sentences=161 start=40 ms=3' > "$STUB_LOG"
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; if guard; then r=0; else r=1; fi; echo rc=\$r")
 check "a buffer-sized item read from a saved position is not the buffer" "$(grep -oE 'rc=[0-9]+' <<<"$out")" "rc=1"
-printf '%s\n%s\n' "$LOG" "$BUF" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"; mkdir .claude/device.lock
-STUB_LOCKED=1 UNLOCK_WAIT=1 src "DEVICE_LOCK_OURS=1; trap finish EXIT; PLAYED=1; CLEARED=1; ID1=10; TEST_IDS='12 11 10'; exit 0" >"$T/out" 2>&1
+printf '%s\n%s\n' "$LOGN" "$BUF" | grep -v 'from=12 item=14' > "$STUB_LOG"; : > "$STUB_CALLS"; mkdir .claude/device.lock
+STUB_LOCKED=1 UNLOCK_WAIT=1 src "DEVICE_LOCK_OURS=1; trap finish EXIT; PLAYED=1; CLEARED=1; ID1=12; TEST_IDS='10 11 12'; exit 0" >"$T/out" 2>&1
 check "a run where the buffer played fails as NOT COMPLETED, not as a non-test play" \
   "$?,$(grep -c 'NOT COMPLETED' "$T/out"),$(grep -c 'NON-TEST' "$T/out")" "1,1,0"
 
 # --- the parent checks the watcher is alive, and stops Read Me when it is not ---
-printf '%s\n' "$LOG" | grep -v 'from=10 item=4' > "$STUB_LOG"; : > "$STUB_CALLS"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; (exit 0) & d=\$!; wait \$d; WATCH_PID=\$d; check_watch; echo survived" 2>&1)
+printf '%s\n' "$LOGN" | grep -v 'from=12 item=14' > "$STUB_LOG"; : > "$STUB_CALLS"
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; (exit 0) & d=\$!; wait \$d; WATCH_PID=\$d; check_watch; echo survived" 2>&1)
 check "a dead watcher stops Read Me and fails the run" \
   "$(grep -c survived <<<"$out"),$(grep -c 'shell am force-stop' "$STUB_CALLS"),$(grep -c 'watcher is not running' <<<"$out")" "0,1,1"
 : > "$STUB_CALLS"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived; kill \$WATCH_PID" 2>&1)
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived; kill \$WATCH_PID" 2>&1)
 check "a live watcher and a clean log go on" "$(grep -c survived <<<"$out"),$(grep -c force-stop "$STUB_CALLS")" "1,0"
 printf '%s\n' "$BUF" > "$STUB_LOG"; : > "$STUB_CALLS"
-out=$(src "CLEARED=1; ID1=10; TEST_IDS='12 11 10'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived" 2>&1)
+out=$(src "CLEARED=1; ID1=12; TEST_IDS='10 11 12'; sleep 5 & WATCH_PID=\$!; check_watch; echo survived" 2>&1)
 check "the buffer started before the switch-off: stopped, NOT COMPLETED" \
   "$(grep -c survived <<<"$out"),$(grep -c 'shell am force-stop' "$STUB_CALLS"),$(grep -c 'NOT COMPLETED' <<<"$out")" "0,1,1"
 
@@ -507,5 +527,25 @@ echo true > .claude/scratch/device-continuous.before; : > "$STUB_CALLS"
 CLEANUP_ONLY=1 STUB_UI="$T/ui" bash scripts/device-continuous.sh >"$T/out" 2>&1; rc=$?
 check "CLEANUP_ONLY=1 is not refused, and restores and clears the state" \
   "$rc,$(grep -c REFUSED "$T/out"),$(grep -c 'cleanup: done' "$T/out"),$([ -e .claude/scratch/device-continuous.before ] && echo kept || echo gone)" "0,0,1,gone"
+
+# --- REA-72 (plan review F1): the test rows sit at the bottom of the unread List, so a cleanup
+# must read the whole view: a test row below the fold must never yield "cleanup: done" ---
+rm -f .claude/scratch/device-continuous.before
+TOGGLES='<node content-desc="archive" bounds="[0,0][1,1]"/><node content-desc="unread" bounds="[0,0][1,1]"/>'
+printf '%s' "$HEAD$TOGGLES$(row 'Owner thing' ready)$(row 'Owner other' ready)" > "$T/ui"
+printf '%s' "$HEAD$TOGGLES$(row 'Owner other' ready)$(row 'Kestrel test item one.' ready)" > "$T/ui-next"
+: > "$STUB_CALLS"
+out=$(STUB_UI="$T/ui" STUB_UI_NEXT="$T/ui-next" src 'if cleanup; then echo rc=0; else echo rc=1; fi' 2>&1)
+check "a test row below the fold: cleanup is INCOMPLETE and nonzero, never done" \
+  "$(grep -c 'cleanup: INCOMPLETE' <<<"$out"),$(grep -c 'cleanup: done' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,0,rc=1"
+check "and it scrolled the List to find it" "$(grep -c 'input swipe 670 2000' "$STUB_CALLS" | awk '{print ($1 > 0) ? "swiped" : "none"}')" swiped
+printf '%s' "$HEAD$TOGGLES$(row 'Owner thing' ready)$(row 'Owner other' ready)" > "$T/ui"
+printf '%s' "$HEAD$TOGGLES$(row 'Owner other' ready)$(row 'Owner last' ready)" > "$T/ui-next"
+out=$(STUB_UI="$T/ui" STUB_UI_NEXT="$T/ui-next" src 'if cleanup; then echo rc=0; else echo rc=1; fi' 2>&1)
+check "with no test row anywhere along the List, cleanup is done" \
+  "$(grep -c 'cleanup: done' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=0"
+: > "$T/ui"
+out=$(STUB_UI="$T/ui" UNLOCK_WAIT=1 src 'tests_remain && echo remain || echo none' 2>&1)
+check "a failed (empty) dump is never read as a clean List" "$(tail -1 <<<"$out")" remain
 rm -f "$APKF" "$APKF.stamp"
 exit $fail
