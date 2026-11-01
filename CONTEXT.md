@@ -76,8 +76,8 @@ Obsidian plugin -> POST /synthesize?rate=1.0 -> WAV -> plugin Player applies rat
 Real tree since the scaffold (2026-10-01):
 
 ```text
-App.tsx, index.js            React Native entry; App.tsx is a plain item list until the reader lands;
-                             index.js installs the release network stub first
+App.tsx, index.js            React Native entry; App.tsx: the route stack over the four R-M01 screens
+                             and the hardware back button; index.js installs the release network stub first
 index.devcheck.js            devcheck bundle entry (never the product entry)
 src/types.ts                 Paragraph, ParagraphKind, Sentence, Position
 src/intake/                  R-M02: shared text to link, text or empty; R-M04: shared text to paragraphs
@@ -93,6 +93,7 @@ src/ui/                      R-M01 screens: model.ts (routes, R-M10 actions, lis
                              LoopString Material 3 palette, light and dark, and the type scale)
                              and Text.tsx (the themed Text every screen uses, with a tone);
                              Button.tsx, Select.tsx, Toggle.tsx, Stepper.tsx: the shared controls;
+                             ActionSheet.tsx: the app's own bottom sheet of actions (REA-62);
                              ItemUnavailable.tsx: the deleted or could-not-open state (R-M10)
 src/net/                     R-M09: release runtime stub over fetch, XMLHttpRequest, WebSocket
 src/devcheck/                devcheck bundle only: fingerprints and the DevCheck root component
@@ -103,18 +104,20 @@ android/app/src/main/java/io/loopstring/readme/   Kotlin:
   SharedOpen (the one-shot id of the unread item a share matched, ADR 0016),
   ReadMeSpeechModule + ReadMeSpeechPackage (the TurboModule),
   intake/ (classify and split shared text; SharedFile and Markdown: a shared .md or .txt read
-  off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions;
-  lifecycle per ADR 0007; Settings: the rate, voice, engine below Android 14, and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
+  off the main thread and turned into prose, R-C04), store/ (SQLite items, paragraphs, cuts, positions,
+  the unread List order and its moves (ADR 0017, schema v2); lifecycle per ADR 0007; ItemEvents:
+  the process-wide "library changed" signal; Settings: the rate, voice, engine below Android 14, and bridge (on/off, port, token)), fetch/ (Fetcher, FetchWorker on WorkManager, Recovery),
   playback/ (PlaybackService: the mediaPlayback foreground service, media session, focus, noisy,
   wake lock; PlaybackQueue: the sentence queue, synthesizing ahead of the player (ADR 0012);
   TtsSpeaker: playback's engine, synthesizeToFile only; TrackPlayer: Read Me's own AudioTrack;
   WavPcm; PlaybackFiles: noBackupFilesDir/playback, names by id and offset; TtsOpen: which engine to bind, a refused bind as no-engine (ADR 0010); EngineProbe: engine and offline voices before any play;
   PlaybackHub: in-process hand-off and
   ADR 0004's speaking flag; Policies; Utterances; GapStats;
-  ContinuousPlay: the next unread item for R-S05; Segmenter: the Kotlin port of `segment`),
+  ContinuousPlay: the next unread item for R-S05; Segmenter: the Kotlin port of `segment`;
+  SentenceRow: one utterance; NotificationGate: whether the notification can show, REA-60),
   bridge/ (R-M12, hosted by PlaybackService while enabled: BridgeServer: plain-JVM loopback HTTP
   server, caps, token, CORS, drain; BridgePlayback: the /play, /status, /control session the
-  service reads itself (ADR 0014); Http: request-head parsing; TtsSynth: the bridge's own
+  service reads itself (ADR 0014); Http: request-head parsing; Synthesizer and TtsSynth: the bridge's own
   TextToSpeech; BridgeFiles: cache WAVs and the start-up sweep; BridgeView: Settings state and
   the sensitive-clip Copy)
 scripts/                     build-release.sh (APK + commit stamp), device-install.sh, device-smoke.sh,
@@ -127,11 +130,21 @@ scripts/                     build-release.sh (APK + commit stamp), device-insta
                              device-ui-e2e.sh (every screen), make-notices.mjs (Settings > Licenses asset),
                              device-bridge-e2e.sh + obsidian-cdp-bridge.mjs (R-M12 over adb forward and
                              from inside Obsidian's WebView),
-                             make-devcheck-fixtures.mjs, fetch-page-fixtures.sh
+                             device-continuous.sh (R-S05), device-lifecycle.sh, device-screens.sh,
+                             device-settings.sh, device-themes.sh (+ theme-contrast.py, dock-check.py,
+                             sheet-check.py), device-accept-share.sh (R-M14 run 1), device-screenshots.sh,
+                             lib/audio-hardening.sh, repro-check.sh, fdroid-build.sh + fdroid/ci-build.sh,
+                             fdroid-rewritemeta.sh, release-keystore.sh, release-apk.sh, lib/release.sh,
+                             lib/recipe.sh, build-hermesc.sh, patch-rn-jdk21.mjs, license-expr.mjs,
+                             gen-brand.py, tidy-screenshots.py, notices/ (license texts),
+                             make-devcheck-fixtures.mjs, fetch-page-fixtures.sh; tests/ (npm run test:scripts)
 docs/adr/                    ADRs (0001 Kotlin owns the DB, 0002 CC-BY data packages, 0004 TTS
                              contention, 0005 foreground service type, 0006 Readability stall guard,
                              0007 item lifecycle, 0008 bridge text limit, 0009 paused session
-                             lifetime, 0010 engine choice and fallback, 0011 continuous play handover)
+                             lifetime, 0010 engine choice and fallback, 0011 continuous play handover,
+                             0012 Read Me plays synthesized audio, 0013 stored word counts, 0014 bridge
+                             sessions, 0015 ACCESS_NETWORK_STATE, 0016 a share of an unread link opens
+                             it, 0017 list order and moves)
 .github/workflows/ci.yml     CI: js job + android job
 ```
 
@@ -141,14 +154,12 @@ JS component `ReadMe`. Log tags: `ReadMe` (native, product code), `ReactNativeJS
 
 ## Known structural gaps
 
-- Everything but the text pipeline: native module, storage, playback, bridge, screens. The
-  pipeline's functions are tested and run on Hermes, but no requirement is met until a user can
-  reach it on the device.
 - Spike answers that bind later phases (`srs.md`, "Spikes"): playback and bridge synthesis
   serialize on the reference engine, so the bridge answers 503 while playback speaks (ADR 0004);
   one `mediaPlayback` service hosts both (ADR 0005); `segment` has no `Intl.Segmenter` on Hermes;
   `extract` is Readability over linkedom on the JS thread, so a heavy page freezes the screen
   for seconds (ADR 0006). Not covered by any
-  spike: Android 14-16, targetSdk 37, battery power and Doze, the Google TTS engine.
+  spike: Android 14-16, targetSdk 37, the Google TTS engine (battery power and Doze were measured
+  in Phase 3, `AGENTS.md` "Known state").
 - Roadmap findings F11-F21 are applied (`docs/superpowers/plans/2026-10-01-roadmap.md`;
   ADR 0007, REA-14).

@@ -607,7 +607,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `getLoopbackAddress()`, zero `onRangeStart` callbacks. They are cited, not re-measured here.
 - **Build toolchain on this machine** (verified 2026-10-01 by the scaffold build): Android SDK at
   `~/Android/Sdk` with `platforms;android-37.0`, `build-tools;37.0.0`, `build-tools;36.0.0` (AGP default), `ndk;27.1.12297006`,
-  `cmake;3.22.1`, platform-tools 37.0.1; Java 21 on `PATH`; Node 24.21.0. Gradle 9.4.1 comes from
+  `cmake;3.22.1`, platform-tools 37.0.1; Java 21 on `PATH`; Node 24.21.0 (24.22.1 on 2026-11-01, `node --version`). Gradle 9.4.1 comes from
   the wrapper. The `PATH` Java (`/usr/lib/jvm/java-21-openjdk-amd64`) has no `javac`, so Gradle
   provisions its JDK 21 toolchain into `~/.gradle/jdks` (Zulu 21, seen 2026-10-09). Since REA-43
   every build compiles on JDK 21: `scripts/patch-rn-jdk21.mjs` (npm postinstall, `build:release`,
