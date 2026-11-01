@@ -1069,7 +1069,9 @@ describe('List order: Move sheet and accessibility actions (REA-72)', () => {
     expect(Native.moveUnreadItem).not.toHaveBeenCalled();
   });
 
-  test('each unread row exposes its applicable moves as accessibility actions (TalkBack)', async () => {
+  // Declares the row's custom actions and routes them to the native move. Whether TalkBack offers
+  // them on the phone, and still activates the row on a double tap, is a device check (R-M01).
+  test('each unread row declares its applicable moves as accessibility actions and routes them', async () => {
     three();
     const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
     const names = (t: string) => (row(r, t).props.accessibilityActions as { name: string; label: string }[]).map(a => a.name);
@@ -1085,6 +1087,60 @@ describe('List order: Move sheet and accessibility actions (REA-72)', () => {
     expect(Native.moveUnreadItem).toHaveBeenCalledWith(1, 'bottom');
     await ReactTestRenderer.act(async () => row(r, 'One').props.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
     expect(Native.moveUnreadItem).toHaveBeenCalledTimes(2);
+  });
+
+  const changed = () => ReactTestRenderer.act(async () => { DeviceEventEmitter.emit('ReadMeItemsChanged'); });
+
+  test('after a move, the change event re-renders the List in the new order', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    (Native.moveUnreadItem as jest.Mock).mockImplementationOnce(async () => {
+      mockState.items = [mockState.items[2], mockState.items[0], mockState.items[1]];
+      return true;
+    });
+    await pressLabel(r, 'move Three');
+    await pressId(r, 'move top');
+    await changed();
+    const out = strings(r.toJSON()).join('\n');
+    expect(out.indexOf('"move Three"')).toBeLessThan(out.indexOf('"move One"'));
+    expect(out.indexOf('"move One"')).toBeLessThan(out.indexOf('"move Two"'));
+  });
+
+  test('the sheet offers the moves for the row\'s current place when the List changes while it is open', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await pressLabel(r, 'move Three'); // the bottom row: top, up
+    mockState.items = [mockState.items[1], mockState.items[2]]; // One was archived: Three is still last
+    await changed();
+    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move cancel']);
+    mockState.items = [mockState.items[0], mockState.items[1], { ...base, id: 4, title: 'Four' }]; // a share below
+    await changed();
+    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move down', 'move bottom', 'move cancel']);
+  });
+
+  test('the sheet closes when its item leaves the unread List', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await pressLabel(r, 'move Two');
+    mockState.items = [mockState.items[0], mockState.items[2]];
+    await changed();
+    expect(sheet(r).props.visible).toBe(false);
+    mockState.items = [mockState.items[0], { ...base, id: 2, title: 'Two' }, mockState.items[1]]; // restored
+    await changed();
+    expect(sheet(r).props.visible).toBe(false);
+  });
+
+  test('a rejected move reloads the List so it shows the stored order', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    (Native.moveUnreadItem as jest.Mock).mockImplementationOnce(async () => {
+      throw new Error('E_LIBRARY');
+    });
+    (Native.listItems as jest.Mock).mockClear();
+    await pressLabel(r, 'move Two');
+    await pressId(r, 'move up');
+    expect(Native.listItems).toHaveBeenCalled();
+    expect(r.toJSON()).not.toBeNull();
   });
 
   test('the List shows unread items in the order native gives them, without re-sorting', async () => {

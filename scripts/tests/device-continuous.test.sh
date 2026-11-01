@@ -35,7 +35,11 @@ case "$*" in
   # REA-47: STUB_UI names a file served as the uiautomator dump.
   "shell cat /sdcard/readme-ui.xml") [ -n "${STUB_UI:-}" ] && cat "$STUB_UI" 2>/dev/null ;;
   # REA-55: each tap appends the next line of STUB_TAPQ (the service's answer) to the log.
-  "shell input tap"*) if [ -n "${STUB_OVERLAY:-}" ] && [ "$(cat "$STUB_OVERLAY" 2>/dev/null || echo 0)" -gt 0 ]; then :
+  "shell input tap"*) # REA-72 fix round 1: STUB_UI_ON_TAP is served as the dump from the second tap on
+    # (a row's Delete, then the dialog's Delete), as the List would look after that delete.
+    if [ -n "${STUB_UI_ON_TAP:-}" ]; then n=$(($(cat "$STUB_UI_ON_TAP.n" 2>/dev/null || echo 0) + 1)); echo "$n" > "$STUB_UI_ON_TAP.n"
+      [ "$n" = 2 ] && cp "$STUB_UI_ON_TAP" "$STUB_UI"; fi
+    if [ -n "${STUB_OVERLAY:-}" ] && [ "$(cat "$STUB_OVERLAY" 2>/dev/null || echo 0)" -gt 0 ]; then :
     elif [ -n "${STUB_TAPQ:-}" ] && [ -s "$STUB_TAPQ" ]; then
       head -1 "$STUB_TAPQ" >> "$STUB_LOG"; sed -i 1d "$STUB_TAPQ"; fi ;;
   # REA-72: a swipe towards the List's bottom serves STUB_UI_NEXT (once) as the next dump.
@@ -547,5 +551,26 @@ check "with no test row anywhere along the List, cleanup is done" \
 : > "$T/ui"
 out=$(STUB_UI="$T/ui" UNLOCK_WAIT=1 src 'tests_remain && echo remain || echo none' 2>&1)
 check "a failed (empty) dump is never read as a clean List" "$(tail -1 <<<"$out")" remain
+
+# --- REA-72 fix round 1 (critic F3): cleanup runs on the owner's library and a delete cannot be
+# undone, so after each delete the List must have lost exactly that test row and nothing else ---
+DLG='<node text="Delete" bounds="[0,0][1,1]"/>'
+printf '%s' "$HEAD$TOGGLES$(row 'Owner thing' ready)$(row 'Kestrel test item one.' ready)$DLG" > "$T/ui"
+printf '%s' "$HEAD$TOGGLES$(row 'Owner thing' ready)" > "$T/ui-after"
+: > "$STUB_CALLS"; rm -f "$T/ui-after.n"
+out=$(STUB_UI="$T/ui" STUB_UI_ON_TAP="$T/ui-after" src 'if cleanup; then echo rc=0; else echo rc=1; fi' 2>&1)
+check "a delete that removed only its test row: cleanup is done" \
+  "$(grep -c 'cleanup: done' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,rc=0"
+printf '%s' "$HEAD$TOGGLES$(row 'Owner thing' ready)$(row 'Kestrel test item one.' ready)$DLG" > "$T/ui"
+printf '%s' "$HEAD$TOGGLES$(row 'Kestrel test item one.' ready)$DLG" > "$T/ui-after"
+: > "$STUB_CALLS"; rm -f "$T/ui-after.n"
+out=$(STUB_UI="$T/ui" STUB_UI_ON_TAP="$T/ui-after" src 'if cleanup; then echo rc=0; else echo rc=1; fi' 2>&1)
+check "a delete that took a non-test row instead: cleanup stops at once, INCOMPLETE and nonzero" \
+  "$(grep -c 'cleanup stopped' <<<"$out"),$(grep -c 'cleanup: INCOMPLETE' <<<"$out"),$(grep -o 'rc=[0-9]*' <<<"$out")" "1,1,rc=1"
+check "and it confirmed no second delete (the row's Delete, the dialog's Delete, then Unread)" \
+  "$(grep -c 'input tap' "$STUB_CALLS")" 3
+check "it names no owner title" "$(grep -c 'Owner thing' <<<"$out")" 0
+check "the List is scrolled with slow swipes that do not fling" \
+  "$(grep -cE '^ *if \[ "\$1" = up \]; then adb shell input swipe 670 2000 670 900 1500; else adb shell input swipe 670 900 670 2000 1500; fi$' "$S")" 1
 rm -f "$APKF" "$APKF.stamp"
 exit $fail

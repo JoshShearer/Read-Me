@@ -168,6 +168,10 @@ if [ -z "${UI_ONLY:-}" ] || [ "${UI_ONLY:-}" = order ]; then
   order_is "order: the three test texts deleted" AD
   if [ "${UI_ONLY:-}" = order ]; then
     echo "UI_ONLY=order: stopping after the List order section"
+    # The full run's log check comes at the end; an order-only run makes its own (AGENTS.md 1).
+    if device_has "$(adb logcat -d)" 'Plover order'; then
+      echo "FAIL: a log line carries shared text"; fail=1
+    fi
     echo "device:ui $([ $fail -eq 0 ] && echo PASS || echo FAIL)"
     exit "$fail"
   fi

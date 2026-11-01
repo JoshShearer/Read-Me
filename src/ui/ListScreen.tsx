@@ -52,8 +52,9 @@ export function ListScreen({
   const [items, setItems] = useState<Item[]>([]);
   const [archive, setArchive] = useState(false);
   const [playback, setPlayback] = useState<Playback | null>(null);
-  // The unread row whose Move sheet is open, with its index when it was opened.
-  const [moving, setMoving] = useState<{ item: Item; index: number } | null>(null);
+  // The id of the unread row whose Move sheet is open. Its place is looked up on every render,
+  // so a List that changes under the sheet never offers a move for a place it has left.
+  const [movingId, setMovingId] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     listItems().then(setItems, () => setItems([]));
@@ -92,11 +93,19 @@ export function ListScreen({
 
   const move = (item: Item, to: Move) => {
     // Relative to the stored order at the write (ADR 0017); the List refreshes on the change.
-    moveItem(item.id, to).catch(() => undefined);
+    // A rejected move fires no change, so reload to show the order that is actually stored.
+    moveItem(item.id, to).catch(refresh);
   };
 
   const shown = visibleItems(items, archive);
-  const sheetMoves = moving ? moves(moving.index, shown.length) : [];
+  const movingIndex = !archive && movingId !== null ? shown.findIndex(i => i.id === movingId) : -1;
+  const moving = movingIndex >= 0 ? shown[movingIndex] : null;
+  const sheetMoves = moving ? moves(movingIndex, shown.length) : [];
+  // An item that left the unread List (archived, deleted, or the Archive shown) closes its sheet
+  // for good, so it never reopens by itself if the item comes back.
+  useEffect(() => {
+    if (movingId !== null && moving === null) setMovingId(null);
+  }, [movingId, moving]);
   return (
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
@@ -169,7 +178,7 @@ export function ListScreen({
                     appearance="tonal"
                     label="Move"
                     accessibilityLabel={`move ${item.title}`}
-                    onPress={() => setMoving({ item, index })}
+                    onPress={() => setMovingId(item.id)}
                   />
                 ) : null}
               </View>
@@ -184,12 +193,12 @@ export function ListScreen({
           label: MOVE_LABEL[m],
           testID: `move ${m}`,
           onPress: () => {
-            if (moving) move(moving.item, m);
-            setMoving(null);
+            if (moving) move(moving, m);
+            setMovingId(null);
           },
         }))}
         cancelTestID="move cancel"
-        onClose={() => setMoving(null)}
+        onClose={() => setMovingId(null)}
       />
     </View>
   );

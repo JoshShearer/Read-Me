@@ -168,6 +168,27 @@ class StoreOrderTest {
     assertEquals(values.size, values.toSet().size)
   }
 
+  @Test fun duplicateValuesAreRenumberedInTheirCurrentOrderBeforeAMove() {
+    // No path writes duplicates; move's recovery branch must still keep the List's order.
+    val s = store()
+    val ids = (1..5).map { s.insertText("t$it", listOf("x."), it * 1000L) }
+    s.archive(ids[1], 10)
+    val db = s.writableDatabase
+    db.execSQL("UPDATE items SET list_order = 7 WHERE id IN (?, ?)", arrayOf<Any>(ids[2], ids[3]))
+    db.execSQL("UPDATE items SET list_order = 9 WHERE id = ?", arrayOf<Any>(ids[4]))
+    db.execSQL("UPDATE items SET list_order = 1 WHERE id = ?", arrayOf<Any>(ids[0]))
+    assertEquals(listOf(ids[0], ids[2], ids[3], ids[4]), unread(s)) // ties by id
+    val archive = archived(s)
+    assertTrue(s.move(ids[4], Move.UP))
+    assertEquals(listOf(ids[0], ids[2], ids[4], ids[3]), unread(s))
+    assertEquals(archive, archived(s))
+    val values = orders(s)
+    assertTrue(values.none { it == null })
+    assertEquals(values.size, values.toSet().size)
+    assertTrue(s.move(ids[0], Move.BOTTOM))
+    assertEquals(listOf(ids[2], ids[4], ids[3], ids[0]), unread(s))
+  }
+
   @Test fun theOrderSurvivesANewProcess() {
     val s = store()
     val (a, b, c) = (1..3).map { s.insertText("t$it", listOf("x."), it * 1000L) }

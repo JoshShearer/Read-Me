@@ -538,9 +538,10 @@ $(body_text "${BODY[$k]}")"
 
 # --- REA-72: the test items sit at the bottom of the unread List, below the owner's ---
 
-# scroll_list up|down: one swipe of the List; up moves towards its bottom.
+# scroll_list up|down: one swipe of the List; up moves towards its bottom. Slow (1.5 s), so the
+# List does not fling and is at rest when the next dump is read.
 scroll_list() {
-  if [ "$1" = up ]; then adb shell input swipe 670 2000 670 900 300; else adb shell input swipe 670 900 670 2000 300; fi
+  if [ "$1" = up ]; then adb shell input swipe 670 2000 670 900 1500; else adb shell input swipe 670 900 670 2000 1500; fi
   sleep 1
 }
 # to_edge up|down: scrolls the view shown to its bottom (up) or top (down): done when a swipe
@@ -557,10 +558,29 @@ to_edge() {
   done
   echo "FAIL: the List's $([ "$1" = up ] && echo bottom || echo top) was not reached"; return 1
 }
+# tap_stable <attr> <ERE>: taps a node's centre only when two dumps in a row put it at the same
+# place, so a row still moving (a fetch finishing above it) is never tapped. Like tap_node, 10 s.
+tap_stable() {
+  local a b
+  for _ in $(seq 10); do
+    a=$(centre "$(ui)" "$1" "$2")
+    b=$(centre "$(ui)" "$1" "$2")
+    [ -n "$a" ] && [ "$a" = "$b" ] && break
+    a=""
+    sleep 1
+  done
+  [ -n "$a" ] || { echo "FAIL: nothing held still on screen with $1 matching $2"; return 1; }
+  clear_of_overlays || return 1
+  adb shell input tap $a
+}
+# others <ui dump>: the dump's row titles that are not test titles, sorted (compared, never printed).
+others() { row_titles "$1" | grep -vxF -f <(printf '%s\n' "${TITLES[@]}") | sort || true; }
 # delete_tests: deletes every test row in the view shown, from its top down, one per dump (the
-# List re-renders after each delete). Nonzero when a delete did not take or a dump failed.
+# List re-renders after each delete). Nonzero when a delete did not take or a dump failed; 2,
+# and nothing more is deleted, when a delete did not remove exactly its test row and nothing
+# else (the dialog does not name the item, so this is checked after; REA-72 fix round 1).
 delete_tests() {
-  local fail=0 d t found prev="-" now tries=0
+  local fail=0 d t found prev="-" now tries=0 d2 n0 n1 gone
   to_edge down >/dev/null || fail=1
   for _ in $(seq 80); do
     d=$(ui)
@@ -572,9 +592,17 @@ delete_tests() {
     if [ -n "$found" ]; then
       tries=$((tries + 1))
       [ "$tries" -le 12 ] || { fail=1; break; }
-      { tap_node content-desc "delete $(escape "$found")" >/dev/null && tap_node text '(Delete|DELETE)' >/dev/null; } \
+      n0=$(row_titles "$d" | grep -cxF "$found" || true)
+      { tap_stable content-desc "delete $(escape "$found")" >/dev/null && tap_node text '(Delete|DELETE)' >/dev/null; } \
         || { fail=1; break; }
       sleep 1
+      for _ in 1 2 3; do d2=$(ui); device_has "$d2" 'content-desc="settings"' && break; sleep 1; done
+      n1=$(row_titles "$d2" | grep -cxF "$found" || true)
+      gone=$(comm -23 <(others "$d") <(others "$d2"))
+      if ! device_has "$d2" 'content-desc="settings"' || [ $((n0 - n1)) -ne 1 ] || [ -n "$gone" ]; then
+        echo "FAIL: a cleanup delete did not remove exactly one test row, or a row that is not a test row left the view; cleanup stopped"
+        return 2
+      fi
       prev="-"
       continue
     fi
@@ -603,10 +631,12 @@ tests_remain() {
 }
 
 cleanup() {
-  local fail=0 view
+  local fail=0 view rc
   to_list || return 1
   for view in unread archive; do
-    delete_tests || fail=1
+    delete_tests && rc=0 || rc=$?
+    if [ "$rc" = 2 ]; then fail=1; break; fi # a wrong delete: touch nothing more
+    [ "$rc" = 0 ] || fail=1
     if tests_remain; then echo "FAIL: a test item may still be in the $view view (read to its end)"; fail=1; fi
     [ "$view" = unread ] && { tap_node content-desc archive >/dev/null || fail=1; sleep 1; }
   done

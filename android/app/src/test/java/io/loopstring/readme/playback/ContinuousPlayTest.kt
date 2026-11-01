@@ -90,7 +90,9 @@ class ContinuousPlayTest {
     store.completeExtraction(poor, "Poor", null, null, listOf(ParagraphRow("p", "Short.")), poor = true)
     val allCut = text(160, "Cut. Away.")
     store.setCuts(allCut, listOf(0))
-    val blank = text(170, "   ")
+    // U+00A0 between two spaces, as an escape so an editor cannot fold it: blank only because
+    // Segmenter treats NBSP as whitespace (JS \s), so nothing is kept and the item is skipped.
+    val blank = text(170, " \u00A0 ")
     store.insertLink("https://example.com/f", "example.com", 180) // fetching
     val failed = store.insertLink("https://example.com/x", "example.com", 185)
     store.fetchFailed(failed, "offline")
