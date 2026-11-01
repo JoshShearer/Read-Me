@@ -105,6 +105,10 @@ export interface Spec extends TurboModule {
   setCut(id: number, paragraphIndex: number, cut: boolean): Promise<void>;
   archiveItem(id: number): Promise<void>;
   restoreItem(id: number): Promise<void>;
+  // REA-72 (ADR 0017): moves an unread item relative to the stored List order at the write;
+  // `to` is 'top' | 'up' | 'down' | 'bottom'. False when nothing moved (missing, archived, or
+  // already at that edge). Named long on purpose: spec-methods.mjs only checks 9+ chars.
+  moveUnreadItem(id: number, to: string): Promise<boolean>;
   play(
     itemId: number,
     title: string,

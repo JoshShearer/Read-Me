@@ -162,6 +162,10 @@ export const setCuts = (id: number, indices: readonly number[]) =>
 export const archiveItem = (id: number) => Native.archiveItem(id);
 export const restoreItem = (id: number) => Native.restoreItem(id);
 
+/** REA-72 (ADR 0017): a relative move in the unread List; native decides the result. */
+export type Move = 'top' | 'up' | 'down' | 'bottom';
+export const moveItem = (id: number, to: Move): Promise<boolean> => Native.moveUnreadItem(id, to);
+
 /** REA-63 (ADR 0016): the unread item a share matched, once; null when there is none. */
 export const takeSharedOpen = (): Promise<number | null> => Native.takeSharedOpen();
 

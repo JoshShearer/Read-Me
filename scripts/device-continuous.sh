@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # npm run device:continuous - R-S05 on the phone, WITHOUT clearing Read Me's data (it runs on the
 # owner's own library). Installs over the current build (adb install -r, data kept), notes
-# Settings' Continuous play switch and turns it on, shares four synthetic texts (a long buffer
-# first, then T1 long, T2 medium, T3 newest and short), checks they are the top four unread rows
-# (T3, T2, T1, buffer) and all ready, opens T3 (Trim,
+# Settings' Continuous play switch and turns it on, shares four synthetic texts (T3 short, T2
+# medium, T1 long, then a long buffer), which REA-72 (ADR 0017) puts at the bottom of the unread
+# List; scrolls to the bottom and checks they are the last four unread rows (T3, T2, T1, buffer,
+# the buffer the very last) and all ready, opens T3 (Trim,
 # then the Reader), plays it and turns the screen off. From the service's log lines (ids and
 # counts only) it checks that T3 hands over to T2 and T2 to T1 with the screen off, each archived
 # at its end and the next two started by the service (no JS start), then that the user's first
@@ -23,13 +24,15 @@
 # highlighted sentence and Pause. Taps go to the Play/Pause centre captured once, from the dump
 # of the idle Reader before Play (the dock button never moves). A dump is taken only on a FAIL.
 #
-# Safety on the owner's library. The owner's unread items sort below the test items, so the chain
-# must never go past them (REA-47):
+# Safety on the owner's library (REA-47). Since REA-72 a share goes to the bottom of the unread
+# List, so the owner's unread items sit above the test items and the chain (next row down) never
+# reaches them; below the buffer there is nothing, unless something is shared during the run:
 #  - each test item is identified by its distinct sentence count in the service's own log line,
-#    and only after the four were seen as the top four unread rows, each ready (List order is the
+#    and only after the four were seen as the last four unread rows, each ready (List order is the
 #    chain's order; a non-ready item is skipped); an item that does not match stops Read Me at once;
-#  - the buffer (the oldest test item, directly below T1) is never meant to play: it is what the
-#    chain reaches if T1 ends before the switch is off, instead of the owner's newest item. A
+#  - the buffer (the newest test item, directly below T1, the last row) is never meant to play: it
+#    is what the chain reaches if T1 ends before the switch is off, instead of anything shared
+#    during the run. A
 #    background watcher force-stops Read Me within about a second of T1's continue line, and the
 #    script checks the watcher is alive and stops Read Me itself when it is not;
 #  - while T1 (long) plays, the script wakes the screen and turns the switch OFF through Settings
@@ -55,7 +58,7 @@ SCREEN_OFF=${SCREEN_OFF:-1}
 UNLOCK_WAIT=${UNLOCK_WAIT:-180}
 SWITCH_DEADLINE=${SWITCH_DEADLINE:-45}
 # Titles are the first paragraph (Intake.textTitle), read as a sentence of their own; the marker
-# word finds them on screen. TITLES[0] is T1, read last; TITLES[3] is the buffer, shared first.
+# word finds them on screen. TITLES[0] is T1, read last; TITLES[3] is the buffer, shared last.
 MARK=Kestrel
 TITLES=("$MARK test item one." "$MARK test item two." "$MARK test item three." "$MARK test item buffer.")
 # Body sentences per item. Distinct counts identify each item in the service's log line. About
@@ -132,23 +135,27 @@ row_titles() {
 }
 # field <line> <name>: the number after name= in a log line.
 field() { grep -oE "(^| )$2=[0-9]+" <<<"$1" | head -1 | cut -d= -f2; }
-# rows_ok <ui dump>: the top four unread rows are T3, T2, T1 and the buffer, in that order.
+# rows_ok <ui dump>: the last four unread rows are T3, T2, T1 and the buffer, in that order, the
+# buffer the last row of the dump (REA-72: shares go to the bottom). The dump must be of the
+# List's bottom (to_edge up), or the last row of the dump is not the last of the List.
 rows_ok() {
-  [ "$(row_titles "$1" | head -4 | tr '\n' '|')" = "${TITLES[2]}|${TITLES[1]}|${TITLES[0]}|${TITLES[3]}|" ]
+  [ "$(row_titles "$1" | tail -4 | tr '\n' '|')" = "${TITLES[2]}|${TITLES[1]}|${TITLES[0]}|${TITLES[3]}|" ]
 }
-# rows_ready <ui dump>: each of the top four rows shows the badge "ready". Continuous play skips
-# an item that is not ready, so a fetching buffer would let the chain reach the owner's item. A
-# badge is a Text with nothing naming its row, so the dump is split at each row's delete button
-# (the last node of a row): segment i holds row i's badge.
+# rows_ready <ui dump>: each of the last four rows shows the badge "ready". Continuous play skips
+# an item that is not ready, so a fetching buffer would let the chain go past it. A badge is a
+# Text with nothing naming its row, so the dump is split at each row's delete button: segment i
+# holds row i's badge (a row's Move button follows its delete button, in the next segment's head).
 rows_ready() {
-  local segs i
+  local segs i n
+  n=$(row_titles "$1" | grep -c . || true)
+  [ "$n" -ge 4 ] || return 1
   segs=$(tr -d '\n' <<<"$1" | sed 's/content-desc="delete /\n/g')
-  for i in 1 2 3 4; do
+  for i in $((n - 3)) $((n - 2)) $((n - 1)) "$n"; do
     device_has "$(sed -n "${i}p" <<<"$segs")" 'text="ready"' || return 1
   done
 }
 # buffer_seen <log>: when T1's continue line names an item with the buffer's sentence count, read
-# from its start and older than T1, that item is the buffer: its id joins TEST_IDS and
+# from its start and newer than T1 (shared after it, REA-72), that item is the buffer: its id joins TEST_IDS and
 # BUFFER_PLAYED is set. Read from the log itself, so it never depends on the watcher's timing.
 buffer_seen() {
   local line id
@@ -156,7 +163,7 @@ buffer_seen() {
   line=$(grep -oE "playback continue from=$ID1 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" <<<"$1" | head -1 || true)
   [ -n "$line" ] || return 0
   id=$(field "$line" item)
-  if count_ok 3 "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -lt "$ID1" ]; then
+  if count_ok 3 "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -gt "$ID1" ]; then
     case " $TEST_IDS " in *" $id "*) ;; *) TEST_IDS+=" $id" ;; esac
     BUFFER_PLAYED=1
     BUFFER_ID=$id
@@ -165,7 +172,7 @@ buffer_seen() {
 }
 
 # next_seen <log> <from id> <BODY index>: when a test item's continue line names an item with
-# the next test item's count, read from its start and older, that item is the next test item and
+# the next test item's count, read from its start and newer (shared after it), that item is the next test item and
 # joins TEST_IDS. A run that dies before next_test records it (a failed Reader check on T2) must
 # not report T1 as a non-test item. Cleanup deletes by title, never by id.
 next_seen() {
@@ -174,7 +181,7 @@ next_seen() {
   line=$(grep -oE "playback continue from=$2 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" <<<"$1" | head -1 || true)
   [ -n "$line" ] || return 0
   id=$(field "$line" item)
-  if count_ok "$3" "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -lt "$2" ]; then
+  if count_ok "$3" "$(field "$line" sentences)" && [ "$(field "$line" start)" = 0 ] && [ "$id" -gt "$2" ]; then
     case " $TEST_IDS " in *" $id "*) ;; *) TEST_IDS+=" $id" ;; esac
   fi
   return 0
@@ -514,11 +521,12 @@ check_watch() {
   fi
   watcher_alive || { stop_readme; die "the chain watcher is not running; stopped Read Me"; }
 }
-# share_all: the four texts, oldest first, so List order (newest first) is T3, T2, T1, buffer.
+# share_all: the four texts in List order, T3, T2, T1, buffer: each share goes to the bottom
+# (REA-72, ADR 0017), so the buffer is the last row.
 # Text on stdin, never in the adb argv, which adbd logs (AGENTS.md, SPIKE-01).
 share_all() {
   local k text
-  for k in 3 0 1 2; do
+  for k in 2 1 0 3; do
     text="${TITLES[$k]}
 
 $(body_text "${BODY[$k]}")"
@@ -528,20 +536,111 @@ $(body_text "${BODY[$k]}")"
   done
 }
 
+# --- REA-72: the test items sit at the bottom of the unread List, below the owner's ---
+
+# scroll_list up|down: one swipe of the List; up moves towards its bottom. Slow (1.5 s), so the
+# List does not fling and is at rest when the next dump is read.
+scroll_list() {
+  if [ "$1" = up ]; then adb shell input swipe 670 2000 670 900 1500; else adb shell input swipe 670 900 670 2000 1500; fi
+  sleep 1
+}
+# to_edge up|down: scrolls the view shown to its bottom (up) or top (down): done when a swipe
+# leaves the dump's row titles unchanged. A dump without the List's Settings button (a failed
+# dump) never counts as the edge. At most 40 swipes; fails when the edge was not reached.
+to_edge() {
+  local d prev="-" now
+  for _ in $(seq 40); do
+    d=$(ui)
+    now=$(row_titles "$d" | tr '\n' '|')
+    device_has "$d" 'content-desc="settings"' && [ "$now" = "$prev" ] && return 0
+    prev=$now
+    scroll_list "$1"
+  done
+  echo "FAIL: the List's $([ "$1" = up ] && echo bottom || echo top) was not reached"; return 1
+}
+# tap_stable <attr> <ERE>: taps a node's centre only when two dumps in a row put it at the same
+# place, so a row still moving (a fetch finishing above it) is never tapped. Like tap_node, 10 s.
+tap_stable() {
+  local a b
+  for _ in $(seq 10); do
+    a=$(centre "$(ui)" "$1" "$2")
+    b=$(centre "$(ui)" "$1" "$2")
+    [ -n "$a" ] && [ "$a" = "$b" ] && break
+    a=""
+    sleep 1
+  done
+  [ -n "$a" ] || { echo "FAIL: nothing held still on screen with $1 matching $2"; return 1; }
+  clear_of_overlays || return 1
+  adb shell input tap $a
+}
+# others <ui dump>: the dump's row titles that are not test titles, sorted (compared, never printed).
+others() { row_titles "$1" | grep -vxF -f <(printf '%s\n' "${TITLES[@]}") | sort || true; }
+# delete_tests: deletes every test row in the view shown, from its top down, one per dump (the
+# List re-renders after each delete). Nonzero when a delete did not take or a dump failed; 2,
+# and nothing more is deleted, when a delete did not remove exactly its test row and nothing
+# else (the dialog does not name the item, so this is checked after; REA-72 fix round 1).
+delete_tests() {
+  local fail=0 d t found prev="-" now tries=0 d2 n0 n1 gone
+  to_edge down >/dev/null || fail=1
+  for _ in $(seq 80); do
+    d=$(ui)
+    device_has "$d" 'content-desc="settings"' || { fail=1; break; }
+    found=""
+    for t in "${TITLES[@]}"; do
+      if device_has "$d" "content-desc=\"delete $(escape "$t")\""; then found=$t; break; fi
+    done
+    if [ -n "$found" ]; then
+      tries=$((tries + 1))
+      [ "$tries" -le 12 ] || { fail=1; break; }
+      n0=$(row_titles "$d" | grep -cxF "$found" || true)
+      { tap_stable content-desc "delete $(escape "$found")" >/dev/null && tap_node text '(Delete|DELETE)' >/dev/null; } \
+        || { fail=1; break; }
+      sleep 1
+      for _ in 1 2 3; do d2=$(ui); device_has "$d2" 'content-desc="settings"' && break; sleep 1; done
+      n1=$(row_titles "$d2" | grep -cxF "$found" || true)
+      gone=$(comm -23 <(others "$d") <(others "$d2"))
+      if ! device_has "$d2" 'content-desc="settings"' || [ $((n0 - n1)) -ne 1 ] || [ -n "$gone" ]; then
+        echo "FAIL: a cleanup delete did not remove exactly one test row, or a row that is not a test row left the view; cleanup stopped"
+        return 2
+      fi
+      prev="-"
+      continue
+    fi
+    now=$(row_titles "$d" | tr '\n' '|')
+    [ "$now" = "$prev" ] && break
+    prev=$now
+    scroll_list up
+  done
+  return $fail
+}
+# tests_remain: true when the view shown holds a test row anywhere along its length, or when it
+# could not be read to its end (so a cleanup never says done on one dump of its top).
+tests_remain() {
+  local d prev="-" now all=""
+  to_edge down >/dev/null || return 0
+  for _ in $(seq 60); do
+    d=$(ui)
+    device_has "$d" 'content-desc="settings"' || return 0
+    device_has "$d" "$MARK test item" && return 0
+    now=$(row_titles "$d" | tr '\n' '|')
+    [ "$now" = "$prev" ] && return 1
+    prev=$now
+    scroll_list up
+  done
+  return 0
+}
+
 cleanup() {
-  local fail=0 t view
+  local fail=0 view rc
   to_list || return 1
   for view in unread archive; do
-    for t in "${TITLES[@]}"; do
-      while device_has "$(ui)" "content-desc=\"delete $(escape "$t")\""; do
-        { tap_node content-desc "delete $(escape "$t")" && tap_node text '(Delete|DELETE)'; } || { fail=1; break; }
-        sleep 1
-      done
-    done
+    delete_tests && rc=0 || rc=$?
+    if [ "$rc" = 2 ]; then fail=1; break; fi # a wrong delete: touch nothing more
+    [ "$rc" = 0 ] || fail=1
+    if tests_remain; then echo "FAIL: a test item may still be in the $view view (read to its end)"; fail=1; fi
     [ "$view" = unread ] && { tap_node content-desc archive >/dev/null || fail=1; sleep 1; }
   done
   tap_node content-desc unread >/dev/null || true
-  device_has "$(ui)" "$MARK test item" && { echo "FAIL: a test item is still on screen"; fail=1; }
   if [ -f "$STATE_FILE" ]; then
     if set_switch "$(cat "$STATE_FILE")"; then rm -f "$STATE_FILE"; else fail=1; fi
   fi
@@ -640,15 +739,16 @@ SHARED=1
 share_all
 to_list
 
-# The chain's order is List order: with the four as the top four rows, all ready, T3's next is
+# The chain's order is List order: with the four as the last four rows, all ready, T3's next is
 # T2, T2's is T1 and T1's the buffer. Anything else and nothing is played.
 rows=""
 for _ in $(seq 10); do
+  to_edge up >/dev/null || true
   d=$(ui)
   if rows_ok "$d" && rows_ready "$d"; then rows=ok; break; fi
   sleep 1
 done
-[ "$rows" = ok ] || die "the four test items are not the top four unread rows, each ready; nothing played"
+[ "$rows" = ok ] || die "the four test items are not the last four unread rows, each ready; nothing played"
 
 tap_node text "$(escape "${TITLES[2]}")"
 tap_node content-desc 'trim done'
@@ -675,7 +775,7 @@ next_test() {
   line=$(wait_log "playback continue from=$1 item=[0-9]+ sentences=[0-9]+ start=[0-9]+" 300) \
     || die "no handover from item $1"
   id=$(field "$line" item)
-  if ! count_ok "$2" "$(field "$line" sentences)" || [ "$(field "$line" start)" != 0 ] || [ "$id" -ge "$1" ]; then
+  if ! count_ok "$2" "$(field "$line" sentences)" || [ "$(field "$line" start)" != 0 ] || [ "$id" -le "$1" ]; then
     stop_readme
     die "the item after $1 ($id) is not the expected test item; stopped Read Me"
   fi

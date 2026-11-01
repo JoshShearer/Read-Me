@@ -43,11 +43,17 @@ class StoreTest {
     )
   }
 
-  @Test fun itemsAreNewestFirst() {
+  @Test fun itemsAreUnreadInListOrderThenTheArchiveNewestFirst() {
+    // REA-72 (ADR 0017) replaced newest-first for unread items: a new item goes to the bottom.
     val a = store.insertLink("https://a.com", "a.com", 1000)
     val b = store.insertLink("https://b.com", "b.com", 2000)
     val c = store.insertLink("https://c.com", "c.com", 2000)
-    assertEquals(listOf(c, b, a), store.items().map { it.id })
+    val d = store.insertLink("https://d.com", "d.com", 500)
+    assertEquals(listOf(a, b, c, d), store.items().map { it.id })
+    store.archive(a, 1)
+    store.archive(b, 1)
+    store.archive(c, 1)
+    assertEquals(listOf(d, c, b, a), store.items().map { it.id })
   }
 
   @Test fun aLongSingleParagraphRoundTrips() {

@@ -1,21 +1,30 @@
 // R-M01 List: unread items or the Archive; R-M10 states with their actions. Never logs.
+// REA-72 (ADR 0017): unread rows are a stored queue; each can be moved with the Move sheet or
+// with the row's accessibility actions (TalkBack), never only by dragging.
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, useColorScheme, View } from 'react-native';
+import { ActionSheet } from './ActionSheet';
 import { Button } from './Button';
 import { Text } from './Text';
 import {
   deleteItem,
   drainFetched,
   listItems,
+  moveItem,
   onItemsChanged,
   restoreItem,
   retryFetch,
   type Item,
+  type Move,
 } from '../library/library';
 import { getPlayback, marker, onPlayback, type Playback } from '../library/playback';
 import {
+  A11Y_MOVE,
+  A11Y_NAME,
   ACTION_LABEL,
+  MOVE_LABEL,
   actions,
+  moves,
   badge,
   guidance,
   subtitle,
@@ -43,6 +52,9 @@ export function ListScreen({
   const [items, setItems] = useState<Item[]>([]);
   const [archive, setArchive] = useState(false);
   const [playback, setPlayback] = useState<Playback | null>(null);
+  // The id of the unread row whose Move sheet is open. Its place is looked up on every render,
+  // so a List that changes under the sheet never offers a move for a place it has left.
+  const [movingId, setMovingId] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     listItems().then(setItems, () => setItems([]));
@@ -79,7 +91,21 @@ export function ListScreen({
     }
   };
 
+  const move = (item: Item, to: Move) => {
+    // Relative to the stored order at the write (ADR 0017); the List refreshes on the change.
+    // A rejected move fires no change, so reload to show the order that is actually stored.
+    moveItem(item.id, to).catch(refresh);
+  };
+
   const shown = visibleItems(items, archive);
+  const movingIndex = !archive && movingId !== null ? shown.findIndex(i => i.id === movingId) : -1;
+  const moving = movingIndex >= 0 ? shown[movingIndex] : null;
+  const sheetMoves = moving ? moves(movingIndex, shown.length) : [];
+  // An item that left the unread List (archived, deleted, or the Archive shown) closes its sheet
+  // for good, so it never reopens by itself if the item comes back.
+  useEffect(() => {
+    if (movingId !== null && moving === null) setMovingId(null);
+  }, [movingId, moving]);
   return (
     <View collapsable={false} style={ui.screen}>
       <View collapsable={false} style={ui.header}>
@@ -100,14 +126,21 @@ export function ListScreen({
             {archive ? 'Nothing archived yet.' : 'In any app, tap Share and pick Read Me Offline to add a link or text.'}
           </Text>
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const acts = actions(item);
+          const rowMoves = archive ? [] : moves(index, shown.length);
           const mark = marker(item, playback);
           const sub = subtitle(item);
           const help = guidance(item);
           return (
             <Pressable
+              testID={`row ${item.title}`}
               style={ui.entry}
+              accessibilityActions={rowMoves.map(m => ({ name: A11Y_NAME[m], label: MOVE_LABEL[m] }))}
+              onAccessibilityAction={e => {
+                const to = A11Y_MOVE[e.nativeEvent.actionName];
+                if (to && rowMoves.includes(to)) move(item, to);
+              }}
               onPress={() => {
                 if (acts.includes('open')) onOpen(item);
               }}>
@@ -140,10 +173,32 @@ export function ListScreen({
                       onPress={() => run(a, item)}
                     />
                   ))}
+                {rowMoves.length > 0 ? (
+                  <Button
+                    appearance="tonal"
+                    label="Move"
+                    accessibilityLabel={`move ${item.title}`}
+                    onPress={() => setMovingId(item.id)}
+                  />
+                ) : null}
               </View>
             </Pressable>
           );
         }}
+      />
+      <ActionSheet
+        visible={moving !== null}
+        title="Move"
+        actions={sheetMoves.map(m => ({
+          label: MOVE_LABEL[m],
+          testID: `move ${m}`,
+          onPress: () => {
+            if (moving) move(moving, m);
+            setMovingId(null);
+          },
+        }))}
+        cancelTestID="move cancel"
+        onClose={() => setMovingId(null)}
       />
     </View>
   );

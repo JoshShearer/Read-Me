@@ -83,6 +83,15 @@ display and at font scale 2.0 (amended 2026-10-21, REA-58: on a 360 dp Galaxy S2
 "+" was off the screen; `device:themes`' narrow pass checks it).
 The colours are the LoopString web app's Material 3 palette (amended 2026-10-03, REA-24).
 
+Amended 2026-11-01 (REA-72, ADR 0017): the List shows unread items in a stored order. A new
+item (link, text or file) and an item restored from the Archive go to the bottom; a share that
+matches an unread item (R-M02 as amended) leaves it where it is. Any unread item MUST be movable
+from any position to any other without dragging: Move to top, Move up, Move down and Move to
+bottom, in a sheet from the row's Move button and as the row's accessibility actions (TalkBack).
+The order MUST survive an app restart and a process kill. The Archive view is newest-shared first
+(`created_at DESC, id DESC`) and is not reorderable. On the upgrade to this order, existing items
+are listed oldest first.
+
 ### R-M02 - Share-sheet intake
 
 The app MUST register as an `ACTION_SEND` target for `text/plain`.
@@ -418,7 +427,8 @@ user opens an item. The service makes the handover itself (R-M07: screen off, JS
 involved). R-S02's "at the end of the current item" overrides it. With the switch off,
 behaviour is R-M11's: archive and stop.
 
-Amended 2026-10-09 (REA-41, ADR 0011): "List order" is `created_at DESC, id DESC`, and the next
+Amended 2026-10-09 (REA-41, ADR 0011; its definition of List order superseded on 2026-11-01,
+below): "List order" is `created_at DESC, id DESC`, and the next
 item is the first unarchived `ready` item after the finished one under that order that has at
 least one kept sentence, evaluated at the handover; it never wraps to the top, so items shared
 during the chain are not picked up. An item read this way keeps `opened_at` unset and gets no
@@ -456,6 +466,15 @@ synthesized as before. A pause, Stop, jump, rate, voice or engine change, or del
 prepared item discards it; prepared audio is deleted with its item.
 
 ## Could Have
+
+
+Amended 2026-11-01 (REA-72, ADR 0017), superseding the 2026-10-09 definition of List order:
+"List order" is R-M01's stored order (`list_order`, then id), and the next item is the first
+unarchived `ready` item below the finished one in that order that has at least one kept sentence,
+evaluated at the handover. It never wraps to the top. Items shared or restored during the chain
+are appended at the bottom and are reached. A reorder during the chain does not end it, and a
+next item prepared early (REA-49) that is no longer the next row down is discarded at the
+handover. An item played from the Archive hands over from its own stored place.
 
 ### R-C01 - Save to Obsidian
 Write an item into the user's vault as a markdown note (via the Storage Access Framework
@@ -563,7 +582,8 @@ does not depend on the JS runtime.
 
 Continuous play (R-S05, ADR 0011): when the switch is on and the player finishes the last
 kept sentence, the service archives the item under the queue lock and begins a handover; it then
-builds the next unread item's sentences with its own Kotlin segmenter outside the lock, and loads
+builds the next unread item's sentences (the next row down in the stored List order, ADR 0017)
+with its own Kotlin segmenter outside the lock, and loads
 it only if nothing happened meanwhile (a pause, Stop, user play or speaker change ends the
 handover; a next item deleted meanwhile is refused and ends the chain). The foreground, focus,
 the wake lock and the media session are kept throughout. This is the one case where the service

@@ -36,12 +36,13 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
         return true;
       },
     ),
+    moveUnreadItem: jest.fn(async () => true),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   },
 }));
 
-import { drainFetched, listItems } from '../src/library/library';
+import { drainFetched, listItems, moveItem } from '../src/library/library';
 
 const row = (id: number, state: string, body: string | null = null): Row => ({
   id,
@@ -139,4 +140,10 @@ test('the drain reads the fetched list, never the library with its stats (REA-50
   expect(await drainFetched(fakeExtract)).toBe(1);
   expect(Native.listFetched).toHaveBeenCalled();
   expect(Native.listItems).not.toHaveBeenCalled();
+});
+
+test('moveItem passes the id and the move through (REA-72)', async () => {
+  const Native = jest.requireMock('../src/native/NativeReadMeSpeech').default;
+  await expect(moveItem(4, 'bottom')).resolves.toBe(true);
+  expect(Native.moveUnreadItem).toHaveBeenCalledWith(4, 'bottom');
 });

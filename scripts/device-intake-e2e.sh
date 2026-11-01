@@ -62,6 +62,29 @@ device_has "$screen" 'text="fetching"' && { echo "FAIL: an item still fetching";
 # Every row's state badge (text=, not the row's content-desc, which repeats it).
 rows() { grep -cE 'text="(ready|extract-poor|fetching|fetched|fetch-failed[^"]*)"' <<<"${screen//\/>/$'\n'}" || true; }
 rows_before=$(rows)
+# REA-72 (ADR 0017): each share went to the bottom, so the rows are in share order: the link, the
+# text, the dead link, the .invalid host, the http link last. Read from one dump, so first the
+# dump must hold all five rows (a taller row could push the last one off screen). Titles are
+# compared as symbols (L the first link, T the text, D the dead host, N the .invalid host, H any
+# other title, the http link's), never printed.
+order_of() {
+  { grep -oE 'content-desc="delete [^"]*"' <<<"$1" || true; } | sed -E 's/^content-desc="delete //; s/"$//' | while IFS= read -r t; do
+    case "$t" in
+      "$TEXT_MARK"*) printf T ;;
+      127.0.0.1) printf D ;;
+      nowebsite.invalid) printf N ;;
+      *) printf H ;;
+    esac
+  done
+}
+order_before=$(order_of "$screen")
+if [ "$rows_before" -ne 5 ]; then
+  echo "FAIL: expected all 5 rows in one dump to check the order, saw $rows_before"; fail=1
+elif [ "$order_before" != HTDNH ]; then
+  echo "FAIL: the rows are not in share order with the last share at the bottom (expected HTDNH, saw $order_before)"; fail=1
+else
+  echo "order: the last share is the bottom row (HTDNH)"
+fi
 
 # REA-63 (ADR 0016): a second share of an unread link opens that item and fetches nothing.
 # These shares go through am start, which puts ShareActivity in Read Me's own task, on top of the
@@ -94,6 +117,8 @@ readies=$(grep -cE 'text="(ready|extract-poor)"' <<<"${screen//\/>/$'\n'}" || tr
 [ "$readies" -ge 3 ] || { echo "FAIL: after the second link share expected 3 readable items, saw $readies"; fail=1; }
 n=$(rows)
 [ "$n" -eq "$rows_before" ] || { echo "FAIL: second link share: $rows_before rows before, $n after"; fail=1; }
+# REA-72: a matched share writes nothing, so the matched item keeps its place.
+[ "$(order_of "$screen")" = "$order_before" ] || { echo "FAIL: second link share: the row order changed"; fail=1; }
 device_has "$screen" 'text="fetching"' && { echo "FAIL: second link share: a row is fetching"; fail=1; }
 b=$(grep -oE 'content-desc="archive"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' <<<"$screen" | head -1 \
   | grep -oE '[0-9]+' | tail -4 | tr '\n' ' ' || true)

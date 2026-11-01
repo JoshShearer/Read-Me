@@ -4,7 +4,8 @@ import io.loopstring.readme.store.ItemRow
 import io.loopstring.readme.store.Store
 
 /**
- * R-S05: which item continuous play reads after [Store.unreadAfter]'s first candidate that has
+ * R-S05: which item continuous play reads after the finished one: [Store.unreadAfter]'s first
+ * candidate (the next row down in the stored List order, REA-72, ADR 0017) that has
  * at least one kept sentence, from its saved position (remapped) or its start. Reads only: an
  * item read this way keeps opened_at NULL and gets no cuts (ADR 0011), so the user's own first
  * open still shows Trim (R-M05).

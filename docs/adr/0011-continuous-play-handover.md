@@ -167,3 +167,26 @@ waits for its synthesis (ADR 0012 amended the same day).
   prepare none after=<id> ms=<n>` (ms: the time to build it); the handover line gains
   `prepared=<0|1>`, 1 only when the player started on prepared audio at the load. The
   acceptance read is `playback handover ... ms=<n> prepared=1`.
+
+## Amendment 2026-11-01 (REA-72): the next row down in the stored order
+
+ADR 0017 made the unread List a stored queue order (`items.list_order`): new shares and restores
+go to the bottom and any unread item can be moved.
+
+- **Next item.** The first unarchived `ready` item with at least one kept sentence below the
+  finished one under `(list_order, id)` (`Store.unreadAfter`), evaluated at the handover (and
+  early since REA-49, confirmed at the handover). The finished item keeps its value when
+  archived, so "below" is its own place; an item played from the Archive uses its own stored
+  value. "Items shared during the chain (newer, above) are not picked up" no longer holds: a
+  share or restore during the chain is appended at the bottom and is reached if the chain gets
+  there. An item moved above the one being read is not reached. A reorder alone never ends the
+  chain; a prepared next item that is no longer the next row down fails the confirmation and is
+  discarded (as "moved" above already said).
+- **Device check.** `npm run device:continuous` shares T3, T2, T1 and then the buffer, so they
+  are the last four unread rows, below the owner's items, the buffer the very last; nothing plays
+  unless the List, scrolled to its bottom, ends with exactly those four, each ready. Each next
+  test item must have a higher id than the one before. The buffer now guards against anything
+  shared during the run (below it) rather than the owner's newest item. Its cleanup scrolls each
+  view (unread, then Archive) from top to bottom, deleting every test row, and reports
+  `cleanup: INCOMPLETE` unless a read of the whole view finds none.
+

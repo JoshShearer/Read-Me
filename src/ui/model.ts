@@ -1,6 +1,6 @@
 // The decisions behind the screens, kept pure so Jest can pin them. Screens render; this
 // decides. Nothing here reaches native code.
-import type { Item } from '../library/library';
+import type { Item, Move } from '../library/library';
 import type { Paragraph } from '../types';
 
 export type Route =
@@ -81,8 +81,41 @@ export const sharedOpenUnreadable = (id: number): { stack: Route[]; markOpened: 
   markOpened: false,
 });
 
+// Native sends unread items in the stored List order and the Archive newest-shared first
+// (REA-72, ADR 0017); this filters and never re-sorts.
 export const visibleItems = (items: readonly Item[], archive: boolean): Item[] =>
   items.filter(i => (i.archivedAt !== undefined) === archive);
+
+/** REA-72: the moves that change something for the unread row at [index] of [count]. */
+export function moves(index: number, count: number): Move[] {
+  if (count < 2) return [];
+  const out: Move[] = [];
+  if (index > 0) out.push('top', 'up');
+  if (index < count - 1) out.push('down', 'bottom');
+  return out;
+}
+
+export const MOVE_LABEL: Record<Move, string> = {
+  top: 'Move to top',
+  up: 'Move up',
+  down: 'Move down',
+  bottom: 'Move to bottom',
+};
+
+/** REA-72: the row's accessibility action names (TalkBack's custom actions) and their moves. */
+export const A11Y_MOVE: Record<string, Move> = {
+  moveToTop: 'top',
+  moveUp: 'up',
+  moveDown: 'down',
+  moveToBottom: 'bottom',
+};
+
+export const A11Y_NAME: Record<Move, string> = {
+  top: 'moveToTop',
+  up: 'moveUp',
+  down: 'moveDown',
+  bottom: 'moveToBottom',
+};
 
 export type Action = 'open' | 'retry' | 'restore' | 'delete';
 

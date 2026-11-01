@@ -37,6 +37,25 @@ data class ItemStats(val words: Int, val keptChars: Int, val readChars: Int)
 /** REA-63: what [Store.findUnreadLinkOrInsert] did: matched an unread item, or created one. */
 data class LinkShare(val id: Long, val created: Boolean)
 
+/** REA-72 (ADR 0017): a move of one unread item, relative to the stored List order at the write. */
+enum class Move {
+  TOP, UP, DOWN, BOTTOM;
+
+  companion object {
+    /**
+     * The JS names, mapped explicitly. An unknown name throws without echoing it: the module's
+     * rejection carries the class only, and the string never reaches a message.
+     */
+    fun of(name: String): Move = when (name) {
+      "top" -> TOP
+      "up" -> UP
+      "down" -> DOWN
+      "bottom" -> BOTTOM
+      else -> throw IllegalArgumentException("unknown move")
+    }
+  }
+}
+
 object States {
   const val FETCHING = "fetching"
   const val FETCHED = "fetched"
@@ -49,7 +68,8 @@ object States {
  * The library (ADR 0001: Kotlin owns the database; JS goes through ReadMeSpeech). Item
  * lifecycle per ADR 0007. A fetched page's HTML is a file under files/bodies until JS extracts
  * it: a CursorWindow (2 MB) cannot hold a 5 MB body. Every write fires ItemEvents.changed().
- * Nothing here logs but [backfillAtStart], with counts, a duration and a class name only.
+ * Nothing here logs but [backfillAtStart] and the order numbering at open ([ensureOrderColumn]),
+ * with counts, a duration and a class name only.
  */
 class Store private constructor(context: Context) :
   SQLiteOpenHelper(context, DB_NAME, null, VERSION) {
@@ -99,6 +119,7 @@ class Store private constructor(context: Context) :
         updated_at INTEGER NOT NULL)""",
     )
     ensureWordsColumn(db)
+    ensureOrderColumn(db)
   }
 
   /**
@@ -108,8 +129,67 @@ class Store private constructor(context: Context) :
    * COALESCE in [stats] counts them as 0.
    */
   override fun onOpen(db: SQLiteDatabase) {
-    if (!db.isReadOnly) ensureWordsColumn(db)
+    if (db.isReadOnly) return
+    ensureWordsColumn(db)
+    ensureOrderColumn(db)
   }
+
+  /**
+   * REA-72 (ADR 0017): `items.list_order` is the unread List's stored order, added like
+   * `words` without a version bump (a version-2 store would make every version-1 build throw in
+   * onDowngrade). Every row without a value is numbered here, after the current maximum, oldest
+   * first (created_at, then id): on a 1.0.x or 1.1.x store that is every row, so the List flips
+   * to oldest on top once; afterwards only rows a version-1 build wrote over this one, which go
+   * to the bottom and leave the user's moves alone. Numbered in Kotlin, not with ROW_NUMBER():
+   * window functions need SQLite 3.25 (API 30) and minSdk is 24. One short scan of `items` (no
+   * paragraph text) per open; nothing is written when no row lacks a value.
+   */
+  private fun ensureOrderColumn(db: SQLiteDatabase) {
+    val has = db.rawQuery("PRAGMA table_info(items)", null).use {
+      var found = false
+      while (it.moveToNext()) if (it.getString(1) == "list_order") found = true
+      found
+    }
+    if (!has) db.execSQL("ALTER TABLE items ADD COLUMN list_order INTEGER")
+    val started = SystemClock.elapsedRealtime()
+    var numbered = 0
+    db.beginTransaction()
+    try {
+      val ids = db.rawQuery(
+        "SELECT id FROM items WHERE list_order IS NULL ORDER BY created_at ASC, id ASC",
+        null,
+      ).use {
+        val out = ArrayList<Long>(it.count)
+        while (it.moveToNext()) out.add(it.getLong(0))
+        out
+      }
+      if (ids.isNotEmpty()) {
+        var next = nextOrder(db)
+        val update = db.compileStatement("UPDATE items SET list_order = ? WHERE id = ?")
+        for (id in ids) {
+          update.clearBindings()
+          update.bindLong(1, next++)
+          update.bindLong(2, id)
+          update.executeUpdateDelete()
+        }
+        update.close()
+        numbered = ids.size
+      }
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+    if (numbered > 0) {
+      Log.i("ReadMe", "store order numbered rows=$numbered ms=${SystemClock.elapsedRealtime() - started}")
+    }
+  }
+
+  /** The bottom of the List: one past the largest value over every row, archived ones too. */
+  private fun nextOrder(db: SQLiteDatabase): Long =
+    db.rawQuery("SELECT COALESCE(MAX(list_order), 0) + 1 FROM items", null).use {
+      it.moveToFirst()
+      it.getLong(0)
+    }
 
   private fun ensureWordsColumn(db: SQLiteDatabase) {
     val has = db.rawQuery("PRAGMA table_info(paragraphs)", null).use {
@@ -173,7 +253,9 @@ class Store private constructor(context: Context) :
   }
 
   override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-    // Version 1 is the first schema; a later version adds its migration here.
+    // Version 1 is the first schema; a later version adds its migration here. `words` (ADR
+    // 0013) and `list_order` (ADR 0017) were added without a bump, so a migration must treat
+    // either as possibly absent.
     throw IllegalStateException("no migration from $oldVersion to $newVersion")
   }
 
@@ -183,7 +265,15 @@ class Store private constructor(context: Context) :
    */
   @VisibleForTesting
   internal fun insertLink(url: String, title: String, now: Long): Long {
-    val id = writableDatabase.insertOrThrow("items", null, linkValues(url, title, now))
+    val db = writableDatabase
+    val id: Long
+    db.beginTransaction()
+    try {
+      id = db.insertOrThrow("items", null, linkValues(db, url, title, now))
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
     ItemEvents.changed()
     return id
   }
@@ -195,7 +285,8 @@ class Store private constructor(context: Context) :
    * match does not count (a second share of something read may be deliberate). Several unread
    * matches (duplicates from before this change): the newest. The lookup and the insert are one
    * transaction, so two shares at once cannot both insert. A match writes nothing and fires
-   * nothing.
+   * nothing, so the matched item keeps its place in the List (ADR 0017); a new item goes to the
+   * bottom.
    */
   fun findUnreadLinkOrInsert(url: String, title: String, now: Long): LinkShare {
     val db = writableDatabase
@@ -209,7 +300,7 @@ class Store private constructor(context: Context) :
       share = if (found != null) {
         LinkShare(found, created = false)
       } else {
-        LinkShare(db.insertOrThrow("items", null, linkValues(url, title, now)), created = true)
+        LinkShare(db.insertOrThrow("items", null, linkValues(db, url, title, now)), created = true)
       }
       db.setTransactionSuccessful()
     } finally {
@@ -219,7 +310,9 @@ class Store private constructor(context: Context) :
     return share
   }
 
-  private fun linkValues(url: String, title: String, now: Long) = ContentValues().apply {
+  // Called inside the insert's transaction, so the bottom value and the insert are one write.
+  private fun linkValues(db: SQLiteDatabase, url: String, title: String, now: Long) = ContentValues().apply {
+    put("list_order", nextOrder(db))
     put("kind", "link")
     put("url", url)
     put("title", cap(title))
@@ -241,6 +334,7 @@ class Store private constructor(context: Context) :
         "items",
         null,
         ContentValues().apply {
+          put("list_order", nextOrder(db)) // REA-72: a new item goes to the bottom
           put("kind", "text")
           put("title", cap(title))
           put("created_at", now)
@@ -272,23 +366,36 @@ class Store private constructor(context: Context) :
       if (it.moveToFirst()) it.toItem() else null
     }
 
+  /**
+   * R-M01 as amended (REA-72, ADR 0017): unread items in the stored List order, then the
+   * Archive newest-shared first (created_at DESC, id DESC, its order before REA-72). JS filters
+   * these into the two views and never re-sorts them.
+   */
   fun items(): List<ItemRow> =
-    readableDatabase.rawQuery("SELECT * FROM items ORDER BY created_at DESC, id DESC", null).use {
+    readableDatabase.rawQuery(
+      """SELECT * FROM items ORDER BY (archived_at IS NOT NULL),
+           CASE WHEN archived_at IS NULL THEN list_order END,
+           CASE WHEN archived_at IS NULL THEN id END,
+           created_at DESC, id DESC""",
+      null,
+    ).use {
       val out = ArrayList<ItemRow>(it.count)
       while (it.moveToNext()) out.add(it.toItem())
       out
     }
 
   /**
-   * R-S05: the unarchived ready items that sort after [id] in the List (created_at DESC, id
-   * DESC), nearest first. Never wraps to the top; empty when [id] is gone. Ids only.
+   * R-S05 as amended (REA-72, ADR 0017): the unarchived ready items below [id] in the stored
+   * List order (list_order, then id), nearest first. [id] keeps its value when archived, so an
+   * item that just finished, or one played from the Archive, hands over from its own place.
+   * Never wraps to the top; empty when [id] is gone. Ids only.
    */
   fun unreadAfter(id: Long): List<Long> =
     readableDatabase.rawQuery(
-      """SELECT i.id FROM items i, (SELECT created_at AS c, id AS d FROM items WHERE id = ?) f
+      """SELECT i.id FROM items i, (SELECT list_order AS o, id AS d FROM items WHERE id = ?) f
          WHERE i.archived_at IS NULL AND i.state = ?
-           AND (i.created_at < f.c OR (i.created_at = f.c AND i.id < f.d))
-         ORDER BY i.created_at DESC, i.id DESC""",
+           AND (i.list_order > f.o OR (i.list_order = f.o AND i.id > f.d))
+         ORDER BY i.list_order, i.id""",
       arrayOf(id.toString(), States.READY),
     ).use {
       val out = ArrayList<Long>(it.count)
@@ -457,9 +564,90 @@ class Store private constructor(context: Context) :
     ItemEvents.changed()
   }
 
+  /** REA-72 (ADR 0017): a restored item goes to the bottom; restoring an unread one changes nothing. */
   fun restore(id: Long) {
-    writableDatabase.execSQL("UPDATE items SET archived_at = NULL WHERE id = ?", arrayOf<Any>(id))
+    writableDatabase.execSQL(
+      "UPDATE items SET archived_at = NULL, " +
+        "list_order = (SELECT COALESCE(MAX(list_order), 0) + 1 FROM items) " +
+        "WHERE id = ? AND archived_at IS NOT NULL",
+      arrayOf<Any>(id),
+    )
     ItemEvents.changed()
+  }
+
+  /**
+   * REA-72 (ADR 0017): moves one unread item within the unread List, relative to the stored
+   * order at the moment of the write, so a stale view or two quick taps cannot put it somewhere
+   * the user did not see. The unread rows' existing values are permuted (archived rows keep
+   * theirs, so an item played from the Archive still hands over from its own place) and only
+   * changed rows are written, in one transaction. False, with nothing written or fired, when
+   * the item is missing, archived, or already at that edge.
+   */
+  fun move(id: Long, to: Move): Boolean {
+    val db = writableDatabase
+    var moved = false
+    db.beginTransaction()
+    try {
+      var rows = unreadOrder(db)
+      if (rows.map { it.second }.toSet().size != rows.size) {
+        // Duplicate values should not exist; renumber every row in its current order first.
+        renumberAll(db)
+        rows = unreadOrder(db)
+      }
+      val ids = rows.map { it.first }
+      val from = ids.indexOf(id)
+      if (from >= 0) {
+        val target = when (to) {
+          Move.TOP -> 0
+          Move.UP -> from - 1
+          Move.DOWN -> from + 1
+          Move.BOTTOM -> ids.size - 1
+        }
+        if (target in ids.indices && target != from) {
+          val order = ids.toMutableList()
+          order.removeAt(from)
+          order.add(target, id)
+          val old = rows.toMap()
+          val update = db.compileStatement("UPDATE items SET list_order = ? WHERE id = ?")
+          for ((i, row) in order.withIndex()) {
+            val value = rows[i].second // the i-th smallest value goes to the i-th row
+            if (old[row] == value) continue
+            update.clearBindings()
+            update.bindLong(1, value)
+            update.bindLong(2, row)
+            update.executeUpdateDelete()
+          }
+          update.close()
+          moved = true
+        }
+      }
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+    if (moved) ItemEvents.changed()
+    return moved
+  }
+
+  private fun unreadOrder(db: SQLiteDatabase): List<Pair<Long, Long>> =
+    db.rawQuery(
+      "SELECT id, list_order FROM items WHERE archived_at IS NULL ORDER BY list_order, id",
+      null,
+    ).use {
+      val out = ArrayList<Pair<Long, Long>>(it.count)
+      while (it.moveToNext()) out.add(it.getLong(0) to it.getLong(1))
+      out
+    }
+
+  private fun renumberAll(db: SQLiteDatabase) {
+    val ids = db.rawQuery("SELECT id FROM items ORDER BY list_order, id", null).use {
+      val out = ArrayList<Long>(it.count)
+      while (it.moveToNext()) out.add(it.getLong(0))
+      out
+    }
+    for ((i, rowId) in ids.withIndex()) {
+      db.execSQL("UPDATE items SET list_order = ? WHERE id = ?", arrayOf<Any>(i + 1L, rowId))
+    }
   }
 
   /**

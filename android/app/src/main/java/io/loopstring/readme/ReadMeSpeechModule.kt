@@ -24,6 +24,7 @@ import io.loopstring.readme.spec.NativeReadMeSpeechSpec
 import io.loopstring.readme.store.ItemEvents
 import io.loopstring.readme.store.ItemRow
 import io.loopstring.readme.store.ItemStats
+import io.loopstring.readme.store.Move
 import io.loopstring.readme.store.ParagraphRow
 import io.loopstring.readme.store.Rate
 import io.loopstring.readme.store.Settings
@@ -142,6 +143,11 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     settle(promise) { store.archive(id.toLong(), System.currentTimeMillis()); null }
 
   override fun restoreItem(id: Double, promise: Promise) = settle(promise) { store.restore(id.toLong()); null }
+
+  // REA-72 (ADR 0017): a relative move in the unread List. An unknown name rejects through
+  // settle with the class only (Move.of never echoes it).
+  override fun moveUnreadItem(id: Double, to: String, promise: Promise) =
+    settle(promise) { store.move(id.toLong(), Move.of(to)) }
 
   override fun play(itemId: Double, title: String, sentences: ReadableArray, startIndex: Double, promise: Promise) =
     settle(promise) {
