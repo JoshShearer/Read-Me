@@ -105,3 +105,6 @@ release/SHA256SUMS
 .env.*
 release/fdroid-verified
 release/tested-*/
+
+# Playwright MCP page snapshots (local browser sessions)
+.playwright-mcp/
