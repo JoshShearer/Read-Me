@@ -14,8 +14,9 @@
 # REA-31), or READ_ME_ENGINE when set. The cold-start section needs a slow-starting engine and
 # switches to the previous default (see there). UI_ONLY=coldstart runs only that section; UI_ONLY=trim only the first Trim open and its long-press steps (REA-62).
 # REA-72 (ADR 0017), before the List checks: the List order section shares three one-paragraph
-# texts and checks (a) they land at the bottom in share order, (b) Move to top from the bottom,
-# (c) Move down twice from the top to the middle, (d) the order holds after a force-stop and
+# texts and checks (a) they land at the bottom in share order, (b) a long-press drag (REA-73,
+# `input motionevent`) from the bottom to the top, (c) a drag from the top to the middle, (d) the
+# order holds after a force-stop and
 # reopen; then deletes the three. UI_ONLY=order runs only that section. Rows print as symbols
 # (A the text, D the dead link, 1-3 the test texts, X anything else), never as titles.
 set -euo pipefail
@@ -141,21 +142,44 @@ order_is() {
   for _ in $(seq 10); do now=$(order_now); [ "$now" = "$2" ] && break; sleep 1; done
   if [ "$now" = "$2" ]; then echo "$1: RUN/PASS ($now)"; else echo "$1: RUN/FAIL (expected $2, saw ${now:-nothing})"; fail=1; fi
 }
-# move_row <test index> <move testID>: opens the row's Move sheet and picks the move.
-move_row() {
-  tap_node content-desc "move ${P[$1]//./[.]}"
-  tap_node resource-id "move $2"
+# REA-73: rows are reordered by a long press and a drag. row_box <title ERE>: the row's bounds
+# "x1 y1 x2 y2" by its resource-id (testID "row <title>"), or nothing.
+row_box() {
+  ui | grep -oE "resource-id=\"row $1\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" | head -1 \
+    | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tr '\n' ' ' || true
 }
+mid_y() { set -- $1; echo $(( ($2 + $4) / 2 )); }
+# drag_row <title ERE> <y>: a real touch: down on the row's centre, held past the long press
+# (350 ms in ListScreen), moved to <y> in steps, held, released. No adb argv carries item text.
+drag_row() {
+  local b x y0 y1="$2" i
+  b=$(row_box "$1")
+  [ -n "$b" ] || { echo "FAIL: no row matching $1 on screen"; fail=1; return 0; }
+  set -- $b
+  x=$(( ($1 + $3) / 2 )); y0=$(( ($2 + $4) / 2 ))
+  adb shell input motionevent DOWN "$x" "$y0"
+  sleep 0.8
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    adb shell input motionevent MOVE "$x" $(( y0 + (y1 - y0) * i / 10 ))
+  done
+  sleep 0.3
+  adb shell input motionevent UP "$x" "$y1"
+}
+p_re() { local t="${P[$1]}"; echo "${t//./[.]}"; }
 if [ -z "${UI_ONLY:-}" ] || [ "${UI_ONLY:-}" = order ]; then
   for t in "${P[@]}"; do share "$t"; sleep 1; done
   adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
   order_is "order (a) shares land at the bottom in share order" AD123
-  move_row 2 top
-  order_is "order (b) bottom to top" 3AD12
-  move_row 2 down
-  order_is "order (c) top to middle, first step" A3D12
-  move_row 2 down
-  order_is "order (c) top to middle" AD312
+  # (b) the bottom row dragged above the first row's centre lands at the top.
+  first=$(row_box 'Alpha[^"]*')
+  if [ -n "$first" ]; then set -- $first; drag_row "$(p_re 2)" $(( $2 + 10 )); else echo "FAIL: no first row"; fail=1; fi
+  order_is "order (b) bottom to top, by a drag" 3AD12
+  # (c) the top row dragged between D's centre and the next row's lands between them.
+  d=$(row_box '127[.]0[.]0[.]1'); one=$(row_box "$(p_re 0)")
+  if [ -n "$d" ] && [ -n "$one" ]; then
+    drag_row "$(p_re 2)" $(( ( $(mid_y "$d") + $(mid_y "$one") ) / 2 ))
+  else echo "FAIL: rows for step (c) not on screen"; fail=1; fi
+  order_is "order (c) top to middle, by a drag" AD312
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
   on_screen 'content-desc="settings"' || fail=1

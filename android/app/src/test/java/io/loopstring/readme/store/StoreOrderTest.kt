@@ -153,6 +153,43 @@ class StoreOrderTest {
     assertEquals(1, events())
   }
 
+  // --- REA-73: a drag's drop, above a neighbour named by id ---
+
+  @Test fun placeAboveANeighbourFromAboveAndBelowAndAtTheBottom() {
+    val s = store()
+    val (a, b, c, d) = (1..4).map { s.insertText("t$it", listOf("x."), it * 1000L) }
+    assertTrue(s.place(d, a)) // bottom to top
+    assertEquals(listOf(d, a, b, c), unread(s))
+    assertTrue(s.place(d, c)) // downwards: lands directly above c
+    assertEquals(listOf(a, b, d, c), unread(s))
+    assertTrue(s.place(a, null)) // to the bottom
+    assertEquals(listOf(b, d, c, a), unread(s))
+    assertTrue(s.place(a, d)) // upwards into the middle
+    assertEquals(listOf(b, a, d, c), unread(s))
+  }
+
+  @Test fun aPlaceThatChangesNothingOrNamesAMissingOrArchivedItemWritesAndFiresNothing() {
+    val s = store()
+    val a = s.insertText("A", listOf("A."), 1000)
+    val b = s.insertText("B", listOf("B."), 2000)
+    val c = s.insertText("C", listOf("C."), 3000)
+    s.archive(c, 10)
+    val before = orders(s)
+    val events = counting()
+    assertFalse(s.place(a, b)) // already directly above b
+    assertFalse(s.place(b, null)) // already the bottom unread row
+    assertFalse(s.place(a, a))
+    assertFalse(s.place(a, c)) // archived neighbour
+    assertFalse(s.place(c, a)) // archived item
+    assertFalse(s.place(999, a))
+    assertFalse(s.place(a, 999))
+    assertEquals(before, orders(s))
+    assertEquals(0, events())
+    assertTrue(s.place(b, a))
+    assertEquals(listOf(b, a), unread(s))
+    assertEquals(1, events())
+  }
+
   @Test fun aMoveSkipsArchivedRowsAndKeepsEveryValueUnique() {
     val s = store()
     val ids = (1..6).map { s.insertText("t$it", listOf("x."), it * 1000L) }

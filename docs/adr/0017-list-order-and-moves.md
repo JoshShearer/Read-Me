@@ -49,7 +49,7 @@ must read it with no JS (AGENTS.md 11), so it lives in the native `Store`.
 - **Archive** keeps its order before REA-72, `created_at DESC, id DESC` (newest shared first),
   and cannot be reordered (clarification 3; out of scope). `Store.items()` returns unread rows
   by `(list_order, id)` and then the Archive; JS filters and never re-sorts.
-- **UI.** Each unread row has a Move button when the unread tab has two rows or more. It opens
+- **UI (superseded on 2026-11-01 by REA-73, below).** Each unread row has a Move button when the unread tab has two rows or more. It opens
   the app's bottom sheet (REA-62's `ActionSheet`, one element in the screen, switched by
   `visible`) with only the moves that change something. The same moves are the row's
   accessibility actions ("Move to top", "Move up", "Move down", "Move to bottom"), which
@@ -71,7 +71,7 @@ must read it with no JS (AGENTS.md 11), so it lives in the native `Store`.
 - Fractional values (midpoints): precision runs out, and nothing gains at hundreds of rows.
 - Index-based moves from JS (`moveTo(id, index)`): an index from a stale view lands wrong; it
   is only needed for dragging.
-- Dragging now: see above; a follow-up ticket if wanted.
+- Dragging now: see above; a follow-up ticket if wanted. (Built by REA-73, below.)
 - Keeping newest on top for the items that existed before the upgrade.
 
 ## Consequences
@@ -90,3 +90,26 @@ must read it with no JS (AGENTS.md 11), so it lives in the native `Store`.
   it scrolls to the bottom, requires the last four rows to be T3, T2, T1 and the buffer (the last
   row), expects each next test item to have a higher id, and its cleanup reads the whole view
   (unread and Archive) before it says done (ADR 0011's amendment of this date).
+
+## Amendment 2026-11-01 (REA-73): long press and drag
+
+The owner rejected the Move button and its sheet. An unread row is now reordered by a long
+press (350 ms), which lifts it, and a drag: the row follows the finger, the rows it passes step
+aside to open the gap where it would land, and the List scrolls while the finger is within 72 dp
+of its top or bottom edge. Letting go places it. There is no Move button and no sheet.
+
+- **No gesture library** (AGENTS.md 14, REA-28): the List's wrapper takes the touch from the
+  row's Pressable at the first move through React Native's responder system, and the cells move
+  by `Animated` transforms through a `CellRendererComponent`, so the whole cell (row and divider)
+  moves and the lifted cell draws above the others.
+- **The drop names a neighbour, not an index.** JS calls `placeUnreadItem(id, beforeId)`: put
+  `id` directly above unread `beforeId`, or at the bottom for -1. `Store.place` resolves it
+  against the stored order at the write, as `move` does, so a List that changed under the drag
+  never places the item by a stale index (the reason index moves were rejected above). False,
+  with nothing written, when either item is missing or archived, or nothing would change. The
+  List shows the new order at once and then refreshes from the store; a false or a rejection
+  reloads it.
+- **Without dragging:** the four moves remain the row's accessibility actions, which TalkBack
+  offers as custom actions. R-M01's non-drag path is now those actions only.
+- A long press released without a move, the Archive shown, or the lifted item leaving the unread
+  List mid-drag, places nothing.

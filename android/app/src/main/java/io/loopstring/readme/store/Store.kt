@@ -583,7 +583,41 @@ class Store private constructor(context: Context) :
    * changed rows are written, in one transaction. False, with nothing written or fired, when
    * the item is missing, archived, or already at that edge.
    */
-  fun move(id: Long, to: Move): Boolean {
+  fun move(id: Long, to: Move): Boolean =
+    reorder(id) { ids, from ->
+      when (to) {
+        Move.TOP -> 0
+        Move.UP -> from - 1
+        Move.DOWN -> from + 1
+        Move.BOTTOM -> ids.size - 1
+      }
+    }
+
+  /**
+   * REA-73: a drag's drop. Puts unread [id] directly above unread [beforeId], or at the bottom
+   * when [beforeId] is null. Like [move], it is relative to the stored order at the write: the
+   * neighbour is named by id, not by an index a stale view computed. False, with nothing written
+   * or fired, when either item is missing or archived, [beforeId] is [id], or nothing changes.
+   */
+  fun place(id: Long, beforeId: Long?): Boolean =
+    reorder(id) { ids, from ->
+      if (beforeId == null) {
+        ids.size - 1
+      } else {
+        val at = ids.indexOf(beforeId)
+        when {
+          at < 0 || beforeId == id -> -1
+          at > from -> at - 1 // [id] leaves its place above [beforeId] first
+          else -> at
+        }
+      }
+    }
+
+  /**
+   * Moves unread [id] to the index [target] returns (given the unread ids in order and [id]'s
+   * index), permuting the unread rows' existing values in one transaction.
+   */
+  private fun reorder(id: Long, target: (ids: List<Long>, from: Int) -> Int): Boolean {
     val db = writableDatabase
     var moved = false
     db.beginTransaction()
@@ -597,16 +631,11 @@ class Store private constructor(context: Context) :
       val ids = rows.map { it.first }
       val from = ids.indexOf(id)
       if (from >= 0) {
-        val target = when (to) {
-          Move.TOP -> 0
-          Move.UP -> from - 1
-          Move.DOWN -> from + 1
-          Move.BOTTOM -> ids.size - 1
-        }
-        if (target in ids.indices && target != from) {
+        val to = target(ids, from)
+        if (to in ids.indices && to != from) {
           val order = ids.toMutableList()
           order.removeAt(from)
-          order.add(target, id)
+          order.add(to, id)
           val old = rows.toMap()
           val update = db.compileStatement("UPDATE items SET list_order = ? WHERE id = ?")
           for ((i, row) in order.withIndex()) {

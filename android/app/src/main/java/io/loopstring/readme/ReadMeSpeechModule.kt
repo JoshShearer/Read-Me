@@ -149,6 +149,10 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   override fun moveUnreadItem(id: Double, to: String, promise: Promise) =
     settle(promise) { store.move(id.toLong(), Move.of(to)) }
 
+  // REA-73: a drag's drop, directly above unread [beforeId]; a negative beforeId is the bottom.
+  override fun placeUnreadItem(id: Double, beforeId: Double, promise: Promise) =
+    settle(promise) { store.place(id.toLong(), if (beforeId < 0) null else beforeId.toLong()) }
+
   override fun play(itemId: Double, title: String, sentences: ReadableArray, startIndex: Double, promise: Promise) =
     settle(promise) {
       val rows = (0 until sentences.size()).map { i ->
