@@ -478,9 +478,9 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   2026-10-25 (index published 15:27 UTC, versions 71-74 of 1.1.0, per REA-69); the package page
   returned 200 on 2026-10-26 (it was 404 on 2026-10-22).
   Release 1.1.1 (PR #86, main 71e16f5, versionCode 8, ABI codes 81-84): REA-58 to REA-64, REA-70
-  to REA-73. Draft GitHub Release created 2026-11-01 with four signed APKs and `SHA256SUMS`
-  (signer f730c468..., arm64-v8a sha256 af6befab...3a9b), target 71e16f5; not yet published
-  (the owner publishes; the tag is made then). Tested build 71e16f5 from a fresh worktree. Host:
+  to REA-73. GitHub Release with four signed APKs and `SHA256SUMS` (signer f730c468...,
+  arm64-v8a sha256 af6befab...3a9b), published 2026-11-02T02:25:02Z on the owner's word (tag
+  v1.1.1 at 71e16f5); F-Droid picks the tag up itself. Tested build 71e16f5 from a fresh worktree. Host:
   `fdroid-scan.sh` CLEAN, `repro` SAME, `fdroid:build` SAME on all four ABIs. On the reference
   device, 2026-11-01, Marmalade the phone's default engine (`device:ui` pins GrapheneOS Speech
   Services): `device:intake`, `playback`, `screens`, `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=314
