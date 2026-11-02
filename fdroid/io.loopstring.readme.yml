@@ -17,10 +17,10 @@ Repo: https://github.com/JoshShearer/Read-Me.git
 # ABI (REA-40), each naming its APK in binary:.
 
 Builds:
-  - versionName: 1.1.0
-    versionCode: 71
+  - versionName: 1.1.1
+    versionCode: 81
     # fdroiddata wants the tag's full commit hash here; the MR carries it.
-    commit: v1.1.0
+    commit: v1.1.1
     subdir: android/app
     submodules: true
     sudo:
@@ -70,9 +70,9 @@ Builds:
       - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
-  - versionName: 1.1.0
-    versionCode: 72
-    commit: v1.1.0
+  - versionName: 1.1.1
+    versionCode: 82
+    commit: v1.1.1
     subdir: android/app
     submodules: true
     sudo:
@@ -102,9 +102,9 @@ Builds:
       - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
-  - versionName: 1.1.0
-    versionCode: 73
-    commit: v1.1.0
+  - versionName: 1.1.1
+    versionCode: 83
+    commit: v1.1.1
     subdir: android/app
     submodules: true
     sudo:
@@ -134,9 +134,9 @@ Builds:
       - node_modules/react-native/ReactAndroid/publish.gradle
     ndk: r27b
 
-  - versionName: 1.1.0
-    versionCode: 74
-    commit: v1.1.0
+  - versionName: 1.1.1
+    versionCode: 84
+    commit: v1.1.1
     subdir: android/app
     submodules: true
     sudo:
@@ -176,5 +176,5 @@ VercodeOperation:
   - 10 * %c + 2
   - 10 * %c + 3
   - 10 * %c + 4
-CurrentVersion: 1.1.0
-CurrentVersionCode: 74
+CurrentVersion: 1.1.1
+CurrentVersionCode: 84
