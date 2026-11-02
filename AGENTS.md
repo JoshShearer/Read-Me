@@ -477,6 +477,25 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   1.1.0); the second's findings are REA-58 to REA-64. On f-droid.org since
   2026-10-25 (index published 15:27 UTC, versions 71-74 of 1.1.0, per REA-69); the package page
   returned 200 on 2026-10-26 (it was 404 on 2026-10-22).
+  Release 1.1.1 (PR #86, main 71e16f5, versionCode 8, ABI codes 81-84): REA-58 to REA-64, REA-70
+  to REA-73. Draft GitHub Release created 2026-11-01 with four signed APKs and `SHA256SUMS`
+  (signer f730c468..., arm64-v8a sha256 af6befab...3a9b), target 71e16f5; not yet published
+  (the owner publishes; the tag is made then). Tested build 71e16f5 from a fresh worktree. Host:
+  `fdroid-scan.sh` CLEAN, `repro` SAME, `fdroid:build` SAME on all four ABIs. On the reference
+  device, 2026-11-01, Marmalade the phone's default engine (`device:ui` pins GrapheneOS Speech
+  Services): `device:intake`, `playback`, `screens`, `AIRPLANE=1 GAP_MINUTES=10 device:gap` (n=314
+  p50=13 p95=18 max=44 ms, stalls 0, errors 0, underruns 0, AudioHardening new=0) passed in the
+  batch; `device:bridge` (Obsidian ran), `device:ui` (list order by drags; cold start 1065 and 795
+  ms) and `device:accept-share` (resumed at sentence 27, list "4% read") passed on reruns. Their
+  first runs failed: bridge because the host's port 8787 was held by another local service
+  (`wristnotes-server`, the owner's; `device-bridge-e2e.sh` hardcodes the port), ui because the
+  aborted bridge run left Read Me's tasks open (`device_clear_app` timed out), and accept-share on
+  `FAIL: crash logged` after every reading check passed. That crash's lines were lost (later runs
+  cleared logcat before they were read); the rerun's crash buffer was empty, so an intermittent
+  crash is not ruled out. `release:apk` first stopped at `make-notices.mjs --check`: the Gradle
+  cache had lost the dependency POMs (only the AARs left); `./gradlew :app:dependencies
+  --configuration releaseRuntimeClasspath --refresh-dependencies` restored them, and notices.json
+  was unchanged. The F-Droid screenshots were not retaken (Settings has changed since).
 - **Continuous play (R-S05, REA-41, ADR 0011):** a Settings switch, off by default. When an
   item ends, `PlaybackQueue` hands over to the next unread item in List order with no JS:
   `ContinuousPlay` picks it and `Segmenter` (a Kotlin port of `segment`'s fallback, pinned to the
