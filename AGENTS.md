@@ -522,7 +522,7 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   empty-dump flake was not reproduced either.
 - **List order and moves (REA-72, PR #84, b590590, ADR 0017, srs.md R-M01 and R-S05 amended):**
   a new share goes to the bottom of the unread List; an unread item moves to the top, up, down or
-  to the bottom from its row's sheet and as TalkBack actions (no drag). The order is a stored
+  to the bottom as TalkBack actions, and by a long press and drag since REA-73 (below). The order is a stored
   column; Store's v1-to-v2 migration numbers existing items `created_at ASC, id ASC` (oldest on
   top), a restored item goes to the bottom, a matched link share stays put, Archive keeps its
   order. Continuous play's next item is the next row down in that order (ADR 0011 amended). On
@@ -532,6 +532,15 @@ Each of these is a promise the product makes. Breaking one is a BLOCK, not a con
   `SCREEN_OFF=0 device:continuous` (handovers 65 and 77 ms, prepared=1) passed. Not observed:
   TalkBack announcing the moves, and the migration of a real 1.1.0 library on the phone
   (unit-tested only; app data was cleared before the checks).
+  REA-73 (PR #85, 8262c52, ADR 0017 amended): the row's Move button and sheet are gone; a long
+  press (350 ms) on an unread row lifts it, the other rows step aside as it is dragged, the List
+  scrolls near its top or bottom edge, and letting go places it (`placeUnreadItem(id, beforeId)`,
+  Store `place`; optimistic, the List reloads on a refused or failed write). No gesture library:
+  RN's responder system and `Animated` through FlatList's `CellRendererComponent`. On the
+  reference device, build fc051b0 (2026-11-01), `UI_ONLY=order device:ui` passed with real drags
+  (`adb shell input motionevent`): bottom to top, top to middle, the order kept after a
+  force-stop. Not observed: the drag's feel by eye, edge auto-scroll on the phone (the test List
+  fits one screen), TalkBack.
 - **Community-test follow-ups (REA-58 to REA-68, 2026-10-21 to 2026-10-23):** all on the
   reference device (Pixel 9 Pro XL 48071FDAS004PV) unless noted.
   - REA-59 (PR #68, 40c036f, ADR 0015): with a validated network an `UnknownHostException` is
