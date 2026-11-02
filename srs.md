@@ -87,7 +87,9 @@ Amended 2026-11-01 (REA-72, ADR 0017): the List shows unread items in a stored o
 item (link, text or file) and an item restored from the Archive go to the bottom; a share that
 matches an unread item (R-M02 as amended) leaves it where it is. Any unread item MUST be movable
 from any position to any other without dragging: Move to top, Move up, Move down and Move to
-bottom, in a sheet from the row's Move button and as the row's accessibility actions (TalkBack).
+bottom, as the row's accessibility actions (TalkBack). Amended 2026-11-01 (REA-73, ADR 0017):
+a long press on an unread row lifts it and a drag places it; the Move button and its sheet are
+gone.
 The order MUST survive an app restart and a process kill. The Archive view is newest-shared first
 (`created_at DESC, id DESC`) and is not reorderable. On the upgrade to this order, existing items
 are listed oldest first.

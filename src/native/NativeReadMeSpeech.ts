@@ -109,6 +109,9 @@ export interface Spec extends TurboModule {
   // `to` is 'top' | 'up' | 'down' | 'bottom'. False when nothing moved (missing, archived, or
   // already at that edge). Named long on purpose: spec-methods.mjs only checks 9+ chars.
   moveUnreadItem(id: number, to: string): Promise<boolean>;
+  // REA-73: a drag's drop. Puts unread `id` directly above unread `beforeId`, or at the bottom
+  // when `beforeId` is -1, relative to the stored order at the write. False when nothing moved.
+  placeUnreadItem(id: number, beforeId: number): Promise<boolean>;
   play(
     itemId: number,
     title: string,

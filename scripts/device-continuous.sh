@@ -144,7 +144,7 @@ rows_ok() {
 # rows_ready <ui dump>: each of the last four rows shows the badge "ready". Continuous play skips
 # an item that is not ready, so a fetching buffer would let the chain go past it. A badge is a
 # Text with nothing naming its row, so the dump is split at each row's delete button: segment i
-# holds row i's badge (a row's Move button follows its delete button, in the next segment's head).
+# holds row i's badge.
 rows_ready() {
   local segs i n
   n=$(row_titles "$1" | grep -c . || true)

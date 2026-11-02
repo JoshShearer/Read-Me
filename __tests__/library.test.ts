@@ -37,12 +37,13 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
       },
     ),
     moveUnreadItem: jest.fn(async () => true),
+    placeUnreadItem: jest.fn(async () => true),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   },
 }));
 
-import { drainFetched, listItems, moveItem } from '../src/library/library';
+import { drainFetched, listItems, moveItem, placeItem } from '../src/library/library';
 
 const row = (id: number, state: string, body: string | null = null): Row => ({
   id,
@@ -146,4 +147,12 @@ test('moveItem passes the id and the move through (REA-72)', async () => {
   const Native = jest.requireMock('../src/native/NativeReadMeSpeech').default;
   await expect(moveItem(4, 'bottom')).resolves.toBe(true);
   expect(Native.moveUnreadItem).toHaveBeenCalledWith(4, 'bottom');
+});
+
+test('placeItem passes the neighbour id through, and -1 for the bottom (REA-73)', async () => {
+  const Native = jest.requireMock('../src/native/NativeReadMeSpeech').default;
+  await expect(placeItem(4, 7)).resolves.toBe(true);
+  expect(Native.placeUnreadItem).toHaveBeenCalledWith(4, 7);
+  await placeItem(4, null);
+  expect(Native.placeUnreadItem).toHaveBeenLastCalledWith(4, -1);
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, AppState, DeviceEventEmitter, Linking, Modal } from 'react-native';
+import { Alert, AppState, DeviceEventEmitter, FlatList, Linking, Modal } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { NativeEngine, NativeItem } from '../src/native/NativeReadMeSpeech';
 
@@ -39,6 +39,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     getPosition: jest.fn(async () => null),
     setCuts: jest.fn(async () => undefined),
     moveUnreadItem: jest.fn(async () => true),
+    placeUnreadItem: jest.fn(async () => true),
     getBridge: jest.fn(async () => mockState.bridge),
     setBridgeEnabled: jest.fn(async (on: boolean) => {
       mockState.bridge = { ...mockState.bridge, enabled: on, state: on ? 'on' : 'off', token: on ? '0123456789abcdef0123456789abcdef' : null };
@@ -996,7 +997,7 @@ describe('Trim long-press sheet (REA-62)', () => {
   });
 });
 
-describe('List order: Move sheet and accessibility actions (REA-72)', () => {
+describe('List order: long-press drag and accessibility actions (REA-72, REA-73)', () => {
   const three = () => {
     mockState.items = [
       { ...base, id: 1, title: 'One' },
@@ -1004,69 +1005,151 @@ describe('List order: Move sheet and accessibility actions (REA-72)', () => {
       { ...base, id: 3, title: 'Three' },
     ];
   };
-  // The List's only Modal is the Move sheet; a hidden Modal renders no children.
-  const sheet = (r: ReactTestRenderer.ReactTestRenderer) => r.root.findByType(Modal);
-  const sheetIds = (r: ReactTestRenderer.ReactTestRenderer) =>
-    sheet(r)
-      .findAll(n => typeof n.props.testID === 'string' && n.props.testID.startsWith('move ') && typeof n.props.onPress === 'function')
-      .map(n => n.props.testID as string);
   const pressLabel = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
     ReactTestRenderer.act(async () => {
       r.root.find(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function').props.onPress();
     });
-  const pressId = (r: ReactTestRenderer.ReactTestRenderer, id: string) =>
-    ReactTestRenderer.act(async () => {
-      r.root.find(n => n.props.testID === id && typeof n.props.onPress === 'function').props.onPress();
-    });
   const row = (r: ReactTestRenderer.ReactTestRenderer, title: string) =>
     r.root.find(n => n.props.testID === `row ${title}` && typeof n.props.onAccessibilityAction === 'function');
+  // The List's drag surface: the View that takes the touch once a row is lifted.
+  const surface = (r: ReactTestRenderer.ReactTestRenderer) =>
+    r.root.find(n => n.props.testID === 'list surface' && typeof n.type === 'string');
+  // Lays every cell out as a 100-high row, top to bottom, as the phone would report it.
+  const layOut = (r: ReactTestRenderer.ReactTestRenderer) =>
+    ReactTestRenderer.act(async () => {
+      const cells = r.root.findAll(
+        n => typeof n.props.onLayout === 'function' && n.props.collapsable === false && n.props.style !== undefined && n.parent?.props.item !== undefined,
+      );
+      cells.forEach((c, i) => c.props.onLayout({ nativeEvent: { layout: { x: 0, y: i * 100, width: 400, height: 100 } } }));
+    });
+  const lift = (r: ReactTestRenderer.ReactTestRenderer, title: string, pageY: number) =>
+    ReactTestRenderer.act(async () => {
+      const p = row(r, title).props;
+      expect(typeof p.onLongPress).toBe('function');
+      p.onLongPress({ nativeEvent: { pageY } });
+    });
+  // Moves the lifted row's finger to [pageY] and lets go there.
+  const dragTo = (r: ReactTestRenderer.ReactTestRenderer, pageY: number) =>
+    ReactTestRenderer.act(async () => {
+      const v = surface(r).props;
+      expect(v.onMoveShouldSetResponderCapture()).toBe(true);
+      v.onResponderGrant();
+      v.onResponderMove({ nativeEvent: { pageY } });
+      v.onResponderRelease();
+    });
 
-  beforeEach(() => (Native.moveUnreadItem as jest.Mock).mockClear());
+  beforeEach(() => {
+    (Native.moveUnreadItem as jest.Mock).mockClear();
+    (Native.placeUnreadItem as jest.Mock).mockClear();
+  });
 
-  test('each unread row has Move only when there are two or more; the Archive has none', async () => {
+  test('no row has a Move button; unread rows lift on a long press, a lone row and the Archive do not', async () => {
     mockState.items = [{ ...base, id: 1, title: 'Alone' }];
-    expect(await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />)).not.toContain('"move Alone"');
+    let r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    expect(row(r, 'Alone').props.onLongPress).toBeUndefined();
     three();
-    const out = await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    expect(out).toContain('"move One"');
-    expect(out).toContain('"move Three"');
+    r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    const out = strings(r.toJSON()).join('\n');
+    expect(out).not.toContain('"move One"');
+    expect(out).not.toContain('Move');
+    expect(typeof row(r, 'One').props.onLongPress).toBe('function');
     mockState.items = [
       { ...base, id: 1, title: 'Old one', archivedAt: 5 },
       { ...base, id: 2, title: 'Old two', archivedAt: 6 },
     ];
-    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
     await pressLabel(r, 'archive');
-    const archived = strings(r.toJSON()).join('\n');
-    expect(archived).toContain('"open Old one"');
-    expect(archived).not.toContain('"move Old one"');
+    expect(row(r, 'Old one').props.onLongPress).toBeUndefined();
   });
 
-  test('the sheet lists only the moves that apply and calls the native move, then closes', async () => {
+  test('dragging the bottom row to the top places it above the first row and shows it there at once', async () => {
     three();
     const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    expect(sheet(r).props.visible).toBe(false);
-    await pressLabel(r, 'move One');
-    expect(sheet(r).props.visible).toBe(true);
-    expect(sheetIds(r)).toEqual(['move down', 'move bottom', 'move cancel']);
-    await pressLabel(r, 'move Two');
-    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move down', 'move bottom', 'move cancel']);
-    await pressLabel(r, 'move Three');
-    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move cancel']);
-    await pressId(r, 'move top');
-    expect(Native.moveUnreadItem).toHaveBeenCalledWith(3, 'top');
-    expect(sheet(r).props.visible).toBe(false);
+    await layOut(r);
+    await lift(r, 'Three', 250); // centre of Three (200-300)
+    await dragTo(r, 20); // its centre now at 20: above One's 50
+    expect(Native.placeUnreadItem).toHaveBeenCalledWith(3, 1);
+    const out = strings(r.toJSON()).join('\n');
+    expect(out.indexOf('"delete Three"')).toBeLessThan(out.indexOf('"delete One"'));
+    expect(out.indexOf('"delete One"')).toBeLessThan(out.indexOf('"delete Two"'));
   });
 
-  test('Cancel and Back close the sheet without a move', async () => {
+  test('dragging down past one row places it above the next; past the last row, at the bottom', async () => {
+    three();
+    let r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await layOut(r);
+    await lift(r, 'One', 50);
+    await dragTo(r, 170); // centre 170: below Two's 150, above Three's 250
+    expect(Native.placeUnreadItem).toHaveBeenLastCalledWith(1, 3);
+    three();
+    r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await layOut(r);
+    await lift(r, 'One', 50);
+    await dragTo(r, 290);
+    expect(Native.placeUnreadItem).toHaveBeenLastCalledWith(1, -1);
+  });
+
+  test('a drop where the row started, or a long press let go without a move, places nothing', async () => {
     three();
     const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    await pressLabel(r, 'move Two');
-    await pressId(r, 'move cancel');
-    expect(sheet(r).props.visible).toBe(false);
-    await pressLabel(r, 'move Two');
-    await ReactTestRenderer.act(async () => sheet(r).props.onRequestClose());
-    expect(sheet(r).props.visible).toBe(false);
-    expect(Native.moveUnreadItem).not.toHaveBeenCalled();
+    await layOut(r);
+    await lift(r, 'Two', 150);
+    await dragTo(r, 160);
+    await lift(r, 'Two', 150);
+    await ReactTestRenderer.act(async () => {
+      row(r, 'Two').props.onPressOut();
+      await new Promise(res => setTimeout(res, 5));
+    });
+    expect(surface(r).props.onMoveShouldSetResponderCapture()).toBe(false);
+    expect(Native.placeUnreadItem).not.toHaveBeenCalled();
+  });
+
+  test('a drag the system takes away places nothing; the List scrolls again after a drag', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await layOut(r);
+    await lift(r, 'Three', 250);
+    expect(r.root.findByType(FlatList).props.scrollEnabled).toBe(false);
+    await ReactTestRenderer.act(async () => {
+      const v = surface(r).props;
+      v.onResponderGrant();
+      v.onResponderMove({ nativeEvent: { pageY: 20 } });
+      v.onResponderTerminate();
+    });
+    expect(Native.placeUnreadItem).not.toHaveBeenCalled();
+    expect(r.root.findByType(FlatList).props.scrollEnabled).toBe(true);
+  });
+
+  test('a refused or rejected drop reloads the List so it shows the stored order', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await layOut(r);
+    (Native.placeUnreadItem as jest.Mock).mockImplementationOnce(async () => false);
+    (Native.listItems as jest.Mock).mockClear();
+    await lift(r, 'Three', 250);
+    await dragTo(r, 20);
+    expect(Native.listItems).toHaveBeenCalled();
+    (Native.placeUnreadItem as jest.Mock).mockImplementationOnce(async () => {
+      throw new Error('E_LIBRARY');
+    });
+    (Native.listItems as jest.Mock).mockClear();
+    await layOut(r);
+    await lift(r, 'Two', 150);
+    await dragTo(r, 20);
+    expect(Native.listItems).toHaveBeenCalled();
+  });
+
+  const changed = () => ReactTestRenderer.act(async () => { DeviceEventEmitter.emit('ReadMeItemsChanged'); });
+
+  test('a lifted row whose item leaves the unread List drops nothing', async () => {
+    three();
+    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
+    await layOut(r);
+    await lift(r, 'Two', 150);
+    mockState.items = [mockState.items[0], mockState.items[2]];
+    await changed();
+    expect(surface(r).props.onMoveShouldSetResponderCapture()).toBe(false);
+    expect(Native.placeUnreadItem).not.toHaveBeenCalled();
   });
 
   // Declares the row's custom actions and routes them to the native move. Whether TalkBack offers
@@ -1089,8 +1172,6 @@ describe('List order: Move sheet and accessibility actions (REA-72)', () => {
     expect(Native.moveUnreadItem).toHaveBeenCalledTimes(2);
   });
 
-  const changed = () => ReactTestRenderer.act(async () => { DeviceEventEmitter.emit('ReadMeItemsChanged'); });
-
   test('after a move, the change event re-renders the List in the new order', async () => {
     three();
     const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
@@ -1098,49 +1179,11 @@ describe('List order: Move sheet and accessibility actions (REA-72)', () => {
       mockState.items = [mockState.items[2], mockState.items[0], mockState.items[1]];
       return true;
     });
-    await pressLabel(r, 'move Three');
-    await pressId(r, 'move top');
+    await ReactTestRenderer.act(async () => row(r, 'Three').props.onAccessibilityAction({ nativeEvent: { actionName: 'moveToTop' } }));
     await changed();
     const out = strings(r.toJSON()).join('\n');
-    expect(out.indexOf('"move Three"')).toBeLessThan(out.indexOf('"move One"'));
-    expect(out.indexOf('"move One"')).toBeLessThan(out.indexOf('"move Two"'));
-  });
-
-  test('the sheet offers the moves for the row\'s current place when the List changes while it is open', async () => {
-    three();
-    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    await pressLabel(r, 'move Three'); // the bottom row: top, up
-    mockState.items = [mockState.items[1], mockState.items[2]]; // One was archived: Three is still last
-    await changed();
-    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move cancel']);
-    mockState.items = [mockState.items[0], mockState.items[1], { ...base, id: 4, title: 'Four' }]; // a share below
-    await changed();
-    expect(sheetIds(r)).toEqual(['move top', 'move up', 'move down', 'move bottom', 'move cancel']);
-  });
-
-  test('the sheet closes when its item leaves the unread List', async () => {
-    three();
-    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    await pressLabel(r, 'move Two');
-    mockState.items = [mockState.items[0], mockState.items[2]];
-    await changed();
-    expect(sheet(r).props.visible).toBe(false);
-    mockState.items = [mockState.items[0], { ...base, id: 2, title: 'Two' }, mockState.items[1]]; // restored
-    await changed();
-    expect(sheet(r).props.visible).toBe(false);
-  });
-
-  test('a rejected move reloads the List so it shows the stored order', async () => {
-    three();
-    const r = await mount(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
-    (Native.moveUnreadItem as jest.Mock).mockImplementationOnce(async () => {
-      throw new Error('E_LIBRARY');
-    });
-    (Native.listItems as jest.Mock).mockClear();
-    await pressLabel(r, 'move Two');
-    await pressId(r, 'move up');
-    expect(Native.listItems).toHaveBeenCalled();
-    expect(r.toJSON()).not.toBeNull();
+    expect(out.indexOf('"delete Three"')).toBeLessThan(out.indexOf('"delete One"'));
+    expect(out.indexOf('"delete One"')).toBeLessThan(out.indexOf('"delete Two"'));
   });
 
   test('the List shows unread items in the order native gives them, without re-sorting', async () => {

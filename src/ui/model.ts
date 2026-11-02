@@ -95,6 +95,46 @@ export function moves(index: number, count: number): Move[] {
   return out;
 }
 
+/**
+ * REA-73: where a dragged unread row would land. [centers] are the rows' resting vertical
+ * centres in List order (undefined for a row not laid out: one above [from] counts as above,
+ * one below as below); [from] is the dragged row and [y] its centre now. Returns its index in
+ * the List after the drop: the number of other rows whose centre is above [y].
+ */
+export function dropIndex(centers: readonly (number | undefined)[], from: number, y: number): number {
+  let n = 0;
+  centers.forEach((c, i) => {
+    if (i === from) return;
+    if (c === undefined ? i < from : c < y) n++;
+  });
+  return n;
+}
+
+/**
+ * REA-73: the native placement for a drop of the row at [from] at index [to]: the id of the
+ * row it lands directly above, null for the bottom, or undefined when nothing changes.
+ */
+export function dropBefore(ids: readonly number[], from: number, to: number): number | null | undefined {
+  if (to === from || from < 0 || from >= ids.length) return undefined;
+  const others = ids.filter((_, i) => i !== from);
+  return to >= others.length ? null : others[to];
+}
+
+/** REA-73: how far the row at [index] steps aside while the row at [from] hovers at [to]. */
+export function dragShift(index: number, from: number, to: number, height: number): number {
+  if (index < from && index >= to) return height;
+  if (index > from && index <= to) return -height;
+  return 0;
+}
+
+/** REA-73: [ids] with the row at [from] moved to index [to] (the List shown before the store answers). */
+export function reordered<T>(rows: readonly T[], from: number, to: number): T[] {
+  const out = rows.slice();
+  const [moved] = out.splice(from, 1);
+  out.splice(to, 0, moved);
+  return out;
+}
+
 export const MOVE_LABEL: Record<Move, string> = {
   top: 'Move to top',
   up: 'Move up',
