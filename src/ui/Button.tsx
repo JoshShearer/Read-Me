@@ -90,17 +90,24 @@ export function IconButton({
   glyph,
   onPress,
   accessibilityLabel,
+  accessibilityValue,
+  letters = false,
   disabled = false,
 }: {
   glyph: string;
   onPress: () => void;
   accessibilityLabel: string;
+  /** What the control is set to, read after its name ("audio language, English"). */
+  accessibilityValue?: string;
+  /** Letters (a language code), not a symbol: smaller, and not forced to text presentation. */
+  letters?: boolean;
   disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityValue={accessibilityValue === undefined ? undefined : { text: accessibilityValue }}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -108,8 +115,8 @@ export function IconButton({
       {/* REA-58: at font scale 2.0 the glyph was clipped by the 48 dp button (its text node
           179 px of 179 at wm density 597 in REA-58's reproduction); its scale stops at 1.5x.
           The button itself never shrinks. */}
-      <Text tone={disabled ? 'disabled' : 'action'} style={s.glyph} maxFontSizeMultiplier={1.5}>
-        {[...glyph].map(c => `${c}︎`).join('')}
+      <Text tone={disabled ? 'disabled' : 'action'} style={letters ? s.letters : s.glyph} maxFontSizeMultiplier={1.5}>
+        {letters ? glyph : [...glyph].map(c => `${c}︎`).join('')}
       </Text>
     </Pressable>
   );
@@ -128,4 +135,6 @@ const s = StyleSheet.create({
   label: { ...type.sm, fontWeight: '500' },
   icon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   glyph: { ...type.xl, fontWeight: '500' },
+  // Three letters at 1.5x still fit 48 dp.
+  letters: { ...type.sm, fontWeight: '700' },
 });

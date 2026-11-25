@@ -212,7 +212,8 @@ export function SettingsScreen({ onLicenses }: { onLicenses: () => void }) {
             options={voiceOptions(engine)}
             value={voiceValue(engine)}
             onChange={v => {
-              setVoice(v === ENGINE_DEFAULT ? null : v).then(loadEngine, () => undefined);
+              const voice = v === ENGINE_DEFAULT ? null : v;
+              setVoice(voice, engine?.voices.find(x => x.name === voice)?.language ?? null).then(loadEngine, () => undefined);
             }}
           />
         </View>

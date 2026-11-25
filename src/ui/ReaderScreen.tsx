@@ -21,10 +21,13 @@ import {
   previous,
   setRate,
   toggle,
+  pause,
+  resume,
+  setVoice,
   type Playback,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { dockOneRow, formatRate, lineTop, playMinWidth, RATE_MAX, RATE_MIN, readerParagraphs, shareText, stepRate, type ReaderParagraph } from './model';
+import { audioLanguages, dockOneRow, formatRate, lineTop, playMinWidth, RATE_MAX, RATE_MIN, readerParagraphs, shareText, stepRate, type AudioLanguages, type ReaderParagraph } from './model';
 import { ui } from './ui';
 
 /** Space kept above the highlighted line when scrolling to it, in dp. */
@@ -65,6 +68,9 @@ export function ReaderScreen({
   // its own state with Retry. No log: the rejection carries only an exception class anyway.
   const [failed, setFailed] = useState(false);
   const [menu, setMenu] = useState(false);
+  // REA-77: null until the engine answers; the button is there, disabled, from the first frame.
+  const [languages, setLanguages] = useState<AudioLanguages | null>(null);
+  const [languageMenu, setLanguageMenu] = useState(false);
   const load = useCallback(() => {
     getItem(id).then(
       d => {
@@ -90,7 +96,11 @@ export function ReaderScreen({
   const probe = useCallback(() => {
     const seq = ++probeSeq.current;
     getEngine().then(
-      e => seq === probeSeq.current && setEngine(e.status),
+      e => {
+        if (seq !== probeSeq.current) return;
+        setEngine(e.status);
+        setLanguages(audioLanguages(e));
+      },
       () => seq === probeSeq.current && setEngine('no-engine'),
     );
   }, []);
@@ -251,6 +261,36 @@ export function ReaderScreen({
     );
   }
 
+  // REA-77: the voice is Settings' one setting, so this changes it everywhere. While this item
+  // plays, Pause then Play: Play binds a speaker for the new voice and resumes at the sentence
+  // (REA-33). The service keeps the queue; this only sends the user's commands.
+  const chooseLanguage = (to: string) => {
+    setLanguageMenu(false);
+    const l = languages?.list.find(x => x.language === to);
+    if (!l || l.language === languages?.current?.language) return;
+    const playing = mine?.playing === true;
+    setLanguages(cur => (cur ? { ...cur, current: l } : cur));
+    setVoice(l.voice, l.language)
+      .then(async () => {
+        if (playing && (await pause())) await resume();
+      })
+      .catch(() => undefined)
+      .finally(probe);
+  };
+  const languageSheet = (
+    <ActionSheet
+      visible={languageMenu}
+      title="Audio language"
+      actions={(languages?.list ?? []).map(l => ({
+        label: l.language === languages?.current?.language ? `${l.label} (in use)` : l.label,
+        testID: `reader language ${l.language}`,
+        onPress: () => chooseLanguage(l.language),
+      }))}
+      cancelTestID="reader language cancel"
+      onClose={() => setLanguageMenu(false)}
+    />
+  );
+
   const changeRate = (dir: 1 | -1) => {
     setRate(stepRate(rate, dir)).then(setRateState, () => undefined);
   };
@@ -321,17 +361,28 @@ export function ReaderScreen({
           />
           <IconButton glyph="▶" accessibilityLabel="next sentence" disabled={!mine} onPress={control(next)} />
         </View>
-        <Stepper
-          value={rate}
-          min={RATE_MIN}
-          max={RATE_MAX}
-          format={formatRate}
-          onStep={changeRate}
-          decreaseLabel="slower"
-          increaseLabel="faster"
-        />
+        <View collapsable={false} style={ui.dockVoice}>
+          <IconButton
+            letters
+            glyph={languages?.current?.code ?? '··'}
+            accessibilityLabel="audio language"
+            accessibilityValue={languages?.current?.label}
+            disabled={!languages || languages.list.length === 0}
+            onPress={() => setLanguageMenu(true)}
+          />
+          <Stepper
+            value={rate}
+            min={RATE_MIN}
+            max={RATE_MAX}
+            format={formatRate}
+            onStep={changeRate}
+            decreaseLabel="slower"
+            increaseLabel="faster"
+          />
+        </View>
       </View>
       {sheet}
+      {languageSheet}
     </View>
   );
 }

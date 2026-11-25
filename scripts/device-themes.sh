@@ -9,7 +9,7 @@
 #
 # REA-58: a narrow pass after light and dark (THEMES_ONLY=light|dark|narrow runs one pass). It
 # first checks the idle Reader's dock at the phone's own density and font scale (the `wide`
-# capture: one row asserted on the reference phone at 448 dp and font scale 1.0). Then the
+# capture: two rows asserted on the reference phone at 448 dp and font scale 1.0 since REA-77, one row at 477 dp or more). Then the
 # display is set to 360 dp wide (wm density 597 on the 1344 px reference phone; NARROW_DENSITY)
 # with font scale 1.0, then 2.0, the largest Settings offers; the app is restarted after each
 # change (MainActivity is recreated on a density or font change). Each time the idle Reader's
@@ -421,16 +421,17 @@ dock() {
 }
 if [ -z "$THEMES_ONLY" ] || [ "$THEMES_ONLY" = narrow ]; then
   adb shell cmd uimode night no >/dev/null
-  # The phone's own layout first (no display change). At font scale 1.0 (or unset) and 429 dp
-  # or more the dock must be one row (model.dockOneRow: 329 + 100 x font scale); the reference
-  # phone is 448 dp. Another phone or font scale is captured and checked, its layout not asserted.
+  # The phone's own layout first (no display change). At font scale 1.0 (or unset) the dock must
+  # be one row at 477 dp or more and two rows below (model.dockOneRow: 377 + 100 x font scale;
+  # REA-77's audio language button made it 477); the reference phone is 448 dp, so two rows.
+  # Another font scale is captured and checked, its layout not asserted.
   own=$(adb shell wm density | tr -d '\r')
   own_dpi=$(sed -nE 's/^Override density: ([0-9]+)$/\1/p' <<<"$own")
   [ -n "$own_dpi" ] || own_dpi=$(sed -nE 's/^Physical density: ([0-9]+)$/\1/p' <<<"$own")
   own_fs=$(adb shell settings get system font_scale | tr -d '\r')
   wide_dp=$((SCREEN_W * 160 / own_dpi))
   wide_expect=any
-  case "$own_fs" in 1.0|1|null) [ "$wide_dp" -lt 429 ] || wide_expect=one-row ;; esac
+  case "$own_fs" in 1.0|1|null) if [ "$wide_dp" -lt 477 ]; then wide_expect=two-rows; else wide_expect=one-row; fi ;; esac
   echo "wide: $wide_dp dp wide (density $own_dpi, font_scale $own_fs; layout $wide_expect)"
   open_reader
   shot wide-1-reader

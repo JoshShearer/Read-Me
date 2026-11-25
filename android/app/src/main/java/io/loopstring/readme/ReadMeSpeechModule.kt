@@ -14,6 +14,7 @@ import io.loopstring.readme.playback.EngineProbe
 import io.loopstring.readme.playback.EnginePolicy
 import io.loopstring.readme.playback.TtsOpen
 import io.loopstring.readme.playback.VoiceLabels
+import io.loopstring.readme.playback.VoiceLanguages
 import io.loopstring.readme.playback.PlaybackCommands
 import io.loopstring.readme.playback.PlaybackFiles
 import io.loopstring.readme.playback.PlaybackHub
@@ -236,6 +237,17 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
               })
             }
           })
+          // REA-77: the Reader's language button.
+          putArray("languages", Arguments.createArray().apply {
+            VoiceLanguages.of(r.voices, settings.languageVoices).forEach { l ->
+              pushMap(Arguments.createMap().apply {
+                putString("language", l.language)
+                putString("label", l.label)
+                putString("code", l.code)
+                putString("voice", l.voice)
+              })
+            }
+          })
           putString("selected", r.selected)
           // REA-21 (e): Settings' choice, null for the engine's own default; [selected] is the
           // voice that choice resolves to.
@@ -259,8 +271,10 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
     }
   }
 
-  override fun setVoice(name: String?, promise: Promise) = settle(promise) {
+  // REA-77: language is the chosen voice's, remembered for the Reader's language button.
+  override fun setVoice(name: String?, language: String?, promise: Promise) = settle(promise) {
     settings.voice = name
+    if (name != null && !language.isNullOrEmpty()) settings.rememberLanguageVoice(language, name)
     if (settings.bridgeEnabled) PlaybackService.syncBridge(reactApplicationContext)
     null
   }
@@ -269,6 +283,7 @@ class ReadMeSpeechModule(ctx: ReactApplicationContext) : NativeReadMeSpeechSpec(
   override fun setEngine(pkg: String?, promise: Promise) = settle(promise) {
     settings.engine = pkg
     settings.voice = null
+    settings.clearLanguageVoices()
     if (settings.bridgeEnabled) PlaybackService.syncBridge(reactApplicationContext)
     null
   }

@@ -9,6 +9,7 @@ const mockState = {
   engine: {
     status: 'ready',
     voices: [],
+    languages: [],
     selected: null,
     engine: null,
     engineLabel: null,
@@ -137,7 +138,7 @@ afterEach(() => {
 beforeEach(() => {
   mockState.items = [];
   mockState.detail = null;
-  mockState.engine = { status: 'ready', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
+  mockState.engine = { status: 'ready', voices: [], languages: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
   mockState.bridge = { enabled: false, state: 'off', port: 8787, token: null, error: null };
 });
 
@@ -313,7 +314,7 @@ test('Reader with every paragraph cut offers Trim (Review Focus 3)', async () =>
 
 test('Reader blocks when the engine has no offline voice (Review Focus 4)', async () => {
   mockState.detail = text(['One.']);
-  mockState.engine = { status: 'no-voice', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
+  mockState.engine = { status: 'no-voice', voices: [], languages: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
   const out = await render(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
   expect(out).toContain('no offline text-to-speech voice');
   expect(out).toContain('Open text-to-speech settings');
@@ -464,6 +465,7 @@ test('Settings lists offline voices, the default rate and storage', async () => 
   mockState.engine = {
     status: 'ready',
     voices: [{ name: 'en-us-x-a-local', language: 'en', quality: 400, label: 'English (United States)', detail: 'High quality' }],
+    languages: [],
     selected: 'en-us-x-a-local',
     preferred: 'en-us-x-a-local',
     engine: 'com.google.android.tts',
@@ -499,14 +501,15 @@ test("Settings offers the engine's default voice and choosing it clears the stor
   expect(byLabel(`voice ${voice.name}`).props.accessibilityState).toEqual({ checked: false });
   mockState.engine = { ...mockState.engine, preferred: voice.name };
   await ReactTestRenderer.act(async () => byLabel(`voice ${voice.name}`).props.onPress());
-  expect(Native.setVoice).toHaveBeenLastCalledWith(voice.name);
+  // REA-77: with its language, which the Reader's language button remembers it by.
+  expect(Native.setVoice).toHaveBeenLastCalledWith(voice.name, 'en');
   // Back to the default. The sheet opens scrolled to the checked voice, so the default row is
   // above it; the choice goes through the Select's onChange either way.
   const select = r.root.find(n => n.props.name === 'voice' && typeof n.props.onChange === 'function');
   expect(select.props.value).toBe(voice.name);
   mockState.engine = { ...mockState.engine, preferred: null };
   await ReactTestRenderer.act(async () => select.props.onChange('engine-default'));
-  expect(Native.setVoice).toHaveBeenLastCalledWith(null);
+  expect(Native.setVoice).toHaveBeenLastCalledWith(null, null);
   expect(r.root.find(n => n.props.name === 'voice' && typeof n.props.onChange === 'function').props.value).toBe('engine-default');
 });
 
@@ -713,7 +716,7 @@ describe('theme on the screens (REA-24)', () => {
 
   test('cards and the bridge row sit on surfaceContainerLow with an outlineVariant border', async () => {
     mockState.detail = text(['One.']);
-    mockState.engine = { status: 'no-voice', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
+    mockState.engine = { status: 'no-voice', voices: [], languages: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] };
     const r = await create(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
     const card = r.root.findAll(n => n.type === RN.View && flat(n.props.style).borderWidth === 1)[0];
     expect(flat(card.props.style)).toMatchObject({ backgroundColor: p.surfaceContainerLow, borderColor: p.outlineVariant });
@@ -843,15 +846,23 @@ describe('the Reader dock in a narrow window (REA-58)', () => {
     expect(inside(byTestID(r, 'dock'), 'faster')).toBe(true);
   });
 
-  test('at 448 dp and font scale 1.0 (the reference phone) the dock stays one row', async () => {
-    at(448, 1);
+  // REA-77: six 48 dp controls need 477 dp, so the reference phone's 448 dp takes two rows.
+  test('at 477 dp and font scale 1.0 the dock is one row', async () => {
+    at(477, 1);
     mockState.detail = text(['One.']);
     const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
     expect(flat(byTestID(r, 'dock').props.style).flexDirection).toBe('row');
   });
 
-  test('the one-row dock keeps a fixed gap between the transport and the Stepper', async () => {
+  test('at 448 dp and font scale 1.0 (the reference phone) the dock is two rows (REA-77)', async () => {
     at(448, 1);
+    mockState.detail = text(['One.']);
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+    expect(flat(byTestID(r, 'dock').props.style).flexDirection).toBe('column');
+  });
+
+  test('the one-row dock keeps a fixed gap between the transport and the Stepper', async () => {
+    at(477, 1);
     mockState.detail = text(['One.']);
     const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
     expect(flat(byTestID(r, 'dock').props.style).columnGap).toBe(8);
@@ -1276,5 +1287,92 @@ describe('the Reader shares and deletes its item (REA-76, GitHub #88)', () => {
     const r = await open();
     expect(byLabel(r, 'Delete')).toBeDefined();
     expect(byLabel(r, 'Share text')).toBeUndefined();
+  });
+});
+
+describe("the Reader's audio language button (REA-77, GitHub #87)", () => {
+  const voice = (name: string, language: string) => ({ name, language, quality: 400, label: name, detail: '' });
+  const ready = (selected = 'en-a') => {
+    mockState.engine = {
+      status: 'ready',
+      voices: [voice('en-a', 'en'), voice('fr-a', 'fr')],
+      languages: [
+        { language: 'en', label: 'English', code: 'EN', voice: 'en-a' },
+        { language: 'fr', label: 'French', code: 'FR', voice: 'fr-a' },
+      ],
+      selected,
+      engine: null,
+      engineLabel: null,
+      choosable: false,
+      engines: [],
+    };
+  };
+  const button = (r: ReactTestRenderer.ReactTestRenderer) =>
+    r.root.findAll(n => n.props.accessibilityLabel === 'audio language' && typeof n.props.onPress === 'function')[0];
+  const row = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    r.root.findAll(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function')[0];
+  const reader = () => mount(<ReaderScreen id={1} onTrim={() => {}} onGone={() => {}} />);
+  let restore = () => {};
+  afterEach(() => {
+    restore();
+    restore = () => {};
+  });
+  beforeEach(() => {
+    mockState.detail = text(['One sentence.']);
+    jest.mocked(Native.setVoice).mockClear();
+    jest.mocked(Native.pause).mockClear();
+    jest.mocked(Native.resume).mockClear();
+  });
+
+  test("it sits in the dock and names the voice's language", async () => {
+    ready();
+    const r = await reader();
+    const b = button(r);
+    const host = r.root.findAll(n => n.props.accessibilityLabel === 'audio language' && typeof n.props.accessibilityValue === 'object')[0];
+    expect(host.props.accessibilityValue).toEqual({ text: 'English' });
+    expect(b.props.disabled).toBe(false);
+    expect(strings(r.toJSON()).join('\n')).toContain('EN');
+    const dock = r.root.find(n => n.props.testID === 'dock');
+    expect(dock.findAll(n => n === b).length).toBe(1);
+  });
+
+  test('it is there, disabled, before the engine answers', async () => {
+    jest.mocked(Native.getEngine).mockReturnValueOnce(new Promise(() => {}));
+    const r = await reader();
+    expect(button(r).props.disabled).toBe(true);
+  });
+
+  test("choosing a language sets that language's voice and, while idle, plays nothing", async () => {
+    ready();
+    const r = await reader();
+    await ReactTestRenderer.act(async () => button(r).props.onPress());
+    expect(row(r, 'English (in use)')).toBeDefined();
+    await ReactTestRenderer.act(async () => row(r, 'French').props.onPress());
+    expect(Native.setVoice).toHaveBeenCalledWith('fr-a', 'fr');
+    expect(Native.pause).not.toHaveBeenCalled();
+    expect(Native.resume).not.toHaveBeenCalled();
+  });
+
+  test('while this item plays, the change is applied by pausing and resuming it', async () => {
+    ready();
+    const idle = jest.mocked(Native.getPlayback).getMockImplementation()!;
+    restore = () => jest.mocked(Native.getPlayback).mockImplementation(idle);
+    jest.mocked(Native.getPlayback).mockResolvedValue({
+      itemId: 1, playing: true, paragraphIndex: 0, start: 0, end: 13, rate: 2, engine: 'ready',
+    } as never);
+    const r = await reader();
+    await ReactTestRenderer.act(async () => button(r).props.onPress());
+    await ReactTestRenderer.act(async () => row(r, 'French').props.onPress());
+    expect(Native.setVoice).toHaveBeenCalledWith('fr-a', 'fr');
+    expect(jest.mocked(Native.pause).mock.invocationCallOrder[0]).toBeGreaterThan(jest.mocked(Native.setVoice).mock.invocationCallOrder[0]);
+    expect(jest.mocked(Native.resume).mock.invocationCallOrder[0]).toBeGreaterThan(jest.mocked(Native.pause).mock.invocationCallOrder[0]);
+  });
+
+  test('choosing the language in use changes nothing', async () => {
+    ready();
+    const r = await reader();
+    await ReactTestRenderer.act(async () => button(r).props.onPress());
+    await ReactTestRenderer.act(async () => row(r, 'English (in use)').props.onPress());
+    expect(Native.setVoice).not.toHaveBeenCalled();
   });
 });

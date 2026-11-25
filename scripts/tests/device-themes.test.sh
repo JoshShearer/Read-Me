@@ -298,13 +298,14 @@ LIB
 cp "$DOCK_CHECK" "$T/repo/scripts/dock-check.py"
 cp "${SHEET_CHECK:-$ROOT/scripts/sheet-check.py}" "$T/repo/scripts/sheet-check.py"
 printf 'print("contrast: not measured (stub)")\n' > "$T/repo/scripts/theme-contrast.py"
-# A two-row dock at 597 dpi (also what the stub phone shows at 480 dpi: wide must be one row).
+# A two-row dock at 597 dpi (also what the stub phone shows at 480 dpi, 448 dp: since REA-77 wide
+# must be two rows there too).
 dock_two_rows() {
   printf '<hierarchy><node bounds="[0,0][1344,2992]">'
   icon 'back paragraph' 40 2500; icon 'previous sentence' 240 2500
   printf '<node content-desc="play" bounds="[440,2515][800,2664]"><node text="Play" bounds="[530,2540][710,2640]"/></node>'
   icon 'next sentence' 820 2500
-  icon slower 400 2700; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'; icon faster 760 2700
+  icon 'audio language' 200 2700; icon slower 400 2700; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'; icon faster 760 2700
   trim_nodes; printf '</node></hierarchy>'
 }
 dock_dump() { dock_two_rows; }
@@ -358,7 +359,8 @@ check "script: an unreadable save file stops the run" "$(cat "$T/rc") $(grep -cE
 fresh '' 1.0; touch "$T/resetfail"
 printf 'I ReadMe: playback start item=1\nI ReadMe: playback paused item=1\n' > "$T/logcat"
 themes
-check "script: wide is checked for one row" "$(grep -c '^wide-1-reader FAIL dock: layout two-rows, expected one-row$' "$T/out")" 1
+check "script: wide at 448 dp is checked for two rows (REA-77)" \
+  "$(grep -c '^wide-1-reader dock: layout two rows$' "$T/out") $(grep -c '^wide-1-reader FAIL dock: layout' "$T/out")" '1 0'
 check "script: narrow is checked for two rows" \
   "$(grep -c '^narrow-1-reader dock: layout two rows$' "$T/out") $(grep -c '^narrow-1-reader FAIL dock: layout' "$T/out")" '1 0'
 check "script: a failed end-of-pass restore fails the run" "$(grep -c '^FAIL: the display was not restored' "$T/out")" 1
@@ -369,30 +371,32 @@ fresh '' 1.0
 printf 'I ReadMe: playback start item=1\nI ReadMe: playback paused item=1\n' > "$T/logcat"
 dock_dump() {
   printf '<hierarchy><node bounds="[0,0][1344,2992]">'
-  icon 'back paragraph' 20 2500; icon 'previous sentence' 205 2500
-  printf '<node content-desc="play" bounds="[390,2515][760,2664]"><node text="Play" bounds="[480,2540][670,2640]"/></node>'
-  icon 'next sentence' 770 2500; icon slower 960 2500; icon faster 1150 2500
+  icon 'back paragraph' 0 2500; icon 'previous sentence' 182 2500
+  printf '<node content-desc="play" bounds="[364,2515][543,2664]"><node text="Play" bounds="[400,2540][500,2640]"/></node>'
+  icon 'next sentence' 546 2500; icon 'audio language' 728 2500; icon slower 910 2500; icon faster 1092 2500
   printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/>'; trim_nodes; printf '</node></hierarchy>'
 }
 themes
 check "script: a one-row dock fails narrow's two-row check" \
   "$(grep -c '^narrow-[13]-reader FAIL dock: layout one-row, expected two-rows$' "$T/out")" 2
-check "script: and passes wide's one-row check" "$(grep -c '^wide-1-reader FAIL dock: layout' "$T/out")" 0
+check "script: and fails wide's two-row check at 448 dp (REA-77)" \
+  "$(grep -c '^wide-1-reader FAIL dock: layout one-row, expected two-rows$' "$T/out")" 1
 check "script: the display is back after the pass" "$(state) $(file)" 'none 1.0 gone'
 check "script: the narrow pass checks Trim's sheet and it passes" \
   "$(grep -c '^narrow-5-trim-sheet sheet: PASS$' "$T/out") $(grep -c "^FAIL: Trim's long-press sheet" "$T/out")" '1 0'
-# REA-62: runs where only the sheet can fail. The phone shows a one-row dock at its own 480 dpi
-# (48 dp = 144 px) and the two-row dock at 597, with Pause in Play's place once Play's centre is
+# REA-62: runs where only the sheet can fail. The phone shows a two-row dock at its own 480 dpi
+# (48 dp = 144 px; two rows at 448 dp since REA-77) and the two-row dock at 597, with Pause in Play's place once Play's centre is
 # tapped, so every dock check passes and the verdict rests on the sheet.
 dock_dump() { dock_two_rows; }
-icon480() { printf '<node content-desc="%s" bounds="[%s,2500][%s,2644]"><node text="g" bounds="[%s,2512][%s,2632]"/></node>' \
-  "$1" "$2" "$(($2 + 144))" "$(($2 + 40))" "$(($2 + 100))"; }
+icon480() { local y=${3:-2500}; printf '<node content-desc="%s" bounds="[%s,%s][%s,%s]"><node text="g" bounds="[%s,%s][%s,%s]"/></node>' \
+  "$1" "$2" "$y" "$(($2 + 144))" "$((y + 144))" "$(($2 + 40))" "$((y + 12))" "$(($2 + 100))" "$((y + 132))"; }
 wide_dump() {
   printf '<hierarchy><node bounds="[0,0][1344,2992]">'
   icon480 'back paragraph' 20; icon480 'previous sentence' 174
   printf '<node content-desc="play" bounds="[328,2500][628,2644]"><node text="Play" bounds="[378,2530][578,2614]"/></node>'
-  icon480 'next sentence' 642; icon480 slower 796; printf '<node text="1.0x" bounds="[950,2540][1050,2600]"/>'
-  icon480 faster 1060; printf '</node></hierarchy>'
+  icon480 'next sentence' 642
+  icon480 'audio language' 300 2660; icon480 slower 460 2660; printf '<node text="1.0x" bounds="[614,2700][714,2760]"/>'
+  icon480 faster 724 2660; printf '</node></hierarchy>'
 }
 clean_pass() {
   fresh '' 1.0
@@ -440,7 +444,7 @@ dump() {
   icon 'back paragraph' 40 2500; icon 'previous sentence' 240 2500
   printf '<node content-desc="play" bounds="[440,2515][800,2664]"><node text="Play" bounds="[530,2540][710,2640]"/></node>'
   icon 'next sentence' 820 2500
-  icon slower 400 2700 "${2:-160}"; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'
+  icon 'audio language' 200 2700; icon slower 400 2700 "${2:-160}"; printf '<node text="1.0x" bounds="[590,2740][750,2840]"/>'
   [ "$1" = nofaster ] || icon faster 760 2700 160 "${3:-179}"
   printf '</node></hierarchy>'
 }
@@ -460,11 +464,11 @@ dump ok > "$T/d.xml"
 check "--expect two-rows passes it" "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play --expect two-rows | tail -1)" 'dock: PASS'
 check "--expect one-row fails it" \
   "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play --expect one-row | grep -c 'FAIL dock: layout two-rows, expected one-row')" 1
-# One row: every control on one line.
+# One row: every control on one line (seven, REA-77: Play at its 48 dp minimum to fit 1344 px).
 { printf '<hierarchy><node bounds="[0,0][1344,2992]">'
-  icon 'back paragraph' 20 2500; icon 'previous sentence' 205 2500
-  printf '<node content-desc="play" bounds="[390,2515][760,2664]"><node text="Play" bounds="[480,2540][670,2640]"/></node>'
-  icon 'next sentence' 770 2500; icon slower 960 2500; icon faster 1150 2500
+  icon 'back paragraph' 0 2500; icon 'previous sentence' 182 2500
+  printf '<node content-desc="play" bounds="[364,2515][543,2664]"><node text="Play" bounds="[400,2540][500,2640]"/></node>'
+  icon 'next sentence' 546 2500; icon 'audio language' 728 2500; icon slower 910 2500; icon faster 1092 2500
   printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'; } > "$T/d.xml"
 check "--expect one-row passes a one-row dock" "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play --expect one-row | tail -1)" 'dock: PASS'
 check "--expect two-rows fails it" \
@@ -473,7 +477,7 @@ check "--expect two-rows fails it" \
 { printf '<hierarchy><node bounds="[0,0][1344,2992]">'
   icon 'back paragraph' 20 2500; icon 'previous sentence' 205 2500
   printf '<node content-desc="play" bounds="[390,2515][760,2664]"><node text="Play" bounds="[480,2540][670,2640]"/></node>'
-  icon 'next sentence' 900 2500; icon slower 960 2500; icon faster 1150 2500
+  icon 'next sentence' 900 2500; icon 'audio language' 20 2200; icon slower 960 2500; icon faster 1150 2500
   printf '<node text="1.0x" bounds="[1000,2400][1100,2480]"/></node></hierarchy>'; } > "$T/d.xml"
 check "overlapping controls fail" "$(python3 "$DOCK_CHECK" "$T/d.xml" 597 2992 play | grep -c 'FAIL dock: next sentence overlaps slower')" 1
 # sheet-check.py (REA-62): three rows at 597 dpi on a 1344 x 2992 screen.

@@ -53,6 +53,8 @@ export type NativePlayback = {
 };
 
 // label and detail are for people ("English (United States)", "High quality"); name is the id.
+// REA-77: one offline language, with the voice the Reader's language button uses for it.
+export type NativeLanguage = { language: string; label: string; code: string; voice: string };
 export type NativeVoice = { name: string; language: string; quality: number; label: string; detail: string };
 
 // An installed engine; usable is false where Android refuses to bind it (REA-32).
@@ -65,6 +67,7 @@ export type NativeEngine = {
   status: string;
   voices: NativeVoice[];
   selected: string | null;
+  languages: NativeLanguage[];
   // REA-21: Settings' stored voice, null for the engine's own default (selected is what it
   // resolves to).
   preferred?: string | null;
@@ -130,7 +133,7 @@ export interface Spec extends TurboModule {
   setCuts(id: number, indices: number[]): Promise<void>;
   stop(): Promise<boolean>;
   getEngine(): Promise<NativeEngine>;
-  setVoice(name: string | null): Promise<void>;
+  setVoice(name: string | null, language: string | null): Promise<void>;
   setEngine(pkg: string | null): Promise<void>;
   getNotices(): Promise<string>;
   getContinuousPlay(): Promise<boolean>;

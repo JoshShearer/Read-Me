@@ -167,3 +167,34 @@ class ServiceTextShownTest {
     )) org.junit.Assert.assertNotEquals(base, other)
   }
 }
+
+// REA-77: the Reader's audio language list.
+class VoiceLanguagesTest {
+  private fun v(name: String, tag: String, q: Int = 400, offline: Boolean = true) =
+    VoiceInfo(name, tag.substringBefore('-'), !offline, false, q, tag)
+  private val en = java.util.Locale.ENGLISH
+
+  @Test fun oneRowPerLanguageByName() {
+    val rows = VoiceLanguages.of(listOf(v("fr-a", "fr-FR"), v("en-a", "en-US"), v("en-b", "en-GB"), v("de-a", "de-DE")), emptyMap(), en)
+    org.junit.Assert.assertEquals(listOf("English", "French", "German"), rows.map { it.label })
+    org.junit.Assert.assertEquals(listOf("en", "fr", "de"), rows.map { it.language })
+    org.junit.Assert.assertEquals(listOf("EN", "FR", "DE"), rows.map { it.code })
+  }
+
+  @Test fun theRememberedVoiceElseTheBestQualityThenName() {
+    val voices = listOf(v("en-low", "en-US", 300), v("en-b", "en-GB", 400), v("en-a", "en-US", 400), v("fr-a", "fr-FR"))
+    org.junit.Assert.assertEquals("en-a", VoiceLanguages.of(voices, emptyMap(), en).first { it.language == "en" }.voice)
+    org.junit.Assert.assertEquals("en-low", VoiceLanguages.of(voices, mapOf("en" to "en-low"), en).first { it.language == "en" }.voice)
+  }
+
+  @Test fun aRememberedVoiceThatIsGoneOrOnlineIsNotUsed() {
+    val voices = listOf(v("en-a", "en-US"), v("en-net", "en-US", 500, offline = false))
+    org.junit.Assert.assertEquals("en-a", VoiceLanguages.of(voices, mapOf("en" to "en-net"), en).single().voice)
+    org.junit.Assert.assertEquals("en-a", VoiceLanguages.of(voices, mapOf("en" to "removed"), en).single().voice)
+  }
+
+  @Test fun aLanguageWithOnlyNetworkVoicesIsNotListed() {
+    org.junit.Assert.assertEquals(emptyList<VoiceLanguages.Row>(), VoiceLanguages.of(listOf(v("ja-net", "ja-JP", offline = false)), emptyMap(), en))
+  }
+}
+

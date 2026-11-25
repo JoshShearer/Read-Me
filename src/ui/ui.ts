@@ -82,4 +82,6 @@ export const ui = StyleSheet.create({
   transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   transportWide: { flex: 1 },
   transportNarrow: { alignSelf: 'stretch' },
+  // REA-77: the audio language button beside the rate, in either layout.
+  dockVoice: { flexDirection: 'row', alignItems: 'center' },
 });

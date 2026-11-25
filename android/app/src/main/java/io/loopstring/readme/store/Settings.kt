@@ -41,6 +41,25 @@ class Settings(context: Context) {
     }
 
   /**
+   * REA-77: the last voice chosen in each language (a voice's language part, "en"), so the
+   * Reader's language button returns to it. Names belong to the engine: cleared with it.
+   */
+  val languageVoices: Map<String, String>
+    get() = runCatching {
+      val o = org.json.JSONObject(prefs.getString(KEY_LANGUAGE_VOICES, null) ?: return emptyMap())
+      o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+  fun rememberLanguageVoice(language: String, voice: String) = synchronized(LOCK) {
+    val o = org.json.JSONObject(languageVoices).put(language, voice)
+    prefs.edit().putString(KEY_LANGUAGE_VOICES, o.toString()).apply()
+  }
+
+  fun clearLanguageVoices() {
+    prefs.edit().remove(KEY_LANGUAGE_VOICES).apply()
+  }
+
+  /**
    * The engine package chosen in Settings, below Android 14 only; null means Android's default.
    * Android 14 and later always use the system's engine (TtsOpen).
    */
@@ -88,6 +107,7 @@ class Settings(context: Context) {
     private const val KEY_RATE = "rate"
     private const val KEY_VOICE = "voice"
     private const val KEY_ENGINE = "engine"
+    private const val KEY_LANGUAGE_VOICES = "languageVoices"
     private const val KEY_BRIDGE = "bridge"
     private const val KEY_BRIDGE_PORT = "bridgePort"
     private const val KEY_BRIDGE_TOKEN = "bridgeToken"
