@@ -83,6 +83,11 @@ display and at font scale 2.0 (amended 2026-10-21, REA-58: on a 360 dp Galaxy S2
 "+" was off the screen; `device:themes`' narrow pass checks it).
 The colours are the LoopString web app's Material 3 palette (amended 2026-10-03, REA-24).
 
+Amended 2026-11-25 (REA-76, GitHub #88): the Reader has a "More" menu with Share link (link items:
+the URL), Share text (the title and the kept paragraphs, plain text; disabled above 100,000
+characters, which one intent may not carry) and Delete, and a Delete button after the last
+paragraph. Both Deletes confirm as the List's does, then return to the List.
+
 Amended 2026-11-01 (REA-72, ADR 0017): the List shows unread items in a stored order. A new
 item (link, text or file) and an item restored from the Archive go to the bottom; a share that
 matches an unread item (R-M02 as amended) leaves it where it is. Any unread item MUST be movable
@@ -274,7 +279,8 @@ These are promises. Breaking one is a release blocker.
 4. **Item content stays in app-private storage.** `android:allowBackup="false"`; no
    external-storage writes in v1. Synthesized playback audio is item content: it lives in
    `noBackupFilesDir/playback`, named by item id and offsets, and is deleted as "Playback"
-   says (ADR 0012).
+   says (ADR 0012). Text or a URL leaves Read Me only when the user shares it from the Reader
+   (R-M01, REA-76) through the Android share sheet, to the app the user picks there.
 5. The INTERNET permission is required for R-M03. ACCESS_NETWORK_STATE is also declared
    (read-only, no network use; it tells "no network" from "no such host", ADR 0015). No other
    network permission is requested.

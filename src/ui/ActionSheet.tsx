@@ -18,7 +18,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 import { palette, type } from './theme';
 
-export type SheetAction = { label: string; testID: string; onPress: () => void };
+/** disabled: listed, faint, and not pressable; the label says why. */
+export type SheetAction = { label: string; testID: string; onPress: () => void; disabled?: boolean };
 
 // Material's minimum touch target.
 const ROW = 48;
@@ -60,15 +61,17 @@ export function ActionSheet({
           style={[s.sheet, { backgroundColor: p.surfaceContainerLow, paddingBottom: insets.bottom + 8 }]}>
           <View collapsable={false} style={[s.handle, { backgroundColor: p.outline }]} />
           <Text accessibilityRole="header" style={s.title}>{title}</Text>
-          {[...actions, { label: cancelLabel, testID: cancelTestID, onPress: onClose }].map(a => (
+          {[...actions, { label: cancelLabel, testID: cancelTestID, onPress: onClose } as SheetAction].map(a => (
             <Pressable
               key={a.testID}
               testID={a.testID}
               accessibilityRole="button"
               accessibilityLabel={a.label}
+              accessibilityState={{ disabled: a.disabled === true }}
+              disabled={a.disabled === true}
               onPress={a.onPress}
               style={({ pressed }) => [s.row, pressed ? { backgroundColor: p.surfaceContainerHigh } : null]}>
-              <Text style={s.label}>{a.label}</Text>
+              <Text tone={a.disabled ? 'disabled' : 'body'} style={s.label}>{a.label}</Text>
             </Pressable>
           ))}
         </View>
