@@ -34,19 +34,21 @@ class FetchWorker(context: Context, params: WorkerParameters) : Worker(context, 
           "ok"
         }
         is FetchResult.Failed -> {
-          store.fetchFailed(id, r.reason)
-          r.reason
+          if (store.fetchFailed(id, r.reason)) r.reason else "${r.reason}:unsaved"
         }
       }
     } catch (t: Throwable) {
       // Disk full, a failed rename, a SQLite error: without this the item would sit in fetching
       // until the next process start. The class name only (AGENTS.md 1).
-      runCatching { store.fetchFailed(id, "interrupted") }
-      "interrupted:${t.javaClass.simpleName}"
+      val saved = store.fetchFailed(id, "interrupted")
+      "interrupted:${t.javaClass.simpleName}" + if (saved) "" else ":unsaved"
     }
     val ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
     // AGENTS.md 1: an id, a reason class and a duration; never the URL.
     Log.i(TAG, "request id=$id outcome=$outcome ms=$ms")
+    // REA-74: success even when nothing could be saved. Result.retry() would outlive this process,
+    // and a re-run cannot tell "save the failure" from "the process died mid-request", so it would
+    // fetch again. The Store shows the failure from memory, and Recovery saves it at the next start.
     return Result.success()
   }
 

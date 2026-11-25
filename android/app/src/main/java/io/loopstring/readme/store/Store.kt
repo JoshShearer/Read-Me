@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import io.loopstring.readme.playback.Segmenter
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 data class ItemRow(
   val id: Long,
@@ -75,6 +76,15 @@ class Store private constructor(context: Context) :
   SQLiteOpenHelper(context, DB_NAME, null, VERSION) {
 
   private val bodies = File(context.filesDir, "bodies")
+
+  /**
+   * REA-74: failed fetches whose state could not be written (a full disk), by id, with the
+   * reason. The row still says fetching, so without this an open List would spin until the next
+   * process start. [toItem] shows them as fetch-failed; beginRetry and delete clear them. Not
+   * persisted on purpose: Recovery turns the stale row into fetch-failed at the next start, with
+   * no request. Ids and reason classes only.
+   */
+  private val unsavedFailures = ConcurrentHashMap<Long, String>()
 
   override fun onConfigure(db: SQLiteDatabase) {
     db.setForeignKeyConstraintsEnabled(true)
@@ -476,12 +486,36 @@ class Store private constructor(context: Context) :
     if (!setStateIf(id, States.FETCHING, States.FETCHED, null)) bodyFile(id).delete()
   }
 
-  fun fetchFailed(id: Long, reason: String) {
-    setStateIf(id, States.FETCHING, States.FETCH_FAILED, reason)
-  }
+  /**
+   * Never throws: false when the write failed, and then the item reads as fetch-failed from
+   * memory (REA-74, [unsavedFailures]) so the failure is still visible (R-M10).
+   */
+  fun fetchFailed(id: Long, reason: String): Boolean =
+    try {
+      setStateIf(id, States.FETCHING, States.FETCH_FAILED, reason)
+      true
+    } catch (t: Throwable) {
+      unsavedFailures[id] = reason
+      ItemEvents.changed()
+      false
+    }
 
-  /** The user's Retry (R-M03 as amended): only a failed fetch goes back to fetching. */
-  fun beginRetry(id: Long): Boolean = setStateIf(id, States.FETCH_FAILED, States.FETCHING, null)
+  /**
+   * The user's Retry (R-M03 as amended): only a failed fetch goes back to fetching. One whose
+   * failure was never saved (REA-74) is still fetching in its row: the write proves storage works
+   * again, and if it throws the failure stays on screen.
+   */
+  fun beginRetry(id: Long): Boolean {
+    val unsaved = unsavedFailures.remove(id)
+      ?: return setStateIf(id, States.FETCH_FAILED, States.FETCHING, null)
+    return try {
+      setStateIf(id, States.FETCHING, States.FETCHING, null) ||
+        setStateIf(id, States.FETCH_FAILED, States.FETCHING, null)
+    } catch (t: Throwable) {
+      unsavedFailures[id] = unsaved
+      throw t
+    }
+  }
 
   /**
    * The HTML of a fetched item, for JS extraction. A fetched item whose body is missing cannot
@@ -736,6 +770,7 @@ class Store private constructor(context: Context) :
   /** Deletes the item, its paragraphs, cuts, position and any waiting body (R-M11, AGENTS.md 3). */
   fun delete(id: Long) {
     writableDatabase.delete("items", "id = ?", arrayOf(id.toString()))
+    unsavedFailures.remove(id)
     bodyFile(id).delete()
     File(bodies, "$id.html.tmp").delete()
     ItemEvents.changed()
@@ -765,7 +800,13 @@ class Store private constructor(context: Context) :
   private fun Cursor.long(col: String): Long? =
     getColumnIndexOrThrow(col).let { if (isNull(it)) null else getLong(it) }
 
-  private fun Cursor.toItem() = ItemRow(
+  private fun Cursor.toItem(): ItemRow {
+    val row = toStoredItem()
+    val unsaved = if (row.state == States.FETCHING) unsavedFailures[row.id] else null
+    return if (unsaved == null) row else row.copy(state = States.FETCH_FAILED, failReason = unsaved)
+  }
+
+  private fun Cursor.toStoredItem() = ItemRow(
     id = long("id")!!,
     kind = str("kind")!!,
     url = str("url"),
