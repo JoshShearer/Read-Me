@@ -104,6 +104,8 @@ release/SHA256SUMS
 .env
 .env.*
 release/fdroid-verified
+release/launch-verified
+release/HERMES.txt
 release/tested-*/
 
 # Playwright MCP page snapshots (local browser sessions)

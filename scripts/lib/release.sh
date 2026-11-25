@@ -101,3 +101,59 @@ assemble_abi() {
   clear_bundle_output android/app
   ( cd android && ./gradlew --quiet assembleRelease -PreactNativeArchitectures="$abi" "$@" )
 }
+# REA-75: Hermes refuses a bundle whose bytecode version is not exactly its own, and the crash
+# only shows at launch. hermes_record <apk> <abi>: one line naming the pair inside that APK, read
+# from the APK where it can be (the bundle's bytecode version, the runtime library's sum) and from
+# the tree that built it otherwise. Refused when the halves disagree. READ_ME_HERMES_HEADER names
+# another BytecodeVersion.h (tests).
+hermes_bytecode_version() { # hermes_bytecode_version <apk>: from the packaged bundle's HBC header
+  python3 - "$1" <<'PY'
+import struct, sys, zipfile
+head = zipfile.ZipFile(sys.argv[1]).read("assets/index.android.bundle")[:12]
+if len(head) < 12 or struct.unpack("<Q", head[:8])[0] != 0x1F1903C103BC1FC6:
+    sys.exit("refused: %s's bundle is not Hermes bytecode" % sys.argv[1])
+print(struct.unpack("<I", head[8:])[0])
+PY
+}
+hermes_record() {
+  local apk=$1 abi=$2 bundle source compiler runtime submodule so
+  bundle=$(hermes_bytecode_version "$apk") || return 1
+  source=$(sed -n 's/.*BYTECODE_VERSION = \([0-9]*\);.*/\1/p' \
+    "${READ_ME_HERMES_HEADER:-external/hermes/include/hermes/BCGen/HBC/BytecodeVersion.h}" 2>/dev/null)
+  compiler=$(node -p "require('hermes-compiler/package.json').version") || return 1
+  runtime=$(sed -n 's/^HERMES_VERSION_NAME=//p' node_modules/react-native/sdks/hermes-engine/version.properties)
+  submodule=$(git rev-parse HEAD:external/hermes) || return 1
+  so=$(unzip -p "$apk" "lib/$abi/libhermesvm.so" | sha256sum | cut -d' ' -f1)
+  if [ -z "$source" ] || [ "$bundle" != "$source" ]; then
+    echo "refused: $apk's bundle is bytecode ${bundle:-?}, external/hermes writes ${source:-unknown (git submodule update --init)}" >&2
+    return 1
+  fi
+  if [ -z "$runtime" ] || [ "$runtime" != "$compiler" ]; then
+    echo "refused: React Native's Hermes runtime is ${runtime:-unknown}, hermes-compiler is $compiler" >&2
+    return 1
+  fi
+  # sha256 of no bytes: the APK has no runtime for this ABI.
+  if [ "$so" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ]; then
+    echo "refused: $apk has no lib/$abi/libhermesvm.so" >&2
+    return 1
+  fi
+  echo "$abi bytecode=$bundle hermes-compiler=$compiler hermes-runtime=$runtime submodule=$submodule libhermesvm.so=$so"
+}
+# REA-75: npm run release:launch (emulators) and device:smoke (the phone, arm64-v8a) record a
+# tested APK that launched on its ABI; release:apk signs nothing else. One line per launch:
+# <apk sha256>  <apk name>  <where it ran>.
+RELEASE_LAUNCHED_FILE_DEFAULT=release/launch-verified
+record_launched() { # record_launched <apk> <where>
+  local f=${RELEASE_LAUNCHED_FILE:-$RELEASE_LAUNCHED_FILE_DEFAULT}
+  mkdir -p "$(dirname "$f")"
+  echo "$(sha256sum < "$1" | cut -d' ' -f1)  $(basename "$1")  $2" >> "$f"
+}
+require_launched() {
+  local sum
+  sum=$(sha256sum < "$1" | cut -d' ' -f1)
+  awk -v s="$sum" '$1 == s && NF >= 3 { f = 1 } END { exit !f }' \
+    "${RELEASE_LAUNCHED_FILE:-$RELEASE_LAUNCHED_FILE_DEFAULT}" 2>/dev/null && return 0
+  echo "refused: $1 has no recorded launch on its ABI; run npm run release:launch -- $(dirname "$1")" >&2
+  echo "(x86, x86_64, armeabi-v7a) and npm run device:smoke (arm64-v8a)" >&2
+  return 1
+}

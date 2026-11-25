@@ -36,5 +36,11 @@ logs=$(adb logcat -d -b crash,main)
 if device_crash_seen "$PID" <<<"$logs"; then
   echo "FAIL: crash logged"; fail=1
 fi
+# REA-75: release:apk requires a recorded launch of each ABI's tested APK; this is arm64-v8a's. A
+# dirty build is recorded by its sum too, and never matches a tested one.
+if [ "$fail" = 0 ] && [ -f "${APK:-}" ]; then
+  . scripts/lib/release.sh
+  record_launched "$APK" "phone $(adb shell getprop ro.product.model | tr -d '\r') $(date -I)"
+fi
 echo "device:smoke $([ $fail -eq 0 ] && echo PASS || echo FAIL)"
 exit $fail
