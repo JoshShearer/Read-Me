@@ -21,6 +21,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/device.sh
 PORT=8787
+# The host end of adb forward. READ_ME_BRIDGE_HOST_PORT moves it off 8787 when another local
+# service holds that port (the 1.1.1 acceptance run failed on it), or when adb talks to a server
+# on another machine and an ssh tunnel brings that port here.
+HOST_PORT=${READ_ME_BRIDGE_HOST_PORT:-$PORT}
 HDR=""                 # made after the source-only guard, so a sourced test run leaves no file
 prev_engine=""
 engine_pinned=0
@@ -39,7 +43,7 @@ cleanup() {
   # Plan review F6: a run stopped inside the revoked-permission section gives the permission back.
   [ "$notify_revoked" = 0 ] || adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
   [ -z "$HDR" ] || rm -f "$HDR"
-  adb forward --remove tcp:$PORT >/dev/null 2>&1 || true
+  adb forward --remove tcp:$HOST_PORT >/dev/null 2>&1 || true
   adb shell rm -f /sdcard/readme-ui.xml >/dev/null 2>&1 || true
 }
 DEVICE_ON_EXIT=cleanup
@@ -151,9 +155,9 @@ tap_desc "$BRIDGE"
 tap_text 'Don.t allow'
 check "refused: Settings explains and the bridge stays off" \
   "on_screen 'Read Me needs to show a notification while the bridge is on' && bridge_is false"
-adb forward tcp:$PORT tcp:$PORT >/dev/null
+adb forward tcp:$HOST_PORT tcp:$PORT >/dev/null
 check "refused: nothing listens on the port" \
-  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$PORT/health)\" = 000 ]"
+  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$HOST_PORT/health)\" = 000 ]"
 tap_desc "$BRIDGE"
 tap_text 'Allow'
 check "Settings says the bridge is on" "on_screen 'On at 127\.0\.0\.1:$PORT' && bridge_is true"
@@ -163,8 +167,8 @@ printf 'Authorization: Bearer %s\n' "$TOK" > "$HDR"
 check "the notification says the bridge is on" \
   "grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
 
-adb forward tcp:$PORT tcp:$PORT >/dev/null
-B="http://127.0.0.1:$PORT"
+adb forward tcp:$HOST_PORT tcp:$PORT >/dev/null
+B="http://127.0.0.1:$HOST_PORT"
 code() { curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$@"; }
 
 echo "== contract"
@@ -195,7 +199,7 @@ check "body over 64 KiB: 413" \
   "[ \"\$(head -c 65537 /dev/zero | tr '\\0' a | code -X POST -H @$HDR --data-binary @- $B/synthesize)\" = 413 ]"
 check "a 20 KB header: 431" "[ \"\$(code -H \"X-Pad: \$(head -c 20000 /dev/zero | tr '\\0' a)\" $B/health)\" = 431 ]"
 check "other origin: no CORS" "! grep -qi access-control <<<\"\$(curl -s -D - -o /dev/null -H 'Origin: http://evil.example' $B/health)\""
-exec 3<>/dev/tcp/127.0.0.1/$PORT   # a silent client
+exec 3<>/dev/tcp/127.0.0.1/$HOST_PORT   # a silent client
 check "a silent client does not block /health" "[ \"\$(code --max-time 3 $B/health)\" = 200 ]"
 exec 3<&- 3>&-
 
@@ -246,7 +250,7 @@ sleep 2
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
 sleep 3
-adb forward tcp:$PORT tcp:$PORT >/dev/null
+adb forward tcp:$HOST_PORT tcp:$PORT >/dev/null
 check "revoked: nothing listens on the port after the reopen" "[ \"\$(code --max-time 3 $B/health)\" = 000 ]"
 check "revoked: the refusal is logged" "wait_log 'bridge blocked: notifications off' 10"
 check "revoked: no bridge notification" \
@@ -266,7 +270,7 @@ sleep 3
 tap_desc settings
 scroll_to_desc "$BRIDGE"
 check "granted again: the saved setting brings the bridge back" "on_screen 'On at 127\.0\.0\.1:$PORT' && bridge_is true"
-adb forward tcp:$PORT tcp:$PORT >/dev/null
+adb forward tcp:$HOST_PORT tcp:$PORT >/dev/null
 check "granted again: /health 200" "[ \"\$(code --max-time 5 $B/health)\" = 200 ]"
 check "granted again: the notification says the bridge is on" \
   "grep -q 'Obsidian bridge on' <<<\"\$(adb shell dumpsys notification --noredact)\""
