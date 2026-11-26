@@ -55,7 +55,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     takeSharedOpen: jest.fn(async () => mockState.shared.shift() ?? null),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
-    getEngine: jest.fn(async () => ({ status: 'ready', voices: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] })),
+    getEngine: jest.fn(async () => ({ status: 'ready', voices: [], languages: [], selected: null, engine: null, engineLabel: null, choosable: false, engines: [] })),
     getPlayback: jest.fn(async () =>
       mockSnapshot(mockState.playback.itemId, mockState.playback.playing, mockState.playback.waitingItemId),
     ),

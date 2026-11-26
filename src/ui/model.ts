@@ -2,6 +2,7 @@
 // decides. Nothing here reaches native code.
 import type { Item, Move } from '../library/library';
 import type { Paragraph } from '../types';
+import type { NativeLanguage } from '../native/NativeReadMeSpeech';
 
 export type Route =
   | { name: 'list' }
@@ -235,6 +236,22 @@ export function shareText(title: string, kept: readonly { text: string }[]): { t
   return { text, fits: text.length <= SHARE_MAX };
 }
 
+/**
+ * REA-77: the Reader's audio languages and the one in use, the language of the voice the engine
+ * resolves to. Null while the engine has not answered.
+ */
+export type AudioLanguages = { list: readonly NativeLanguage[]; current: NativeLanguage | null };
+
+export function audioLanguages(e: {
+  voices: readonly { name: string; language: string }[];
+  languages?: readonly NativeLanguage[];
+  selected: string | null;
+}): AudioLanguages {
+  const list = e.languages ?? [];
+  const language = e.voices.find(v => v.name === e.selected)?.language;
+  return { list, current: list.find(l => l.language === language) ?? null };
+}
+
 /** R-M07: 0.5x to 4.0x in 0.1x steps. */
 export const RATE_MIN = 0.5;
 export const RATE_MAX = 4;
@@ -270,9 +287,9 @@ const PLAY_TEXT = 56;
 const RATE_TEXT = 44;
 /** The one-row dock's fixed gap between the transport's ▶ and the Stepper's −. */
 export const DOCK_GAP = 8;
-/** Margins and padding (32), five glyph buttons (240), Play's horizontal padding (48), the gap,
+/** Margins and padding (32), six 48 dp buttons (288; the audio language one since REA-77), Play's horizontal padding (48), the gap,
  * and 1 for the hairline border on each side (about 0.33 dp each at 3x, rounded up). */
-const DOCK_FIXED = 32 + 5 * 48 + 48 + DOCK_GAP + 1;
+const DOCK_FIXED = 32 + 6 * 48 + 48 + DOCK_GAP + 1;
 
 /** Play's minimum width: Play and Pause are the same width, so the toggle never moves it. */
 export const playMinWidth = (fontScale: number): number => 48 + PLAY_TEXT * fontScale;

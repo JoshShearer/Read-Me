@@ -88,6 +88,14 @@ the URL), Share text (the title and the kept paragraphs, plain text; disabled ab
 characters, which one intent may not carry) and Delete, and a Delete button after the last
 paragraph. Both Deletes confirm as the List's does, then return to the List.
 
+Amended 2026-11-25 (REA-77, GitHub #87): the Reader's dock has an audio language button beside
+the rate, showing the language code of the voice in use ("EN"; TalkBack: "audio language,
+English"). It lists the languages of the offline voices (R-M06); choosing one sets Settings'
+voice to the last voice chosen in that language, else its best quality one, and while the item
+plays it is paused and resumed so the new voice reads from the current sentence. A dock of six
+48 dp controls is one row from 477 dp at font scale 1.0, so the reference phone (448 dp) shows
+two rows; the 360 dp and font scale 2.0 rule above still holds.
+
 Amended 2026-11-01 (REA-72, ADR 0017): the List shows unread items in a stored order. A new
 item (link, text or file) and an item restored from the Archive go to the bottom; a share that
 matches an unread item (R-M02 as amended) leaves it where it is. Any unread item MUST be movable

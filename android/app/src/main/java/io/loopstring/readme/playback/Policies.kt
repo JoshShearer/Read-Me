@@ -49,6 +49,24 @@ object VoiceList {
  * A name a person gave (Marmalade's, say) is kept, without a model prefix, with the language as its detail. Voices that
  * would read the same are numbered, in name order.
  */
+/**
+ * REA-77: the Reader's audio languages, one row per language among the offline voices, by its
+ * name in the phone's language. Each names the voice choosing it uses: the last one chosen in that
+ * language while it is still offline and installed, else the best quality (then name order).
+ */
+object VoiceLanguages {
+  data class Row(val language: String, val label: String, val code: String, val voice: String)
+
+  fun of(voices: List<VoiceInfo>, remembered: Map<String, String>, display: Locale = Locale.getDefault()): List<Row> =
+    voices.filter(VoicePicker::usable).distinctBy { it.name }.groupBy { it.language }.map { (language, same) ->
+      val pick = same.firstOrNull { it.name == remembered[language] }
+        ?: same.sortedWith(compareBy<VoiceInfo>({ -it.quality }, { it.name })).first()
+      val l = Locale.forLanguageTag(language)
+      val label = l.getDisplayLanguage(display).ifEmpty { language }.replaceFirstChar { it.titlecase(display) }
+      Row(language, label, language.uppercase(Locale.ROOT), pick.name)
+    }.sortedWith(compareBy({ it.label }, { it.language }))
+}
+
 object VoiceLabels {
   data class Label(val label: String, val detail: String)
 

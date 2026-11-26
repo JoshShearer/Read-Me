@@ -32,6 +32,23 @@ class SettingsTest {
     assertEquals(4.0f, Settings(ctx).rate)
   }
 
+  // REA-77: the last voice chosen in each language, for the Reader's language button.
+  @Test fun aVoicePerLanguageIsRememberedUntilCleared() {
+    val s = Settings(ctx)
+    assertEquals(emptyMap<String, String>(), s.languageVoices)
+    s.rememberLanguageVoice("en", "en-us-x-a")
+    s.rememberLanguageVoice("fr", "Amélie \"quoted\" = name")
+    s.rememberLanguageVoice("en", "en-gb-x-b")
+    assertEquals(mapOf("en" to "en-gb-x-b", "fr" to "Amélie \"quoted\" = name"), Settings(ctx).languageVoices)
+    Settings(ctx).clearLanguageVoices()
+    assertEquals(emptyMap<String, String>(), Settings(ctx).languageVoices)
+  }
+
+  @Test fun aDamagedLanguageVoiceRecordReadsAsEmpty() {
+    ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("languageVoices", "{not json").commit()
+    assertEquals(emptyMap<String, String>(), Settings(ctx).languageVoices)
+  }
+
   @Test fun theVoiceIsUnsetUntilChosenAndCanBeCleared() {
     val ctx = ApplicationProvider.getApplicationContext<Context>()
     assertEquals(null, Settings(ctx).voice)

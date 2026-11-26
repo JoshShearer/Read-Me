@@ -50,7 +50,7 @@ class ReadMeSpeechModuleBridgeGuardTest {
   }
 
   @Test fun setVoiceStartsNoBridge() {
-    runCatching { ReadMeSpeechModule(BridgeReactContext(app)).setVoice("v", promise) }
+    runCatching { ReadMeSpeechModule(BridgeReactContext(app)).setVoice("v", null, promise) }
     assertNothingStarted()
   }
 

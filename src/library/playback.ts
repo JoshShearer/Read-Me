@@ -182,13 +182,15 @@ export async function applyCuts(id: number, cuts: ReadonlySet<number>): Promise<
 export type Engine = NativeEngine;
 
 export const getEngine = (): Promise<Engine> => Native.getEngine();
-export const setVoice = (name: string | null) => Native.setVoice(name);
+// REA-77: language is the voice's own, so the Reader's language button can return to it.
+export const setVoice = (name: string | null, language: string | null = null) => Native.setVoice(name, language);
 /** Below Android 14 only; clears the voice, since a voice belongs to its engine. */
 export const setEngine = (pkg: string | null) => Native.setEngine(pkg);
 
 export const NO_ENGINE: Engine = {
   status: 'no-engine',
   voices: [],
+  languages: [],
   selected: null,
   engine: null,
   engineLabel: null,

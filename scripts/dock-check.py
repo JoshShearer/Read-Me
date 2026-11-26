@@ -23,7 +23,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 BOUNDS = re.compile(r'\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]')
-ICONS = ['back paragraph', 'previous sentence', 'next sentence', 'slower', 'faster']
+ICONS = ['back paragraph', 'previous sentence', 'next sentence', 'audio language', 'slower', 'faster']
 RATE = re.compile(r'^\d+\.\dx$')
 
 
