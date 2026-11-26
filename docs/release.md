@@ -38,6 +38,8 @@ nothing for day-to-day builds, device scripts or CI.
    npm run device:playback
    AIRPLANE=1 GAP_MINUTES=10 npm run device:gap
    npm run device:screens
+   npm run device:smoke               # also records arm64-v8a's launch (REA-75)
+   npm run release:launch -- release/tested-<sha>   # x86_64, x86, armeabi-v7a on emulators (about 5 min)
    scripts/fdroid-scan.sh             # == result: CLEAN (every ABI's APK)
    npm run repro -- release/tested-<sha>/app-arm64-v8a-release.apk   # repro: SAME (arm64-v8a's recipe entry)
    npm run fdroid:build -- release/tested-<sha>   # fdroid:build: SAME for every ABI (about an hour; docker)
@@ -46,16 +48,19 @@ nothing for day-to-day builds, device scripts or CI.
    after the release. `release:apk` refuses a dirty tree, and a commit now would move HEAD off
    the tested commit (a squash merge of it is fine: same tree, so the same build).
 2. `npm run release:apk -- release/tested-<sha>`. It refuses APKs that `fdroid:build` has not
-   matched (`release/fdroid-verified`), builds each ABI with your key, refuses any other signer
+   matched (`release/fdroid-verified`), that no run launched on their ABI
+   (`release/launch-verified`) or whose Hermes bytecode, compiler and runtime disagree, builds each ABI with your key, refuses any other signer
    or an extra signing block, checks each signed APK's content equals that ABI's tested one
-   (apksigcopier), and writes `release/read-me-<version>-<abi>.apk` (four) and
-   `release/SHA256SUMS`.
+   (apksigcopier), and writes `release/read-me-<version>-<abi>.apk` (four),
+   `release/SHA256SUMS` and `release/HERMES.txt` (each APK's bytecode version, hermes-compiler,
+   runtime version, Hermes submodule commit and `libhermesvm.so` sum).
+   `device:smoke` must run on the tested APK itself: build once, then smoke before rebuilding.
 3. The draft release, tagged at the commit `release:apk` prints (the one F-Droid built, or main's
    squash merge of it; not whatever `main` is when you publish, so the tag's source is what
    F-Droid's `commit:` builds). No prompts, so nothing is published by accident:
    ```
    gh release create v<version> --draft --target <the sha release:apk printed> \
-     --title "Read Me <version>" --notes-file <notes> release/read-me-<version>-*.apk release/SHA256SUMS
+     --title "Read Me <version>" --notes-file <notes> release/read-me-<version>-*.apk release/SHA256SUMS release/HERMES.txt
    ```
 4. Optional, on the phone: a release-signed APK will not install over the debug-signed one.
    `adb uninstall io.loopstring.readme` deletes the app and its data; then

@@ -104,6 +104,42 @@ else echo "ok: an APK with Dependency metadata is refused"; fi
   && echo "ok: the fixture with the block still verifies (so it is a real APK)" || { echo "FAIL: the injected fixture is not a valid APK"; fail=1; }
 grep -q 'require_no_extra_signing_blocks "$tmp"' scripts/lib/release.sh && grep -q 'require_no_extra_signing_blocks "$APK"' scripts/fdroid-scan.sh \
   && echo "ok: release:apk and fdroid-scan refuse it" || { echo "FAIL: release:apk or fdroid-scan does not check signing blocks"; fail=1; }
+# REA-75: the Hermes pair of an APK, and the launch record release:apk requires.
+echo '  const static uint32_t BYTECODE_VERSION = 98;' > "$T/hv.h"
+hermes_apk() { # hermes_apk <file> <bytecode version> <magic hex, little endian> [lib dir]
+  python3 - "$@" <<'PY'
+import struct, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1], "w")
+z.writestr("assets/index.android.bundle", bytes.fromhex(sys.argv[3]) + struct.pack("<I", int(sys.argv[2])) + b"rest")
+if len(sys.argv) > 4: z.writestr("lib/%s/libhermesvm.so" % sys.argv[4], b"runtime")
+PY
+}
+HBC=c61fbc03c103191f
+hermes_apk "$T/h.apk" 98 $HBC x86
+got=$(READ_ME_HERMES_HEADER="$T/hv.h" hermes_record "$T/h.apk" x86 2>&1)
+case "$got" in
+  "x86 bytecode=98 hermes-compiler="*" hermes-runtime="*" submodule="*" libhermesvm.so="*) echo "ok: hermes_record names the pair" ;;
+  *) echo "FAIL: hermes_record said: $got"; fail=1 ;;
+esac
+refused() { # refused <what> <apk> <abi>
+  if READ_ME_HERMES_HEADER="${HV:-$T/hv.h}" hermes_record "$2" "$3" >/dev/null 2>&1; then echo "FAIL: hermes_record accepted $1"; fail=1
+  else echo "ok: hermes_record refuses $1"; fi
+}
+hermes_apk "$T/h97.apk" 97 $HBC x86; refused "another bytecode version" "$T/h97.apk" x86
+hermes_apk "$T/hjs.apk" 98 0000000000000000 x86; refused "a bundle that is not bytecode" "$T/hjs.apk" x86
+hermes_apk "$T/hno.apk" 98 $HBC; refused "an APK without the runtime" "$T/hno.apk" x86
+refused "a runtime of another ABI only" "$T/h.apk" x86_64
+HV=$T/missing.h refused "an unknown source version" "$T/h.apk" x86
+if RELEASE_LAUNCHED_FILE="$T/launched" require_launched "$T/h.apk" >/dev/null 2>&1; then
+  echo "FAIL: an APK never launched was accepted"; fail=1
+else echo "ok: an APK without a launch is refused"; fi
+RELEASE_LAUNCHED_FILE="$T/launched" record_launched "$T/h.apk" "emulator x"
+RELEASE_LAUNCHED_FILE="$T/launched" require_launched "$T/h.apk" >/dev/null && echo "ok: a recorded launch is accepted" || { echo "FAIL: a recorded launch was refused"; fail=1; }
+if RELEASE_LAUNCHED_FILE="$T/launched" require_launched "$T/h97.apk" >/dev/null 2>&1; then
+  echo "FAIL: another APK's launch was accepted"; fail=1
+else echo "ok: another APK's launch is refused"; fi
+grep -q 'require_launched "$TESTED/app-$ABI-release.apk"' scripts/release-apk.sh && grep -q '> release/HERMES.txt' scripts/release-apk.sh \
+  && echo "ok: release:apk requires the launch and writes HERMES.txt" || { echo "FAIL: release:apk does not use the launch record or HERMES.txt"; fail=1; }
 # REA-38 review: a match holds for the commit F-Droid built. A later commit that changes anything
 # but docs (the recipe, build-hermesc.sh: F-Droid's build only) needs a new fdroid:build.
 LIB=$PWD/scripts/lib/release.sh
