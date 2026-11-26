@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, AppState, DeviceEventEmitter, FlatList, Linking, Modal } from 'react-native';
+import { Alert, AppState, DeviceEventEmitter, FlatList, Linking, Modal, Share } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { NativeEngine, NativeItem } from '../src/native/NativeReadMeSpeech';
 
@@ -38,6 +38,7 @@ jest.mock('../src/native/NativeReadMeSpeech', () => ({
     setRate: jest.fn(async (rate: number) => rate),
     getPosition: jest.fn(async () => null),
     setCuts: jest.fn(async () => undefined),
+    deleteItem: jest.fn(async () => undefined),
     moveUnreadItem: jest.fn(async () => true),
     placeUnreadItem: jest.fn(async () => true),
     getBridge: jest.fn(async () => mockState.bridge),
@@ -1193,5 +1194,87 @@ describe('List order: long-press drag and accessibility actions (REA-72, REA-73)
     ];
     const out = await render(<ListScreen onOpen={() => {}} onSettings={() => {}} />);
     expect(out.indexOf('First in queue')).toBeLessThan(out.indexOf('Second in queue'));
+  });
+});
+
+describe('the Reader shares and deletes its item (REA-76, GitHub #88)', () => {
+  const paragraphs = [
+    { kind: 'p', text: 'Kept one.' },
+    { kind: 'p', text: 'Cut.' },
+    { kind: 'p', text: 'Kept two.' },
+  ];
+  const detail = (over: Partial<NativeItem> = {}, ps = paragraphs, cuts = [1]) => {
+    mockState.detail = { item: { ...base, ...over }, paragraphs: ps, cuts };
+  };
+  const byLabel = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    r.root.findAll(n => n.props.accessibilityLabel === label && typeof n.props.onPress === 'function')[0];
+  const tap = (r: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    ReactTestRenderer.act(async () => byLabel(r, label).props.onPress());
+  const open = async (onGone = () => {}) => {
+    const r = await mount(<ReaderScreen id={1} onTrim={() => {}} onGone={onGone} />);
+    await tap(r, 'more');
+    return r;
+  };
+  let share: jest.SpyInstance;
+  beforeEach(() => {
+    jest.mocked(Native.deleteItem).mockClear();
+    share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
+  });
+
+  test('Share link hands the URL and title to the share sheet', async () => {
+    detail();
+    const r = await open();
+    await tap(r, 'Share link');
+    expect(share).toHaveBeenCalledWith({ message: 'https://example.com/a', title: 'An article' });
+    expect(r.root.findAllByType(Modal)[0].props.visible).toBe(false);
+  });
+
+  test('Share text hands over the title and the kept paragraphs only', async () => {
+    detail();
+    await tap(await open(), 'Share text');
+    expect(share).toHaveBeenCalledWith({ message: 'An article\n\nKept one.\n\nKept two.', title: 'An article' });
+  });
+
+  test('a text item has no link to share', async () => {
+    detail({ kind: 'text', url: null });
+    const r = await open();
+    expect(byLabel(r, 'Share link')).toBeUndefined();
+    expect(byLabel(r, 'Share text')).toBeDefined();
+  });
+
+  test('text too long for an intent is listed as such and not shared', async () => {
+    detail({}, [{ kind: 'p', text: 'x'.repeat(100_001) }], []);
+    const r = await open();
+    const row = byLabel(r, 'Share text (too long)');
+    expect(row.props.disabled).toBe(true);
+    expect(byLabel(r, 'Share text')).toBeUndefined();
+  });
+
+  test('a share sheet that fails is not an error on screen', async () => {
+    detail();
+    share.mockRejectedValue(new Error('no activity'));
+    await tap(await open(), 'Share link');
+  });
+
+  test.each(['menu', 'end of the article'])('Delete from the %s confirms, leaves and deletes', async where => {
+    detail();
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const gone = jest.fn();
+    const r = await open(gone);
+    await tap(r, where === 'menu' ? 'Delete' : 'delete article');
+    expect(alert).toHaveBeenCalledWith('Delete this item?', 'Its text is removed from this phone.', expect.anything());
+    expect(Native.deleteItem).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      alert.mock.calls[0][2]!.find(b => b.text === 'Delete')!.onPress!();
+    });
+    expect(gone).toHaveBeenCalledTimes(1);
+    expect(Native.deleteItem).toHaveBeenCalledWith(1);
+  });
+
+  test('an item with everything cut can still be deleted', async () => {
+    detail({}, paragraphs, [0, 1, 2]);
+    const r = await open();
+    expect(byLabel(r, 'Delete')).toBeDefined();
+    expect(byLabel(r, 'Share text')).toBeUndefined();
   });
 });

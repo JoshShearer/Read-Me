@@ -2,14 +2,15 @@
 // transport. A view of PlaybackService (AGENTS.md 11): every button sends a command; the
 // highlight follows the service's events. R-M10: a blocking card when there is no engine or
 // no offline voice, checked on open rather than after a failed play (REA-18).
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, FlatList, Linking, useColorScheme, useWindowDimensions, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, FlatList, Linking, Share, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { ActionSheet, type SheetAction } from './ActionSheet';
 import { Button, IconButton } from './Button';
 import { ItemUnavailable } from './ItemUnavailable';
 import { Stepper } from './Stepper';
 import { Text } from './Text';
 import { palette } from './theme';
-import { getItem, onItemsChanged, type ItemDetail } from '../library/library';
+import { deleteItem, getItem, onItemsChanged, type ItemDetail } from '../library/library';
 import {
   backParagraph,
   engineBlocked,
@@ -23,7 +24,7 @@ import {
   type Playback,
 } from '../library/playback';
 import Native from '../native/NativeReadMeSpeech';
-import { dockOneRow, formatRate, lineTop, playMinWidth, RATE_MAX, RATE_MIN, readerParagraphs, stepRate, type ReaderParagraph } from './model';
+import { dockOneRow, formatRate, lineTop, playMinWidth, RATE_MAX, RATE_MIN, readerParagraphs, shareText, stepRate, type ReaderParagraph } from './model';
 import { ui } from './ui';
 
 /** Space kept above the highlighted line when scrolling to it, in dp. */
@@ -63,6 +64,7 @@ export function ReaderScreen({
   // must not blank the text or turn a deleted item into an error); with nothing loaded it shows
   // its own state with Retry. No log: the rejection carries only an exception class anyway.
   const [failed, setFailed] = useState(false);
+  const [menu, setMenu] = useState(false);
   const load = useCallback(() => {
     getItem(id).then(
       d => {
@@ -123,6 +125,11 @@ export function ReaderScreen({
   // whose item was being read shows the item being read; one opened on another item stays put.
   const mine = playback?.itemId === id ? playback : null;
   const paragraphs = detail ? readerParagraphs(detail.paragraphs, detail.cuts, mine?.sentence ?? null) : [];
+  // Built when the item changes, not on every sentence event (REA-76).
+  const shared = useMemo(
+    () => (detail ? shareText(detail.item.title, readerParagraphs(detail.paragraphs, detail.cuts, null)) : null),
+    [detail],
+  );
   const currentAt = paragraphs.findIndex(p => p.current !== null);
 
   const current = currentAt >= 0 ? paragraphs[currentAt] : null;
@@ -161,7 +168,53 @@ export function ReaderScreen({
         {detail.item.title}
       </Text>
       <Button label="Trim" accessibilityLabel="trim" onPress={onTrim} />
+      <IconButton glyph="⋮" accessibilityLabel="more" onPress={() => setMenu(true)} />
     </View>
+  );
+
+  // REA-76: Android's share sheet (ACTION_SEND), so nothing here touches the network or a log. A
+  // sheet that cannot open changes nothing.
+  const item = detail.item;
+  const share = (message: string) => {
+    setMenu(false);
+    Share.share({ message, title: item.title }).catch(() => undefined);
+  };
+  // As in the List: confirmed, because it cannot be undone. The Reader leaves first, so the store's
+  // change event does not flash "This item was deleted." here; the native delete stops playback.
+  const remove = () => {
+    setMenu(false);
+    Alert.alert('Delete this item?', 'Its text is removed from this phone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          onGone();
+          deleteItem(id).catch(() => undefined);
+        },
+      },
+    ]);
+  };
+  const { url } = item;
+  const actions: SheetAction[] = [];
+  if (url !== undefined) actions.push({ label: 'Share link', testID: 'reader menu share link', onPress: () => share(url) });
+  if (shared) {
+    actions.push({
+      label: shared.fits ? 'Share text' : 'Share text (too long)',
+      testID: 'reader menu share text',
+      disabled: !shared.fits,
+      onPress: () => share(shared.text),
+    });
+  }
+  actions.push({ label: 'Delete', testID: 'reader menu delete', onPress: remove });
+  const sheet = (
+    <ActionSheet
+      visible={menu}
+      title="Article"
+      actions={actions}
+      cancelTestID="reader menu cancel"
+      onClose={() => setMenu(false)}
+    />
   );
 
   if (engineBlocked(engine)) {
@@ -183,6 +236,7 @@ export function ReaderScreen({
             }}
           />
         </View>
+        {sheet}
       </View>
     );
   }
@@ -192,6 +246,7 @@ export function ReaderScreen({
       <View collapsable={false} style={ui.screen}>
         {header}
         <Text style={ui.empty}>Everything in this item is cut. Open Trim to keep some of it.</Text>
+        {sheet}
       </View>
     );
   }
@@ -236,6 +291,12 @@ export function ReaderScreen({
             <Text style={ui.paragraph}>{p.text}</Text>
           )
         }
+        // REA-76: the way out once the article is read, without going back to its row.
+        ListFooterComponent={
+          <View collapsable={false} style={ui.row}>
+            <Button appearance="outlined" destructive label="Delete" accessibilityLabel="delete article" style={ui.start} onPress={remove} />
+          </View>
+        }
       />
       <View
         collapsable={false}
@@ -270,6 +331,7 @@ export function ReaderScreen({
           increaseLabel="faster"
         />
       </View>
+      {sheet}
     </View>
   );
 }

@@ -222,6 +222,19 @@ export function readerParagraphs(
   return out;
 }
 
+/**
+ * REA-76: the text the share sheet gets, the title and the kept paragraphs, and whether it fits.
+ * An intent's extras cross one binder transaction of about 1 MB shared by the whole process, and
+ * an oversized one crashes the app that sends it: 100 000 UTF-16 units is 200 KB.
+ */
+export const SHARE_MAX = 100_000;
+
+export function shareText(title: string, kept: readonly { text: string }[]): { text: string; fits: boolean } | null {
+  if (kept.length === 0) return null;
+  const text = [title, ...kept.map(p => p.text)].join('\n\n');
+  return { text, fits: text.length <= SHARE_MAX };
+}
+
 /** R-M07: 0.5x to 4.0x in 0.1x steps. */
 export const RATE_MIN = 0.5;
 export const RATE_MAX = 4;
